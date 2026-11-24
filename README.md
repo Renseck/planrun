@@ -22,10 +22,9 @@ Status: starter package (P0). See [docs/roadmap.md](docs/roadmap.md).
 | [docs/architecture.md](docs/architecture.md) | how it works |
 | [docs/plan-grammar.md](docs/plan-grammar.md) | the plan formats it reads |
 | [docs/extending.md](docs/extending.md) | adding a plan format |
-| [docs/decisions.md](docs/decisions.md) | decisions D1–D24 |
+| [docs/decisions.md](docs/decisions.md) | decisions D1–D25 |
 | [docs/roadmap.md](docs/roadmap.md) | phases P1–P6 |
 | [docs/plans/](docs/plans/) | phase plans (assay format) |
-| [STARTER_PROMPT.md](STARTER_PROMPT.md) | the prompt that hands this package to Claude Code |
 
 ## Build
 

@@ -12,6 +12,8 @@ Correctness > execution speed > low memory > predictability > maintainability/ex
 planrun is not an agent: it does exactly what the plan says, shows what it cannot do
 mechanically, and decides nothing. Rust.
 
+Order superseded by D25.
+
 ## D2 Four crates; parsing never executes, execution never parses
 
 `planrun-model` (IR), `planrun-parse` (depends on model), `planrun-exec` (depends on model, **not**
@@ -57,7 +59,7 @@ Each dependency is justified here; add none without a line.
 | `serde`, `toml` | format specs |
 | `serde_json` | the journal (JSONL) |
 | `thiserror` | error types |
-| `sha1_smol` | git blob ids in-process (fast path; `git hash-object` is the authority) |
+| `sha1_smol` | git blob ids in-process: the `blob-chain` check from a created file's contents (planrun-parse); the fast path in planrun-exec, where `git hash-object` is the authority |
 | `similar` | showing diffs of overwrites and replacements. **Not** for applying patches (D20) |
 | `clap` | arguments |
 | `dialoguer` | line prompts (D15) |
@@ -144,3 +146,11 @@ written; pre-images are stored in the git object database first; writes are temp
 ## D24 One persistent session per shell kind per run
 
 Variables and the working directory persist across blocks (`$gate`, `$P2`), as in Rens' terminal.
+
+## D25 Maintainability/extensibility ranks second
+
+Supersedes D1's order; the rest of D1 (not an agent, Rust) stands.
+Correctness > maintainability/extensibility > execution speed > low memory > predictability.
+Reason: new plan styles keep arriving, so planrun is only valuable if adding one stays cheap
+and safe; speed and memory rarely decide anything, because cargo, npm and dotnet dominate
+wall time.

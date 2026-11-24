@@ -33,10 +33,11 @@ Suggested tasks (the plan may split or merge them):
    kinds the assay spec uses: `file-block`, `ceremony`, `delete`, `generated`, `script`,
    `expected-block`, `expected-prose`. Patch parsing for `ApplyPatch` (target path from
    `diff --git`/`---`/`+++` agrees with the lead: `patch-path`; the `index` line → pre/post).
-4. **Checks.** `task-order`, `step-order`, `manifest` (`manifest-undeclared`,
-   `manifest-untouched`, `FromManifest` resolution), `patch-shape`, `blob-chain`, `commit`,
-   `bad-path`, `unknown-file-op`, `missing-block`; the coverage report. The invalid-corpus test
-   (`tests/corpus/invalid/README.md`).
+4. **Checks.** The rules `task-order` (with `duplicate-task-id`), `step-order`, `manifest`
+   (`manifest-undeclared`, `manifest-untouched`, `manifest-write-mode`), `patch-shape`,
+   `blob-chain`, `commit` (`commit-twice`, `commit-not-last`); the coverage report. The
+   invalid-corpus test (`tests/corpus/invalid/README.md`), which also pins the codes of the
+   outline and the recognizers (`bad-path`, `unknown-file-op`, `missing-block`, `patch-path`, …).
 5. **CLI.** `planrun check` (diagnostics via `annotate-snippets`, coverage table, exit 0 / 1 on
    errors / 2 on usage) and `planrun show` (plan, task, task/step). An `insta` snapshot of the IR
    of `assay-style.md` and of `planrun check` output. The `#[ignore]`d local-corpus test.

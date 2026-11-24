@@ -23,16 +23,17 @@ Location: built-ins in `formats/<id>.toml` (embedded); per repository in
 id = "assay"                      # unique; the file name
 name = "Assay plan (planbuild.py)"
 
-[detect]                          # each matching pattern adds its weight; capped at 100
-patterns = [ { regex = '^### P\d+-T\d+: ', weight = 60 } ]
+[detect]                          # a pattern that matches a line outside fenced blocks adds
+patterns = [ { regex = '^### P\d+-T\d+: ', weight = 60 } ]   # its weight once; capped at 100
 
 [outline]
 tasks_after = { level = 2, regex = '^Tasks$' }          # optional
-task = { level = 3, regex = '^(?P<id>P(?P<phase>\d+)-T(?P<ord>\d+)): (?P<title>.+)$' }
+task = { level = 3, regex = '^(?P<id>(?P<phase>P\d+)-T(?P<ord>\d+)): (?P<title>.+)$' }
 tasks_end_level = 2                                      # optional
-# captures: id (required), ord (required, a number), title (required), phase (optional)
+# captures: id, ord (a number), title (all required); phase (optional, from the first task)
 
-[outline.manifest]                                       # optional
+[outline.manifest]                                       # optional; when set, every task has one
+# The marker and its items are consumed by the outline: they fall in no step.
 marker = '^\*\*Files\*\*$'
 item = '^(?P<change>Create|Modify|Delete) `(?P<paths>[^`]+)`$'
 changes = { Create = "create", Modify = "modify", Delete = "delete" }   # → create|modify|rewrite|delete|test
@@ -57,7 +58,8 @@ Rules:
 
 - Unknown keys are errors (`deny_unknown_fields`). A spec is fully validated when the registry
   loads it (unknown kind, bad regex, bad parameter), before any plan is read.
-- Regexes use the `regex` crate syntax; `(?P<name>…)` captures.
+- Regexes use the `regex` crate syntax; `(?P<name>…)` captures. A regex that lacks a capture
+  its reader requires (`path`, `id`, …) is refused when the spec loads.
 - `crates/planrun-parse/tests/spec_files.rs` checks every built-in spec against the schema.
 
 ## 3. Built-in recognizer kinds
@@ -80,9 +82,27 @@ optional.
 | `preview-apply` | a preview script followed by its apply | sets intents Preview/Apply | `preview` body regex, `apply` body regex |
 | `manual-prose` | a paragraph + optional fence that describe an edit with no exact anchor | `Manual(reason)` | `lead`, `reason` (`prose-edit` \| `output-dependent` \| `human-check`), *`takes_fence`* |
 
-The **fallback** (not configurable) runs when nothing matched: paragraph → `Note` or
-`Manual(Marked)`; fence → `Manual(Unrecognized)` / `Manual(ForeignLanguage)`; table, rule → `Note`;
-HTML comment → dropped.
+Notes on the kinds:
+
+- `file-block`: the longest `ops` prefix of the captured `op` wins; `write` takes Create or
+  Overwrite from the manifest. Once the lead matched, an op no prefix covers is
+  `Malformed(unknown-file-op)`, a lead without its fence `Malformed(missing-block)`, and for
+  `patch` a patch whose paths differ from the lead's `Malformed(patch-path)`.
+- `script`: `intent = "commit"` selects the `Commit` action kind, not a `ScriptIntent`; a commit
+  script carries `ScriptIntent::Other`. The other intents set the `ScriptIntent`; no match is
+  `verify`.
+- `expected-block` and `expected-prose` amend the script directly before them. Anything else there
+  is `Malformed(expected-without-script)`; a second expectation on one script is
+  `Malformed(expected-twice)`. `expected-block` needs a `text` fence (`missing-block`).
+- **Exit tables are first match**: rows are tried in order and the first whose regex matches
+  decides, so their order matters. Values: `success`, `failure`, `any` (`ExitExpect::Unknown`: not
+  checked; prose is still confirmed, D11), `code:N`, and `code` (the row's regex captures `code`;
+  0 is `success`). An `expected-block` spec no row matches is `Malformed(expected-spec)`; an
+  `expected-prose` text no row matches is `any`.
+
+The **fallback** (not configurable) runs when nothing matched: paragraph, list item, blockquote →
+`Note` or `Manual(Marked)`; fence → `Manual(Unrecognized)` / `Manual(ForeignLanguage)`, a `text`
+fence → `Note`; table, heading, rule → `Note`; HTML comment → dropped.
 
 ## 4. Adding an action kind
 

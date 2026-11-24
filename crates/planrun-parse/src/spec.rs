@@ -39,7 +39,7 @@ pub struct DetectSpec {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WeightedPattern {
-    /// Regex over one line of the plan (multi-line mode).
+    /// Regex over each line of the plan outside fenced blocks.
     pub regex: String,
     /// Score added when it matches anywhere.
     pub weight: u8,
@@ -51,10 +51,9 @@ pub struct WeightedPattern {
 pub struct OutlineSpec {
     /// Tasks are searched only after a heading matching this (`^Tasks$`), when set.
     pub tasks_after: Option<HeadingPattern>,
-    /// A task heading; captures `id`, `ord` (number), `title`.
+    /// A task heading; captures `id`, `ord` (number), `title`, and optionally `phase` (the
+    /// plan's phase, taken from the first task).
     pub task: HeadingPattern,
-    /// The plan's phase: a regex over the first task id, capturing `phase`.
-    pub phase_from_task_id: Option<String>,
     /// A heading at or above this level after a task ends the tasks.
     pub tasks_end_level: Option<u8>,
     /// The manifest of a task.
@@ -80,7 +79,7 @@ pub struct HeadingPattern {
 pub struct ManifestSpec {
     /// Regex over the marker paragraph (`^\*\*Files:?\*\*$`).
     pub marker: String,
-    /// Regex over each list item; captures `change` and one or more `path`s (see `path_list`).
+    /// Regex over each list item; captures `change` and `paths` (split by `path_list` when set).
     pub item: String,
     /// Maps the captured `change` word to Create / Modify / Rewrite / Delete / Test.
     pub changes: std::collections::BTreeMap<String, String>,

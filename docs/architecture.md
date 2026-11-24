@@ -11,17 +11,17 @@ the build order is in [roadmap.md](roadmap.md).
 
 ## 1. Priorities
 
-In this order, and they decide every trade-off (D1):
+In this order, and they decide every trade-off (D25):
 
 1. **Correctness.** Never misread an instruction, never change a file the plan doesn't name,
    never apply an approximate patch, never mark something done before its effect is verified.
-2. **Execution speed.** No wasted process starts, no repeated reads. (The tool's own overhead is
-   milliseconds; `cargo`/`dotnet`/`npm` dominate wall time. Don't optimize I/O speculatively.)
-3. **Low memory.** The plan is held once; text is referenced by span, not copied. Only the current
-   task's files are cached.
-4. **Predictability.** The same plan and the same starting tree give the same behaviour.
-5. **Maintainability and extensibility.** New plan styles keep appearing (§5); adding one must not
+2. **Maintainability and extensibility.** New plan styles keep appearing (§5); adding one must not
    touch execution.
+3. **Execution speed.** No wasted process starts, no repeated reads. (The tool's own overhead is
+   milliseconds; `cargo`/`dotnet`/`npm` dominate wall time. Don't optimize I/O speculatively.)
+4. **Low memory.** The plan is held once; text is referenced by span, not copied. Only the current
+   task's files are cached.
+5. **Predictability.** The same plan and the same starting tree give the same behaviour.
 
 ## 2. Shape
 
@@ -96,6 +96,9 @@ Expectation { exit: Success | Failure | Code(n) | Unknown, lines: Option<TextRef
   blocks). A fenced block no recognizer consumed, prose matching the format's `manual_markers`, and
   prose edits ("add these members to the class") become `Manual` (always blocks until
   acknowledged). Nothing is dropped.
+- **`Generated`** is checked to exist after the task's last non-commit action, before the
+  commit. A path a task names as generated more than once (an intro notice and a step notice)
+  is one check.
 - **`RepoPath`** (D7) is the only path type in actions: relative, forward slashes, no `..`, no
   `.`, no empty segments, no drive letters. Symlink escapes are refused by the workspace at write
   time.
@@ -108,28 +111,40 @@ total before anything executes (D3): a plan with any error is never returned.
 ### 4.1 Document
 
 pulldown-cmark's offset iterator builds a flat `Vec<Located>` of blocks: `Heading`, `Paragraph`,
-`ListItem` (with `task_box` for `- [ ]`), `Fence { info, body, fence_len }`, `Table`, `Rule`,
-`Html`. Each block has its span and list depth. Recognizers never see pulldown-cmark types.
+`ListItem` (with `task_box` for `- [ ]`), `Fence { info, body, fence_len }`, `Table`, `Quote`
+(a blockquote, kept whole like a table), `Rule`, `Html`. Each block has its span and list depth.
+Recognizers never see pulldown-cmark types.
 
 Paragraph and list-item text is the **raw source** (inline markup kept): patterns like
 ``^File `(?P<path>[^`]+)` \(full contents\):$`` match what is written.
 
 pulldown-cmark implements CommonMark fence rules correctly (a ```` ```` ```` fence contains ```` ``` ````
 fences). One CommonMark behaviour is refused explicitly: an **unclosed fence** runs to the end of
-the document in CommonMark; planrun reports `unclosed-fence`, because it would silently swallow the
-rest of the plan.
+its container in CommonMark; planrun reports `unclosed-fence`, because it would silently swallow the
+rest of the plan. The usual form of that bug looks closed: the next block's opener
+(```` ```powershell ````) becomes body text, and that block's closing fence closes the first one.
+So inside an open fence, a line indented at most 3 spaces that opens a fence of the same
+character, at least as long as the opener, with a non-empty info string, is `unclosed-fence` too,
+reported at the opener with that line as a related span. A ```` ````markdown ```` fence holding
+```` ```rust ```` blocks stays legal.
 
 ### 4.2 Format selection
 
-Each registered `Format` scores the document 0–100 (`detect`). The highest score at or above the
-registry threshold wins; a tie or no score above the threshold is `no-format`. `--format <id>`
-overrides. Never a guess.
+Each registered `Format` scores the document 0–100 (`detect`): each of its patterns that matches
+a line outside fenced blocks adds its weight once. The highest score at or above the registry
+threshold wins; no score at the threshold is `no-format`, a tie for the highest is
+`ambiguous-format`. `--format <id>` overrides (`unknown-format` for an id no format has). Never a
+guess.
 
 ### 4.3 Outline
 
 The format finds: plan metadata, tasks (heading pattern, `ord` capture for ordering), each task's
-manifest (marker + item pattern), and step boundaries. Blocks between a task heading and its first
-step form an unnumbered **intro step** (it can hold a `Generated` notice or `Manual` text). A task
+manifest (marker + item pattern), and step boundaries. The manifest's blocks are consumed by the
+outline: they fall in no step, and coverage counts them as "manifest". A format with a manifest
+pattern requires one per task (`manifest-missing`); an item that does not match is
+`manifest-item`. Blocks between a task heading and its first step form an unnumbered **intro
+step** (it can hold a `Generated` notice or `Manual` text). A heading at the task level inside the
+tasks that is not a task is `bad-task-heading`. A task
 with no step boundaries is one implicit step. Text after the tasks (a heading at or above
 `tasks_end_level`) is not executed: `show` lists it; `check` reports `Manual` markers in it as
 notes.
@@ -146,7 +161,8 @@ tried **in order**; the first that answers anything but `No` wins:
 
 If no recognizer matches, the built-in fallback consumes one block: a paragraph or list item
 becomes `Note` (or `Manual(Marked)` on a manual marker); a fence becomes `Manual(Unrecognized)`, or
-`Manual(ForeignLanguage)` for `sql` and other non-shell languages; tables and rules become `Note`;
+`Manual(ForeignLanguage)` for `sql` and other non-shell languages, and a `text` fence becomes
+`Note`; tables, blockquotes (or `Manual(Marked)` on a marker), headings and rules become `Note`;
 HTML comments are dropped (they are corpus metadata).
 
 Recognizers are pure (no I/O, no state between calls) and see a `StepContext`: the document, the
@@ -160,7 +176,11 @@ task id, the manifest, the format settings, and the step's previous actions.
 checks only. A check that needs the repository (the first preimage against the file on disk) is a
 preflight in planrun-exec.
 
-The **coverage report** is part of `check`: per task, the share of blocks that became actions vs
+Rules run only when the outline and recognition had no errors, so a broken block is reported
+once, not again as a missing manifest touch.
+
+The **coverage report** is part of `check`, not a rule: per task, how many blocks became actions,
+were absorbed (the patch ceremony, listed with their positions), were the manifest, or became
 `Note`/`Manual`. It is how you see where a plan stops being automatic.
 
 ## 5. Extensibility

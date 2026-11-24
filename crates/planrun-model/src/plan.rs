@@ -37,7 +37,8 @@ pub struct PlanMeta {
     pub phase: Option<Box<str>>,
     /// The base commit the plan says to start from, when stated.
     pub base_commit: Option<Box<str>>,
-    /// Preamble text the user must read before task 1 (format's `preamble_markers`).
+    /// Paragraphs before the first task that match the format's `manual_markers`: text the user
+    /// must read before task 1.
     pub preamble: Vec<TextRef>,
 }
 

@@ -1,5 +1,5 @@
 //! Recognizers: small, composable matchers that turn a run of blocks into actions
-//! (docs/architecture.md §5.2). A format is an ordered list of recognizer instances.
+//! (docs/architecture.md §4.4). A format is an ordered list of recognizer instances.
 
 use std::sync::Arc;
 

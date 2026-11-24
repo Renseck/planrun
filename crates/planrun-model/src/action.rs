@@ -58,7 +58,9 @@ pub enum ActionKind {
         /// `git rm` (index too) rather than a plain delete.
         via_git: bool,
     },
-    /// A file the plan says a later command generates; checked to exist after its step.
+    /// A file the plan says a command generates. Checked to exist after the task's last
+    /// non-commit action, before the commit; a path the task names as generated more than once
+    /// (an intro notice and a step notice) is one check.
     Generated {
         /// The generated file.
         path: RepoPath,

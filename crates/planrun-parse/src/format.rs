@@ -15,7 +15,7 @@ pub trait Format: Send + Sync {
     /// Its id (`assay`).
     fn id(&self) -> &FormatId;
 
-    /// How well `doc` matches, 0–100. Cheap: patterns over headings and paragraphs only.
+    /// How well `doc` matches, 0–100. Cheap: patterns over the lines outside fenced blocks.
     fn detect(&self, doc: &Document) -> u8;
 
     /// The plan's structure: metadata, tasks, their manifests and step ranges. Every block of
