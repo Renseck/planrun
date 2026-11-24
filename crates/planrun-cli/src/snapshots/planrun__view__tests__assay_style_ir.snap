@@ -1,0 +1,175 @@
+---
+source: crates/planrun-cli/src/view.rs
+expression: "Viewer::new(&plan).plan()"
+---
+plan: tests/corpus/synthetic/assay-style.md
+format: assay
+title: "Greeter Plan — Part 1: the greet module"
+phase: P1
+preamble: []
+tasks:
+  - id: P1-T1
+    title: the greet module
+    at: L24
+    files:
+      - Create src/greet.rs
+      - Modify src/lib.rs
+    steps:
+      - step: intro
+        at: L26
+        actions:
+          - at: L26
+            by: fallback
+            note:
+              text: "**Goal:** `src/greet.rs` with `greeting`, and `lib.rs` delegating to it."
+      - step: 1 — write the files
+        at: L33
+        actions:
+          - at: L35
+            by: "file-block#assay"
+            write-file:
+              path: src/greet.rs
+              mode: Create
+              body: "//! Greetings (P1-T1).\n\n/// The greeting for `name`, with punctuation.\npub fn greeting(name: &str) -> String {\n    format!(\"Hello, {name}!\")\n}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn greets_by_name() {\n        assert_eq!(super::greeting(\"Rens\"), \"Hello, Rens!\");\n    }\n}\n"
+          - at: L54
+            by: "file-block#assay"
+            apply-patch:
+              path: src/lib.rs
+              pre: aa80cf1
+              post: 97bd92a
+              patch: "diff --git a/src/lib.rs b/src/lib.rs\nindex aa80cf1..97bd92a 100644\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,8 +1,9 @@\n //! A tiny fixture crate for the planrun corpus.\n \n+pub mod greet;\n pub mod old;\n \n /// The greeting for `name`.\n pub fn greeting(name: &str) -> String {\n-    old::legacy_greeting(name)\n+    greet::greeting(name)\n }\n"
+      - step: 2 — verify
+        at: L79
+        actions:
+          - at: L81
+            by: fallback
+            note:
+              text: "Targeted: the greet tests:"
+          - at: L83
+            by: "script#assay"
+            run:
+              shell: pwsh
+              intent: verify
+              body: "cargo test greet\n"
+              expect:
+                exit: exit 0
+                lines: "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in …s\n"
+                prose: ~
+          - at: L93
+            by: fallback
+            note:
+              text: "Gate:"
+          - at: L95
+            by: "script#assay"
+            run:
+              shell: pwsh
+              intent: gate
+              body: "cargo test; $gate = $LASTEXITCODE; \"gate exit code: $gate\"\n"
+              expect:
+                exit: exit 0
+                lines: "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in …s\ngate exit code: 0\n"
+                prose: ~
+      - step: 3 — commit
+        at: L106
+        actions:
+          - at: L108
+            by: fallback
+            note:
+              text: "Only the task's paths are staged, only when the gate's exit code above was 0:"
+          - at: L110
+            by: "script#assay"
+            commit:
+              shell: pwsh
+              intent: other
+              body: "if ($gate -eq 0) {\n  git add -- src/greet.rs src/lib.rs\n  git commit -m \"P1-T1: the greet module\"\n} else { \"the gate failed (exit code $gate): fix the task before committing\" }\ngit status --porcelain\n"
+              expect:
+                exit: not checked
+                lines: ~
+                prose: "the commit, then no output from `git status --porcelain`."
+  - id: P1-T2
+    title: "re-export greeting, remove the legacy module"
+    at: L120
+    files:
+      - Modify src/lib.rs
+      - Delete src/old.rs
+      - Create docs/modules.txt
+    steps:
+      - step: intro
+        at: L122
+        actions:
+          - at: L122
+            by: fallback
+            note:
+              text: "**Goal:** `lib.rs` re-exports `greet::greeting`; `src/old.rs` is deleted; `docs/modules.txt` lists the modules."
+          - at: L130
+            by: "generated#notice"
+            generated:
+              path: docs/modules.txt
+      - step: 1 — write the files
+        at: L132
+        actions:
+          - at: L134
+            by: "file-block#assay"
+            apply-patch:
+              path: src/lib.rs
+              pre: 97bd92a
+              post: 6b269fc
+              patch: "diff --git a/src/lib.rs b/src/lib.rs\nindex 97bd92a..6b269fc 100644\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,9 +1,5 @@\n //! A tiny fixture crate for the planrun corpus.\n \n pub mod greet;\n-pub mod old;\n \n-/// The greeting for `name`.\n-pub fn greeting(name: &str) -> String {\n-    greet::greeting(name)\n-}\n+pub use greet::greeting;\n"
+          - at: L159
+            by: "delete#sentence"
+            delete:
+              path: src/old.rs
+              via_git: false
+          - at: L161
+            by: "generated#notice"
+            generated:
+              path: docs/modules.txt
+      - step: 2 — verify
+        at: L163
+        actions:
+          - at: L165
+            by: fallback
+            note:
+              text: "Generate the module list:"
+          - at: L167
+            by: "script#assay"
+            run:
+              shell: pwsh
+              intent: verify
+              body: "New-Item -ItemType Directory -Force docs | Out-Null; (Get-ChildItem src -Name | Sort-Object) -join \"`n\" | Set-Content -NoNewline docs/modules.txt; Add-Content docs/modules.txt ''\nGet-Content docs/modules.txt\n"
+              expect:
+                exit: exit 0
+                lines: "greet.rs\nlib.rs\n"
+                prose: ~
+          - at: L179
+            by: fallback
+            note:
+              text: "Gate:"
+          - at: L181
+            by: "script#assay"
+            run:
+              shell: pwsh
+              intent: gate
+              body: "cargo test; $gate = $LASTEXITCODE; \"gate exit code: $gate\"\n"
+              expect:
+                exit: exit 0
+                lines: "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in …s\ngate exit code: 0\n"
+                prose: ~
+      - step: 3 — commit
+        at: L192
+        actions:
+          - at: L194
+            by: fallback
+            note:
+              text: "Only the task's paths are staged, only when the gate's exit code above was 0:"
+          - at: L196
+            by: "script#assay"
+            commit:
+              shell: pwsh
+              intent: other
+              body: "if ($gate -eq 0) {\n  git add -- src/lib.rs src/old.rs docs/modules.txt\n  git commit -m \"P1-T2: re-export greeting, remove the legacy module\"\n} else { \"the gate failed (exit code $gate): fix the task before committing\" }\ngit status --porcelain\n"
+              expect:
+                exit: not checked
+                lines: ~
+                prose: "the commit, then no output from `git status --porcelain`."
+after_tasks: L206

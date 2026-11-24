@@ -1,0 +1,12 @@
+---
+source: crates/planrun-cli/tests/cli.rs
+expression: out
+---
+coverage
+  task          blocks  actions  absorbed  manifest  notes  manual
+  P1-T1             20       12         1         3      4       0
+  P1-T2             22       13         1         4      4       0
+absorbed (never run)
+  P1-T1         L74    ceremony#git-apply-temp
+  P1-T2         L154   ceremony#git-apply-temp
+planrun: tests/corpus/synthetic/assay-style.md: ok (assay, 2 tasks)

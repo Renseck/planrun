@@ -17,6 +17,10 @@ dialoguer.workspace = true
 planrun-exec.workspace = true
 planrun-model.workspace = true
 planrun-parse.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
 
 [lints]
 workspace = true

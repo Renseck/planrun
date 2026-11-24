@@ -1,0 +1,50 @@
+---
+source: crates/planrun-cli/src/view.rs
+expression: out
+---
+plan    tests/corpus/synthetic/assay-style.md
+format  assay
+title   Greeter Plan — Part 1: the greet module
+phase   P1
+
+P1-T1  the greet module  L24
+  files  Create src/greet.rs, Modify src/lib.rs
+  step intro  L26
+    L26    note        **Goal:** `src/greet.rs` with `greeting`, and `lib.rs` delegating to it.  (fallback)
+  step 1 — write the files  L33
+    L35    write-file  src/greet.rs (Create)  (file-block#assay)
+    L54    apply-patch src/lib.rs aa80cf1..97bd92a  (file-block#assay)
+  step 2 — verify  L79
+    L81    note        Targeted: the greet tests:  (fallback)
+    L83    run         pwsh verify  cargo test greet  (script#assay)
+           expect: exit 0; 1 summary line(s)
+    L93    note        Gate:  (fallback)
+    L95    run         pwsh gate  cargo test; $gate = $LASTEXITCODE; "gate exit code: $gate"  (script#assay)
+           expect: exit 0; 2 summary line(s)
+  step 3 — commit  L106
+    L108   note        Only the task's paths are staged, only when the gate's exit code above w…  (fallback)
+    L110   commit      pwsh  if ($gate -eq 0) {  (script#assay)
+           expect: not checked; "the commit, then no output from `git status --porcelain`." (confirmed by you)
+
+P1-T2  re-export greeting, remove the legacy module  L120
+  files  Modify src/lib.rs, Delete src/old.rs, Create docs/modules.txt
+  step intro  L122
+    L122   note        **Goal:** `lib.rs` re-exports `greet::greeting`; `src/old.rs` is deleted…  (fallback)
+    L130   generated   docs/modules.txt  (generated#notice)
+  step 1 — write the files  L132
+    L134   apply-patch src/lib.rs 97bd92a..6b269fc  (file-block#assay)
+    L159   delete      src/old.rs  (delete#sentence)
+    L161   generated   docs/modules.txt  (generated#notice)
+  step 2 — verify  L163
+    L165   note        Generate the module list:  (fallback)
+    L167   run         pwsh verify  New-Item -ItemType Directory -Force docs | Out-Null; (Get-ChildItem src …  (script#assay)
+           expect: exit 0; 2 summary line(s)
+    L179   note        Gate:  (fallback)
+    L181   run         pwsh gate  cargo test; $gate = $LASTEXITCODE; "gate exit code: $gate"  (script#assay)
+           expect: exit 0; 2 summary line(s)
+  step 3 — commit  L192
+    L194   note        Only the task's paths are staged, only when the gate's exit code above w…  (fallback)
+    L196   commit      pwsh  if ($gate -eq 0) {  (script#assay)
+           expect: not checked; "the commit, then no output from `git status --porcelain`." (confirmed by you)
+
+after the tasks (never run): from L206

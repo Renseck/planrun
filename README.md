@@ -12,7 +12,8 @@ planrun run   plan.md          execute interactively (--dry-run: change nothing)
 planrun resume plan.md         continue after an interruption, re-checking the disk
 ```
 
-Status: starter package (P0). See [docs/roadmap.md](docs/roadmap.md).
+Status: P1. `check` and `show` parse and check plans in the `assay` format; `run` comes in P5. See
+[docs/roadmap.md](docs/roadmap.md).
 
 ## Documents
 

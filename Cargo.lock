@@ -338,9 +338,11 @@ dependencies = [
  "annotate-snippets",
  "clap",
  "dialoguer",
+ "insta",
  "planrun-exec",
  "planrun-model",
  "planrun-parse",
+ "serde",
 ]
 
 [[package]]

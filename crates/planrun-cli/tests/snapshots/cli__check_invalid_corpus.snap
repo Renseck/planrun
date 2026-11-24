@@ -1,0 +1,281 @@
+---
+source: crates/planrun-cli/tests/cli.rs
+expression: all
+---
+==== bad-path.md
+error[bad-path]: `../outside.rs` has a `.`, `..` or empty segment
+  --> tests/corpus/invalid/bad-path.md:14:11
+   |
+14 | - Create `../outside.rs`
+   |           ^^^^^^^^^^^^^
+
+planrun: tests/corpus/invalid/bad-path.md: 1 error
+
+==== bad-task-heading.md
+error[bad-task-heading]: a level-3 heading among the tasks that is not a task: it does not match `^(?P<id>(?P<phase>P\d+[a-z]?(?:-\d+)?)-T(?P<ord>\d+)): (?P<title>.+)$`
+  --> tests/corpus/invalid/bad-task-heading.md:24:1
+   |
+24 | ### P1-T2 b
+   | ^^^^^^^^^^^
+
+planrun: tests/corpus/invalid/bad-task-heading.md: 1 error
+
+==== blob-chain.md
+error[blob-chain]: this patch of `src/a.rs` starts from 3333333, but the plan's last change to it leaves 2222222
+  --> tests/corpus/invalid/blob-chain.md:40:1
+   |
+18 | / File `src/a.rs` (exact diff; save the block as `$env:TEMP\p.patch`, outside the repository, then apply it):
+19 | |
+20 | | ```diff
+21 | | diff --git a/src/a.rs b/src/a.rs
+...  |
+27 | | +b
+28 | | ```
+   | |___- the last change
+...
+40 | / File `src/a.rs` (exact diff; save the block as `$env:TEMP\p2.patch`, outside the repository, then apply it):
+41 | |
+42 | | ```diff
+43 | | diff --git a/src/a.rs b/src/a.rs
+...  |
+49 | | +c
+50 | | ```
+   | |___^
+
+planrun: tests/corpus/invalid/blob-chain.md: 1 error
+
+==== commit-not-last.md
+error[commit-not-last]: this runs after the commit of task `P1-T1`
+  --> tests/corpus/invalid/commit-not-last.md:33:1
+   |
+26 | / ```powershell
+27 | | git add -- src/a.rs
+28 | | git commit -m "P1-T1: a"
+29 | | ```
+   | |___- the commit
+...
+33 | / ```powershell
+34 | | cargo test
+35 | | ```
+   | |___^
+
+planrun: tests/corpus/invalid/commit-not-last.md: 1 error
+
+==== commit-twice.md
+error[commit-twice]: a second commit in task `P1-T1`
+  --> tests/corpus/invalid/commit-twice.md:31:1
+   |
+26 | / ```powershell
+27 | | git add -- src/a.rs
+28 | | git commit -m "P1-T1: a"
+29 | | ```
+   | |___- the first commit
+30 |
+31 | / ```powershell
+32 | | git commit --amend --no-edit
+33 | | ```
+   | |___^
+
+planrun: tests/corpus/invalid/commit-twice.md: 1 error
+
+==== duplicate-task-id.md
+error[duplicate-task-id]: task `P1-T1` is defined twice
+  --> tests/corpus/invalid/duplicate-task-id.md:30:1
+   |
+ 8 | ### P1-T1: a
+   | ------------ first defined here
+...
+30 | ### P1-T1: b
+   | ^^^^^^^^^^^^
+
+planrun: tests/corpus/invalid/duplicate-task-id.md: 1 error
+
+==== expected-spec.md
+error[expected-spec]: `summary lines` names no exit status this format knows
+  --> tests/corpus/invalid/expected-spec.md:30:1
+   |
+30 | Expected (summary lines):
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+planrun: tests/corpus/invalid/expected-spec.md: 1 error
+
+==== expected-twice.md
+error[expected-twice]: the script before this already has an expectation
+  --> tests/corpus/invalid/expected-twice.md:36:1
+   |
+26 | / ```powershell
+27 | | cargo test
+28 | | ```
+...  |
+33 | | test result: ok. …
+34 | | ```
+   | |___- the script
+35 |
+36 |   Expected: all tests pass.
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+planrun: tests/corpus/invalid/expected-twice.md: 1 error
+
+==== expected-without-script.md
+error[expected-without-script]: an expectation with no script directly before it
+  --> tests/corpus/invalid/expected-without-script.md:24:1
+   |
+24 | Expected (exit code 0; summary lines):
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+planrun: tests/corpus/invalid/expected-without-script.md: 1 error
+
+==== manifest-item.md
+error[manifest-item]: a manifest item that does not match `^(?P<change>Create|Modify|Delete) `(?P<paths>[^`]+)`(?: \(.+\))?$`
+  --> tests/corpus/invalid/manifest-item.md:14:1
+   |
+14 | - Rename `src/a.rs`
+   | ^^^^^^^^^^^^^^^^^^^
+
+planrun: tests/corpus/invalid/manifest-item.md: 1 error
+
+==== manifest-missing.md
+error[manifest-missing]: the task has no manifest (`^\*\*Files\*\*$`)
+ --> tests/corpus/invalid/manifest-missing.md:8:1
+  |
+8 | ### P1-T1: a
+  | ^^^^^^^^^^^^
+
+planrun: tests/corpus/invalid/manifest-missing.md: 1 error
+
+==== manifest-undeclared.md
+error[manifest-undeclared]: `src/b.rs` is changed here but not declared in the task's files
+  --> tests/corpus/invalid/manifest-undeclared.md:24:1
+   |
+12 | / **Files**
+13 | |
+14 | | - Create `src/a.rs`
+   | |___________________- the task's files
+...
+24 | / File `src/b.rs` (full contents):
+25 | |
+26 | | ```rust
+27 | | // x
+28 | | ```
+   | |___^
+
+planrun: tests/corpus/invalid/manifest-undeclared.md: 1 error
+
+==== manifest-untouched.md
+error[manifest-untouched]: `src/b.rs` is declared, and no action of the task changes it
+  --> tests/corpus/invalid/manifest-untouched.md:15:1
+   |
+15 | - Modify `src/b.rs`
+   | ^^^^^^^^^^^^^^^^^^^
+
+planrun: tests/corpus/invalid/manifest-untouched.md: 1 error
+
+==== manifest-write-mode.md
+error[manifest-write-mode]: full contents for `src/a.rs`, declared Delete: neither create nor overwrite
+  --> tests/corpus/invalid/manifest-write-mode.md:18:1
+   |
+14 |   - Delete `src/a.rs`
+   |   ------------------- declared here
+...
+18 | / File `src/a.rs` (full contents):
+19 | |
+20 | | ```rust
+21 | | // x
+22 | | ```
+   | |___^
+
+planrun: tests/corpus/invalid/manifest-write-mode.md: 1 error
+
+==== missing-block.md
+error[missing-block]: this sentence announces a fenced block, and none follows it
+  --> tests/corpus/invalid/missing-block.md:18:1
+   |
+18 | File `src/a.rs` (full contents):
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+planrun: tests/corpus/invalid/missing-block.md: 1 error
+
+==== no-format.md
+error[no-format]: no format recognizes this plan (no detection score reaches 50); name one with --format
+
+planrun: tests/corpus/invalid/no-format.md: 1 error
+
+==== no-tasks.md
+error[no-tasks]: no level-2 heading matches `^Tasks$`, so there are no tasks
+
+planrun: tests/corpus/invalid/no-tasks.md: 1 error
+
+==== patch-path.md
+error[patch-path]: the patch changes `src/b.rs`; the sentence before it names `src/a.rs`
+  --> tests/corpus/invalid/patch-path.md:20:1
+   |
+18 |   File `src/a.rs` (exact diff; save the block as `$env:TEMP\p.patch`, outside the repository, then apply it):
+   |   ----------------------------------------------------------------------------------------------------------- the path named here
+19 |
+20 | / ```diff
+21 | | diff --git a/src/b.rs b/src/b.rs
+22 | | index 1111111..2222222 100644
+23 | | --- a/src/b.rs
+...  |
+27 | | +b
+28 | | ```
+   | |___^
+
+planrun: tests/corpus/invalid/patch-path.md: 1 error
+
+==== patch-shape.md
+error[patch-shape]: the hunk at patch line 5 ends early: 1 old and 0 new lines missing
+  --> tests/corpus/invalid/patch-shape.md:18:1
+   |
+18 | / File `src/a.rs` (exact diff; save the block as `$env:TEMP\p.patch`, outside the repository, then apply it):
+19 | |
+20 | | ```diff
+21 | | diff --git a/src/a.rs b/src/a.rs
+...  |
+27 | | +b
+28 | | ```
+   | |___^
+
+planrun: tests/corpus/invalid/patch-shape.md: 1 error
+
+==== step-order.md
+error[step-order]: step 3 where step 2 comes next in task `P1-T1`
+  --> tests/corpus/invalid/step-order.md:24:1
+   |
+24 | **Step 3 — verify**
+   | ^^^^^^^^^^^^^^^^^
+
+planrun: tests/corpus/invalid/step-order.md: 1 error
+
+==== task-order.md
+error[task-order]: task `P1-T2` comes after task `P1-T3`
+  --> tests/corpus/invalid/task-order.md:46:1
+   |
+30 | ### P1-T3: c
+   | ------------ the earlier task
+...
+46 | ### P1-T2: b
+   | ^^^^^^^^^^^^
+
+planrun: tests/corpus/invalid/task-order.md: 1 error
+
+==== unclosed-fence.md
+error[unclosed-fence]: this fenced block is not closed where it looks closed: a line inside it opens another block
+  --> tests/corpus/invalid/unclosed-fence.md:20:1
+   |
+20 | ```rust
+   | ^^^^^^^
+...
+26 | ```powershell
+   | ------------- this line opens a fenced block inside the open one
+
+planrun: tests/corpus/invalid/unclosed-fence.md: 1 error
+
+==== unknown-file-op.md
+error[unknown-file-op]: `partial contents` is not a file operation this format knows (`exact diff`, `full contents`)
+  --> tests/corpus/invalid/unknown-file-op.md:18:1
+   |
+18 | File `src/a.rs` (partial contents):
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+planrun: tests/corpus/invalid/unknown-file-op.md: 1 error
