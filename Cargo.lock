@@ -372,6 +372,7 @@ dependencies = [
  "pulldown-cmark",
  "regex",
  "serde",
+ "sha1_smol",
  "sha2",
  "thiserror",
  "toml",
