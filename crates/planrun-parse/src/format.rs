@@ -69,6 +69,19 @@ pub struct OutlineStep {
     pub span: Span,
     /// The blocks the recognizers consume.
     pub blocks: BlockRange,
+    /// True when the step starts at a written boundary; false for the implicit first step.
+    pub written: bool,
+    /// The mark its title carries (`[[step_marks]]`, decision D30).
+    pub mark: Option<StepMark>,
+}
+
+/// What a step's title says about the whole step (decision D30).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StepMark {
+    /// "…verify it fails": the step's `Verify` scripts are expected to fail.
+    ExpectedFailure,
+    /// "Check by eye", "Manual verification": the step's Notes are `Manual(HumanCheck)`.
+    HumanCheck,
 }
 
 /// Settings shared by a format's recognizers and the checks.

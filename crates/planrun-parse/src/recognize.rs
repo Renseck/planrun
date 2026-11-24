@@ -4,12 +4,13 @@
 //! (decision D21).
 
 use planrun_model::{
-    Action, ActionKind, ManualReason, RecognizerId, Span, Step, Task, TaskId, TextRef,
+    Action, ActionKind, ExitExpect, Expectation, ManualReason, RecognizerId, ScriptIntent, Span,
+    Step, Task, TaskId, TextRef,
 };
 
 use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::document::{Block, Document};
-use crate::format::{Format, Outline, OutlineStep, OutlineTask};
+use crate::format::{Format, Outline, OutlineStep, OutlineTask, StepMark};
 use crate::recognizer::{Cursor, Recognized, StepContext};
 
 /// Where one task's blocks went (the coverage report, docs/architecture.md §4.5).
@@ -108,6 +109,7 @@ fn step(
             manifest: &task.manifest,
             settings: format.settings(),
             previous: &actions,
+            written_step: outline.written,
         };
         let (origin, outcome) = first_match(format, &cx, &mut cursor);
         let consumed = cursor.consumed() - before;
@@ -138,17 +140,81 @@ fn step(
                 actions.extend(new);
             }
             Recognized::Amend(action) => {
-                cov.actions += consumed;
+                match action.kind {
+                    ActionKind::Manual { .. } => cov.manual += consumed,
+                    _ => cov.actions += consumed,
+                }
                 actions.pop();
                 actions.push(action);
             }
         }
     }
+    apply_mark(outline.mark, &mut actions, cov, errors);
     Step {
         number: outline.number,
         title: outline.title.clone(),
         span: outline.span,
         actions,
+    }
+}
+
+/// Applies the mark of a step's title to its actions (decision D30).
+fn apply_mark(
+    mark: Option<StepMark>,
+    actions: &mut [Action],
+    cov: &mut TaskCoverage,
+    errors: &mut Vec<Diagnostic>,
+) {
+    match mark {
+        None => {}
+        Some(StepMark::ExpectedFailure) => {
+            errors.extend(actions.iter_mut().filter_map(expect_failure));
+        }
+        Some(StepMark::HumanCheck) => {
+            for action in actions.iter_mut() {
+                let ActionKind::Note { text } = &action.kind else {
+                    continue;
+                };
+                action.kind = ActionKind::Manual {
+                    reason: ManualReason::HumanCheck,
+                    text: text.clone(),
+                };
+                cov.notes = cov.notes.saturating_sub(1);
+                cov.manual += 1;
+            }
+        }
+    }
+}
+
+/// An `expected-failure` step's `Verify` script expects failure: none or `any` becomes
+/// `Failure`; an expected success is `expected-conflict`. Commits and gates are left alone.
+fn expect_failure(action: &mut Action) -> Option<Diagnostic> {
+    let span = action.span;
+    let ActionKind::RunScript(script) = &mut action.kind else {
+        return None;
+    };
+    if script.intent != ScriptIntent::Verify {
+        return None;
+    }
+    let Some(expect) = &mut script.expect else {
+        script.expect = Some(Expectation {
+            exit: ExitExpect::Failure,
+            lines: None,
+            prose: None,
+        });
+        return None;
+    };
+    match expect.exit {
+        ExitExpect::Unknown => {
+            expect.exit = ExitExpect::Failure;
+            None
+        }
+        ExitExpect::Success => Some(Diagnostic::error(
+            "expected-conflict",
+            Some(span),
+            "the step's title says this fails, and its expectation says it succeeds",
+        )),
+        ExitExpect::Failure | ExitExpect::Code(_) => None,
     }
 }
 

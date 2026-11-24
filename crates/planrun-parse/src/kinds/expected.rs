@@ -129,6 +129,10 @@ impl Recognizer for ExpectedProse {
         let Some(caps) = self.lead.captures(text) else {
             return Recognized::No;
         };
+        if let Some(manual) = joined_manual(cx, lead.span) {
+            cursor.advance(1);
+            return Recognized::Amend(manual);
+        }
         let script = match amendable(cx, lead.span) {
             Ok(script) => script,
             Err(d) => return Recognized::Malformed(d),
@@ -142,6 +146,21 @@ impl Recognizer for ExpectedProse {
         cursor.advance(1);
         Recognized::Amend(amended(script, expect, lead.span))
     }
+}
+
+/// The Manual directly before an expectation, grown over it: what to check is part of what the
+/// user does by hand (decision D38).
+fn joined_manual(cx: &StepContext<'_>, lead: Span) -> Option<Action> {
+    let mut manual = cx
+        .previous
+        .last()
+        .filter(|a| matches!(a.kind, ActionKind::Manual { .. }))?
+        .clone();
+    manual.span = manual.span.join(lead);
+    if let ActionKind::Manual { text, .. } = &mut manual.kind {
+        *text = TextRef::Span(manual.span);
+    }
+    Some(manual)
 }
 
 /// `script` with `expect` attached, its span grown over the expectation.

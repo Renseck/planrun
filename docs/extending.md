@@ -55,6 +55,13 @@ manual_markers = ['(?i)\bby hand\b']                     # paragraph → Manual(
 pwsh = ["powershell", "pwsh", "ps1"]                     # optional; these are the defaults
 bash = ["bash", "sh", "shell"]
 
+[[step_marks]]                                           # zero or more (D30), first match wins
+title = '(?i)\bverify (?:it|they) fails?\b'              # regex over the step's title
+mark = "expected-failure"                                # expected-failure | human-check
+# expected-failure: the step's Verify scripts expect failure (none or `any` becomes Failure; an
+# expected success is the error expected-conflict). human-check: its Notes become
+# Manual(HumanCheck).
+
 [checks]                                                 # optional (D31): only these two codes,
 manifest-untouched = "off"                               # each error | warning | off; any
 manifest-undeclared = "warning"                          # other key fails the spec load
@@ -85,12 +92,10 @@ optional.
 | `delete` | a sentence or inline `git rm` | `Delete` | `lead` (captures `path`), *`via_git`* |
 | `generated` | a "generated, not by hand" sentence | `Generated` | `lead` (captures `path`) |
 | `ceremony` | a fence directly after a given action whose body matches | nothing (absorbed) | `after` (`patch`), `body` |
-| `script` | a fence in a shell language | `RunScript` / `Commit` | *`intents`* (`[{ intent, body }]`: `commit` \| `gate` \| `preview` \| `apply` \| `verify`) |
+| `script` | a fence in a shell language | `RunScript` / `Commit` | *`intents`* (`[{ intent, body?, lead? }]`: `commit` \| `gate` \| `preview` \| `apply` \| `verify` \| `other`), *`leads`* (regexes), *`first_block`* |
 | `run-line` | `` Run: `cmd` `` in a paragraph | `RunScript` (one line, the format's default shell) | `lead` (captures `cmd`), `shell` |
 | `expected-block` | `Expected (…):` paragraph + `text` fence after a script | amends the script | `lead` (captures `spec`), `exit` table, `lines = "summary"` |
 | `expected-prose` | `Expected: …` sentence after a script | amends the script | `lead` (captures `text`), `exit` table (`success` \| `failure` \| `any` \| `code:N`) |
-| `expected-failure-step` | a step title like "verify it fails" | marks the step's scripts as expected failures | `title` regex |
-| `preview-apply` | a preview script followed by its apply | sets intents Preview/Apply | `preview` body regex, `apply` body regex |
 | `manual-prose` | a paragraph + optional fence that describe an edit with no exact anchor | `Manual(reason)` | `lead`, `reason` (`prose-edit` \| `output-dependent` \| `human-check`), *`takes_fence`* |
 
 Notes on the kinds:
@@ -101,10 +106,17 @@ Notes on the kinds:
   `patch` a patch whose paths differ from the lead's `Malformed(patch-path)`.
 - `script`: `intent = "commit"` selects the `Commit` action kind, not a `ScriptIntent`; a commit
   script carries `ScriptIntent::Other`. The other intents set the `ScriptIntent`; no match is
-  `verify`.
+  `verify`. A row matches the fence body (`body`), the paragraph directly before the fence
+  (`lead`), or both; at least one is required (D29). Preview/apply pairs are rows like these.
+- `script` guard (D28): with `leads` set, the kind claims a fence only when the paragraph
+  directly before it matches one of `leads`, or, with `first_block = true`, when the fence is the
+  first block of a written step (never the implicit first step, so never right after the
+  manifest). A body intent never qualifies a fence on its own. Any other shell fence falls to the
+  fallback, `Manual(Unrecognized)`. Without `leads` (the assay spec) every shell fence is a script.
 - `expected-block` and `expected-prose` amend the script directly before them. Anything else there
   is `Malformed(expected-without-script)`; a second expectation on one script is
-  `Malformed(expected-twice)`. `expected-block` needs a `text` fence (`missing-block`).
+  `Malformed(expected-twice)`. `expected-block` needs a `text` fence (`missing-block`). An
+  `expected-prose` sentence directly after a `Manual` joins that Manual's text instead (D38).
 - **Exit tables are first match**: rows are tried in order and the first whose regex matches
   decides, so their order matters. Values: `success`, `failure`, `any` (`ExitExpect::Unknown`: not
   checked; prose is still confirmed, D11), `code:N`, and `code` (the row's regex captures `code`;

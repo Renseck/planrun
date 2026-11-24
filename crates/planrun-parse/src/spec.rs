@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 use crate::diagnostic::Diagnostics;
 use crate::document::Document;
-use crate::format::{CheckLevel, DOWNGRADABLE, Format, FormatSettings, Outline};
+use crate::format::{CheckLevel, DOWNGRADABLE, Format, FormatSettings, Outline, StepMark};
 use crate::outline::{self, HeadingRule, ManifestRules, OutlineRules, StepBlock, StepRule};
 use crate::recognizer::{Recognizer, RecognizerFactory};
 
@@ -37,6 +37,9 @@ pub struct FormatSpec {
     /// appear.
     #[serde(default)]
     pub checks: std::collections::BTreeMap<String, String>,
+    /// Step titles that mark a whole step (decision D30).
+    #[serde(default)]
+    pub step_marks: Vec<StepMarkSpec>,
     /// Recognizer instances, in order; each table has `kind` plus the kind's parameters.
     #[serde(default, rename = "recognizer")]
     pub recognizers: Vec<toml::Table>,
@@ -109,6 +112,16 @@ pub struct ManifestSpec {
     pub siblings: Option<bool>,
 }
 
+/// A `[[step_marks]]` row.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StepMarkSpec {
+    /// Regex over the step's title.
+    pub title: String,
+    /// `expected-failure` or `human-check`.
+    pub mark: String,
+}
+
 /// A block that starts a step.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -166,7 +179,7 @@ impl SpecFormat {
             .iter()
             .map(|p| Ok((compile_regex("detect", &p.regex, &[])?, p.weight)))
             .collect::<Result<_, String>>()?;
-        let outline = compile_outline(&spec.outline)?;
+        let outline = compile_outline(&spec.outline, &spec.step_marks)?;
         let mut settings = compile_settings(&spec.settings)?;
         settings.checks = compile_checks(&spec.checks)?;
         let recognizers = spec
@@ -219,7 +232,22 @@ impl Format for SpecFormat {
     }
 }
 
-fn compile_outline(spec: &OutlineSpec) -> Result<OutlineRules, String> {
+fn compile_outline(spec: &OutlineSpec, marks: &[StepMarkSpec]) -> Result<OutlineRules, String> {
+    let step_marks = marks
+        .iter()
+        .map(|m| {
+            let mark = match m.mark.as_str() {
+                "expected-failure" => StepMark::ExpectedFailure,
+                "human-check" => StepMark::HumanCheck,
+                other => {
+                    return Err(format!(
+                        "step_marks: `{other}` is not expected-failure or human-check"
+                    ));
+                }
+            };
+            Ok((compile_regex("step_marks.title", &m.title, &[])?, mark))
+        })
+        .collect::<Result<_, String>>()?;
     let tasks_after = spec
         .tasks_after
         .as_ref()
@@ -243,6 +271,7 @@ fn compile_outline(spec: &OutlineSpec) -> Result<OutlineRules, String> {
         tasks_end_level: spec.tasks_end_level,
         manifest,
         steps,
+        step_marks,
     })
 }
 

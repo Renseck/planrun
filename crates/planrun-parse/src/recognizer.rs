@@ -22,6 +22,9 @@ pub struct StepContext<'a> {
     /// Actions already produced in this step: an expectation attaches to the script before it;
     /// the patch ceremony is absorbed only right after a patch.
     pub previous: &'a [Action],
+    /// True in a step that starts at a written boundary; false in the implicit first step (the
+    /// blocks before the first boundary, where the manifest is).
+    pub written_step: bool,
 }
 
 /// A position in a step's blocks. A recognizer that matches advances it past what it consumed.
@@ -68,6 +71,20 @@ impl<'a> Cursor<'a> {
             index = self.settle(index + 1);
         }
         (index < self.range.end).then(|| &self.blocks[index])
+    }
+
+    /// The block before the cursor, if it is still in the step (skipped blocks are invisible).
+    pub fn previous(&self) -> Option<&'a Located> {
+        let mut index = self.position.checked_sub(1)?;
+        if let Some(skip) = self.skip.filter(|s| s.contains(index)) {
+            index = skip.start.checked_sub(1)?;
+        }
+        (index >= self.range.start).then(|| &self.blocks[index])
+    }
+
+    /// True when the cursor is at the step's first block.
+    pub fn at_start(&self) -> bool {
+        self.position == self.settle(self.range.start)
     }
 
     /// Consumes `count` blocks.

@@ -10,7 +10,7 @@ use regex::{Captures, Regex};
 
 use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::document::{Block, BlockRange, Document};
-use crate::format::{FormatSettings, Outline, OutlineStep, OutlineTask};
+use crate::format::{FormatSettings, Outline, OutlineStep, OutlineTask, StepMark};
 
 /// The compiled `[outline]` of a spec.
 pub struct OutlineRules {
@@ -24,6 +24,8 @@ pub struct OutlineRules {
     pub manifest: Option<ManifestRules>,
     /// Step boundaries.
     pub steps: Vec<StepRule>,
+    /// Step titles that mark the whole step, first match wins (decision D30).
+    pub step_marks: Vec<(Regex, StepMark)>,
 }
 
 /// A heading of one level whose text matches.
@@ -543,6 +545,8 @@ fn steps(
             title: None,
             span: range_span(doc, intro, manifest).unwrap_or(Span::new(0, 0)),
             blocks: intro,
+            written: false,
+            mark: None,
         });
     }
     for (k, &b) in boundaries.iter().enumerate() {
@@ -566,14 +570,36 @@ fn steps(
             }
             StepNumber::Unwritten => None,
         };
+        let mark = step_mark(rules, doc, b, title.as_ref());
         steps.push(OutlineStep {
             number,
             title,
             span: Span::new(start.start, range_end(doc, blocks).unwrap_or(start.end)),
             blocks,
+            written: true,
+            mark,
         });
     }
     steps
+}
+
+/// The mark of the step that block `index` starts: the first `[[step_marks]]` title regex that
+/// matches its title (or, without a title capture, the whole boundary block).
+fn step_mark(
+    rules: &OutlineRules,
+    doc: &Document,
+    index: usize,
+    title: Option<&TextRef>,
+) -> Option<StepMark> {
+    let text = match title {
+        Some(title) => doc.text(title),
+        None => doc.source.slice(doc.blocks[index].span),
+    };
+    rules
+        .step_marks
+        .iter()
+        .find(|(regex, _)| regex.is_match(text))
+        .map(|(_, mark)| *mark)
 }
 
 /// The span from the first to the last block of `range` outside `skip`.

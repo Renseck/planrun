@@ -45,6 +45,22 @@ impl<'a> Params<'a> {
         }
     }
 
+    /// An optional array of strings.
+    pub(super) fn opt_strings(
+        &mut self,
+        key: &'static str,
+    ) -> Result<Option<Vec<&'a str>>, String> {
+        let Some(value) = self.get(key) else {
+            return Ok(None);
+        };
+        let wrong = || format!("`{key}` must be an array of strings");
+        let list = value.as_array().ok_or_else(wrong)?;
+        list.iter()
+            .map(|v| v.as_str().ok_or_else(wrong))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Some)
+    }
+
     pub(super) fn regex(&mut self, key: &'static str, required: &[&str]) -> Result<Regex, String> {
         let pattern = self.string(key)?;
         compile_regex(key, pattern, required)
