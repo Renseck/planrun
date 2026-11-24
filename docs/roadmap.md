@@ -58,15 +58,19 @@ Acceptance:
 
 The decisions are D26–D40. Split in two plans on one schema (D40):
 
-- **P2a.** The P1 outline fixes and `task-after-end` (D37); the spec schema (`required`, a marker
-  that captures `change`, `siblings`, `ChangeKind::Generated`, `[checks]`, `[[step_marks]]`,
-  `script` `leads`/`first_block`/intent `lead`); the kinds `run-line`, `before-after`,
-  `manual-prose`; path resolution from the manifest (D32); `formats/superpowers.toml` and
-  `before-after.toml` with IR snapshots of their synthetic plans. The superpowers and
-  before-after local plans parse with zero errors.
-- **P2b.** `formats/devready.toml`: steps whose boundary block stays in the step
-  (`keep = true`), inline Files clauses, `line_expect` (D35), the `**Commit:**` Manual (D33),
-  the IR snapshot of its synthetic plan. All six local plans parse with zero errors.
+- **P2a (done).** The P1 outline fixes and `task-after-end` (D37); the spec schema (`required`,
+  a marker that captures `change`, `siblings`, `ChangeKind::Generated`, `[checks]`,
+  `[[step_marks]]`, `script` `leads`/`first_block`/intent `lead`); the kinds `run-line`,
+  `before-after`, `manual-prose`; path resolution from the manifest (D32);
+  `formats/superpowers.toml` and `before-after.toml` with IR snapshots of their synthetic plans.
+  The superpowers and before-after local plans parse with zero errors. Plan:
+  `docs/plans/2026-11-24-p2a-hand-written-formats.md`.
+- **P2b.** First, pattern manifest entries: a range or glob item is one entry with a pattern
+  `PathOrigin` (D41). Then `formats/devready.toml`: steps whose boundary block stays in the step
+  (`keep = true`), inline Files clauses, a full-replacement item note that maps to `rewrite`,
+  `line_expect` (D35), the `**Commit:**` Manual (D33), detection that outscores superpowers on
+  both devready plans, the IR snapshot of its synthetic plan, and the Apply invariant in
+  plan-grammar §5. All six local plans parse with zero errors.
 
 Each plan lists the imperative Notes that remain in the real plans (D36). `expected-failure-step`
 became step marks (D30); `preview-apply` became script intents by lead (D29).
