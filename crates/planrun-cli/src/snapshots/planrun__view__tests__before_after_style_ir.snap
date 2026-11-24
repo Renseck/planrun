@@ -1,0 +1,212 @@
+---
+source: crates/planrun-cli/src/view.rs
+expression: "Viewer::new(&plan).plan()"
+---
+plan: tests/corpus/synthetic/before-after-style.md
+format: before-after
+title: Greeter localisation — implementation plan
+phase: ~
+preamble: []
+tasks:
+  - id: Task 0
+    title: Baseline
+    at: L28
+    files: []
+    steps:
+      - step: 1 — Confirm branch and green baseline
+        at: L30
+        actions:
+          - at: L32
+            by: "script#before-after"
+            run:
+              shell: pwsh
+              intent: verify
+              body: "git branch --show-current\ncargo test\n"
+              expect:
+                exit: exit 0
+                lines: ~
+                prose: "branch `feat/lang`, all tests pass."
+          - at: L39
+            by: fallback
+            note:
+              text: "---"
+  - id: Task 1
+    title: Lang and greeting_in
+    at: L41
+    files:
+      - Create src/lang.rs
+      - "Modify src/lib.rs:3-3"
+    steps:
+      - step: 1 — Create the module
+        at: L47
+        actions:
+          - at: L49
+            by: "file-block#create"
+            write-file:
+              path: src/lang.rs
+              mode: Create
+              body: "//! Languages of a greeting.\n\n/// A greeting language.\n#[derive(Debug, Clone, Copy, PartialEq, Eq)]\npub enum Lang {\n    /// English.\n    En,\n    /// Dutch.\n    Nl,\n}\n\n/// The greeting for `name` in `lang`.\npub fn greeting_in(lang: Lang, name: &str) -> String {\n    match lang {\n        Lang::En => format!(\"Hello, {name}!\"),\n        Lang::Nl => format!(\"Hallo, {name}!\"),\n    }\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn dutch_says_hallo() {\n        assert_eq!(greeting_in(Lang::Nl, \"Rens\"), \"Hallo, Rens!\");\n    }\n}\n"
+      - step: 2 — Run the tests to verify they fail
+        at: L82
+        actions:
+          - at: L84
+            by: "script#before-after"
+            run:
+              shell: pwsh
+              intent: verify
+              body: "cargo test lang\n"
+              expect:
+                exit: fails
+                lines: ~
+                prose: "build error, `lang` is not a module of the crate yet."
+      - step: 3 — Declare the module
+        at: L90
+        actions:
+          - at: L92
+            by: "before-after#path"
+            replace-exact:
+              path: src/lib.rs
+              before: "pub mod greet;\n"
+              after: "pub mod greet;\npub mod lang;\n"
+      - step: 4 — Run the tests to verify they pass
+        at: L105
+        actions:
+          - at: L107
+            by: "script#before-after"
+            run:
+              shell: pwsh
+              intent: verify
+              body: "cargo test lang\n"
+              expect:
+                exit: exit 0
+                lines: ~
+                prose: all pass.
+      - step: 5 — Commit
+        at: L113
+        actions:
+          - at: L115
+            by: "script#before-after"
+            commit:
+              shell: pwsh
+              intent: other
+              body: "git add src/lang.rs src/lib.rs\ngit commit -m \"feat(lang): Lang and greeting_in\"\n"
+              expect: ~
+          - at: L120
+            by: fallback
+            note:
+              text: "---"
+  - id: Task 2
+    title: greeting delegates
+    at: L122
+    files:
+      - Rewrite src/greet.rs
+    steps:
+      - step: 1 — Replace the module
+        at: L127
+        actions:
+          - at: L129
+            by: "file-block#replace-whole"
+            write-file:
+              path: src/greet.rs
+              mode: Overwrite
+              body: "//! Greetings: English by default.\n\nuse crate::lang::{Lang, greeting_in};\n\n/// The English greeting for `name`.\npub fn greeting(name: &str) -> String {\n    greeting_in(Lang::En, name)\n}\n"
+      - step: 2 — Add the regression test to the module
+        at: L142
+        actions:
+          - at: L144
+            by: "manual-prose#edit"
+            manual:
+              reason: ProseEdit
+              text: "`src/greet.rs`, add these members at the end of the file:\n\n```rust\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn english_is_the_default() {\n        assert_eq!(super::greeting(\"Rens\"), \"Hello, Rens!\");\n    }\n}\n```"
+      - step: 3 — Verify nothing still formats a greeting by hand
+        at: L156
+        actions:
+          - at: L158
+            by: "script#before-after"
+            run:
+              shell: pwsh
+              intent: verify
+              body: "rg -n 'format!\\(\"Hello' src --glob '!src/lang.rs'\n"
+              expect:
+                exit: exit 1
+                lines: ~
+                prose: no matches.
+      - step: "4 — Count the call sites, then rename them"
+        at: L164
+        actions:
+          - at: L166
+            by: fallback
+            note:
+              text: "Preview:"
+          - at: L168
+            by: "script#before-after"
+            run:
+              shell: pwsh
+              intent: preview
+              body: "replace 'greeting(' 'greeting_en(' -Path src -Extension .rs -DryRun\n"
+              expect:
+                exit: not checked
+                lines: ~
+                prose: "2 matches in 2 files. Then:"
+          - at: L174
+            by: "script#before-after"
+            run:
+              shell: pwsh
+              intent: apply
+              body: "replace 'greeting(' 'greeting_en(' -Path src -Extension .rs -All\n"
+              expect: ~
+      - step: 5 — Re-pin the README hash
+        at: L178
+        actions:
+          - at: L180
+            by: "script#before-after"
+            run:
+              shell: pwsh
+              intent: verify
+              body: "cargo test readme_hash\n"
+              expect: ~
+          - at: L184
+            by: "manual-prose#output-dependent"
+            manual:
+              reason: OutputDependent
+              text: "The failure prints `Expected: <old>` and `Actual: <new>`. Replace the hash in `tests/readme.rs` with the `Actual` value."
+      - step: 6 — Commit
+        at: L186
+        actions:
+          - at: L188
+            by: "script#before-after"
+            commit:
+              shell: pwsh
+              intent: other
+              body: "git add src tests\ngit commit -m \"feat(lang): greeting delegates to greeting_in\"\n"
+              expect: ~
+          - at: L193
+            by: fallback
+            note:
+              text: "---"
+  - id: Task 3
+    title: Release check on TST
+    at: L195
+    files: []
+    steps:
+      - step: 1 — Record the release
+        at: L197
+        actions:
+          - at: L199
+            by: fallback
+            note:
+              text: "Run on the TST database:"
+          - at: L201
+            by: fallback
+            manual:
+              reason: "ForeignLanguage(\"sql\")"
+              text: "```sql\nINSERT INTO dbo.Releases (Name, ReleasedAt) VALUES (N'greeter 0.2.0', SYSUTCDATETIME());\n```\n\nExpected: 1 row affected."
+      - step: 2 — Hand off
+        at: L207
+        actions:
+          - at: L209
+            by: fallback
+            manual:
+              reason: HumanCheck
+              text: Report the TST result in the PR description.
+after_tasks: ~

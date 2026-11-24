@@ -12,6 +12,7 @@ real blob ids and the P1-T1 → P1-T2 blob chain (`aa80cf1 → 97bd92a → 6b269
 | `devready-style.md` | `devready` | `Task 0`, prose Files line, `` `path`: `` + block creates, `**Verify:**` with `# expected` comments, `**Commit:** \`msg\``, `**2a.**` labels, `edit 1 (old → new)`, four-backtick fences, `git rm`, bash + powershell in one task, conventions with a manual marker |
 | `before-after-style.md` | `before-after` | `## Task n:`, file map table, `Rewrite:`, `` `path`: `` create, `— replace the whole file:`, `before:`/`After:`, expected failure (prose), prose insertion (Manual), `no matches`, preview/apply pair, output-dependent edit, `sql` block |
 
-Golden snapshots of the parsed IR live next to the tests that produce them (`insta`, Phase 1 for
-`assay-style.md`, Phase 2 for the rest). A snapshot change is a review item, never a re-pin by
+Golden snapshots of the parsed IR live next to the tests that produce them (`insta`, in
+`crates/planrun-cli/src/snapshots/`): P1 for `assay-style.md`, P2a for `superpowers-style.md`
+and `before-after-style.md`, P2b for `devready-style.md`. A snapshot change is a review item, never a re-pin by
 reflex.

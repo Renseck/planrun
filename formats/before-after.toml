@@ -1,0 +1,149 @@
+# The before-after format: "`p`, before: / After:" plans (docs/plan-grammar.md §5). Hand-written,
+# mostly automatable: full-file writes, exact before/after edits, preview/apply pairs and the
+# scripts behind run leads run; partial edits described in prose, output-dependent edits and
+# foreign-language blocks are Manual. Every regex is matched against raw block text.
+
+id = "before-after"
+name = "Before/After plan"
+
+[detect]
+patterns = [
+  { regex = '^## Task \d+: ', weight = 40 },
+  { regex = '^- \[ \] \*\*Step \d+: ', weight = 40 },
+  { regex = '^`[^`]+`, before:$', weight = 20 },
+]
+
+[outline]
+# Tasks and the heading that ends them are both level 2 (D37).
+task = { level = 2, regex = '^(?P<id>Task (?P<ord>\d+)): (?P<title>.+)$' }
+tasks_end_level = 2
+
+[outline.manifest]
+marker = '^\*\*Files:\*\*$'
+# - Modify: `a/b.cs:3-10`   - Rewrite: `a/x.razor`, `a/x.razor.cs`   - Modify: `a/p.cs:84-85` and `:241-243`
+# - Modify: `a/r.resx`, `r.en.resx` (lines 227-230)   - Modify: `a/0001`–`0007_*.sql` (a range: kept as written)
+item = '^(?P<change>Create|Modify|Rewrite|Test): `(?P<paths>[^`]+(?:`(?:, | and |–)`[^`]+)*)`(?: \(.+\))?$'
+changes = { Create = "create", Modify = "modify", Rewrite = "rewrite", Test = "test" }
+path_list = '`(?:, | and |–)`'
+required = false
+siblings = true
+
+[[outline.steps]]
+block = "list-item"
+regex = '^\*\*Step (?P<n>\d+): (?P<title>.+)\*\*$'
+
+# A step title that says the step fails, or that the step happens elsewhere, marks the step (D30).
+[[step_marks]]
+title = '(?i)\bverify (?:it|they) fails?\b'
+mark = "expected-failure"
+
+[[step_marks]]
+title = '(?i)(?:\bon (?:\S+ )?TST$|^Hand off\b|\bby eye\b)'
+mark = "human-check"
+
+[settings]
+manual_markers = ['(?i)\bby hand\b', '(?i)\bRens runs\b', '(?i)\bmanual step\b']
+
+# Scripts (`replace`) and prose edits change declared files, and items name ranges (D31).
+[checks]
+manifest-untouched = "off"
+manifest-undeclared = "warning"
+
+# --- Recognizers, tried in this order at each position of a step -------------------------------
+
+[[recognizer]]
+kind = "file-block"
+id = "file-block#create"
+# `p`:   Create `p` (only `*.sql` is embedded, …):
+lead = '^(?:Create )?`(?P<path>[^`]+)`(?: \([^)]*\))?:$'
+ops = {}
+default_op = "create"
+
+[[recognizer]]
+kind = "file-block"
+id = "file-block#replace-whole"
+# `p` — replace the whole file:
+lead = '^`(?P<path>[^`]+)` — replace the whole file:$'
+ops = {}
+default_op = "overwrite"
+
+[[recognizer]]
+kind = "file-block"
+id = "file-block#replace"
+# Replace `p`:
+lead = '^Replace `(?P<path>[^`]+)`:$'
+ops = {}
+default_op = "overwrite"
+
+[[recognizer]]
+kind = "before-after"
+id = "before-after#path"
+# `p`, before: + fence + After: + fence
+lead = '^`(?P<path>[^`]+)`, before:$'
+separator = '^After:$'
+
+[[recognizer]]
+kind = "before-after"
+id = "before-after#no-path"
+# Before: / In `Member`, before: — the task's one editable entry, else Manual (D32).
+lead = '^(?:In `[^`]+`, before|Before):$'
+separator = '^After:$'
+infer_path = true
+
+[[recognizer]]
+kind = "manual-prose"
+id = "manual-prose#output-dependent"
+# … Replace the hashes … with the `Actual` values.
+lead = '\bwith the `Actual` values?\b'
+reason = "output-dependent"
+
+[[recognizer]]
+kind = "manual-prose"
+id = "manual-prose#edit"
+# `p`, replace the class (keep …):   `p`, add these members to the class:   Add to the usings …:
+lead = '^(?:`[^`]+`, (?:replace|add|insert|remove|change)\b.*|(?:Add|Append|Insert|Remove)\b.*):$'
+reason = "prose-edit"
+takes_fence = true
+
+[[recognizer]]
+kind = "manual-prose"
+id = "manual-prose#edit-then-verify"
+# In the `X` row of the table near line 452, add … . Verify:   (the script after it runs)
+lead = '^In\b.*\b(?:add|change|replace|remove)\b.*\. Verify:$'
+reason = "prose-edit"
+
+[[recognizer]]
+kind = "manual-prose"
+id = "manual-prose#check"
+# Verify: rerunning the preview shows 0 everywhere.
+lead = '^Verify: \S'
+reason = "human-check"
+
+[[recognizer]]
+kind = "script"
+id = "script#before-after"
+# Run only as the first block of a written step or behind a run lead (D28).
+leads = [
+  '^(?:Run|Preview|Apply|Verify)\b[^\n]*:$',
+  '(?:^|\. )(?:Then|Verify):$',
+  '^Expected: .*\bAlso confirm\b.*:$',
+]
+first_block = true
+intents = [
+  { intent = "commit", body = '(?m)\bgit commit\b' },
+  { intent = "preview", lead = '^Preview\b' },
+  { intent = "apply", lead = '^Apply:$' },
+  { intent = "preview", body = '\s-DryRun\b' },
+  { intent = "apply", body = '\s-All\b' },
+]
+
+[[recognizer]]
+kind = "expected-prose"
+id = "expected-prose#before-after"
+lead = '^Expected: (?P<text>.+)$'
+# First match wins: "no matches" is rg's exit 1.
+exit = [
+  { text = '(?i)\b(fails?|build errors?|does not exist)\b', exit = "failure" },
+  { text = '(?i)\bno matches\b', exit = "code:1" },
+  { text = '(?i)\b(pass(es)?|succeeds?)\b', exit = "success" },
+]

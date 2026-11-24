@@ -487,6 +487,13 @@ mod tests {
     }
 
     #[test]
+    fn the_ir_of_the_synthetic_before_after_plan() {
+        let plan = synthetic_plan("before-after-style.md");
+        assert_eq!(&*plan.format.0, "before-after");
+        insta::assert_yaml_snapshot!("before_after_style_ir", Viewer::new(&plan).plan());
+    }
+
+    #[test]
     fn show_prints_one_line_per_action() {
         let plan = synthetic();
         let mut out = String::new();

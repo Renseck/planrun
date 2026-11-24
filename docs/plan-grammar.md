@@ -120,22 +120,32 @@ Hand-written; partly automatable. Example: `devready-style.md`.
 
 ## 5. `before-after` — "before:/After:" plans
 
-Hand-written; mostly automatable. Example: `before-after-style.md`.
+Hand-written; mostly automatable. Spec: `formats/before-after.toml`. Example:
+`before-after-style.md`.
 
 | Element | Form |
 |---|---|
-| Task | `## Task 1: title` (**level 2**) |
+| Task | `## Task 1: title` (**level 2**); a level-2 heading that is no task ends the tasks (D37) |
 | File map | a table before the tasks: shown, never parsed into actions |
-| Manifest | `**Files:**` + `Create:`, `Modify:` (with `:lines`), `Rewrite:`, `Test:`; several paths per item allowed |
+| Manifest | `**Files:**` + `Create:`, `Modify:` (with `:lines`), `Rewrite:`, `Test:`; several paths per item, separated by `, `, ` and ` or `–`; a bare file name after a path is in that path's directory and a `:lines` token adds lines to the path before it (D32); a trailing `(note)`. Optional: a task may have none |
 | Step | list item `- [ ] **Step 1: title**` |
-| Create | `` `p`: `` + fence |
-| Overwrite | `` `p` — replace the whole file: `` / ``Replace `p`:`` + fence |
+| Create | `` `p`: `` / ``Create `p` (…):`` + fence → `WriteFile(Create)` |
+| Overwrite | `` `p` — replace the whole file: `` / ``Replace `p`:`` + fence → `WriteFile(Overwrite)` |
 | Edit | `` `p`, before: `` + fence + `After:` + fence → `ReplaceExact` (`before` must occur exactly once) |
-| Partial edits | "replace the class (keep …)", "add these members to the class:" → `Manual(ProseEdit)` |
-| Expected | prose `Expected: …`, including `build error` (expected failure) and `no matches` (`rg` exits 1) |
-| Preview/apply | a `-DryRun` script followed by its apply: intent Preview then Apply; planrun always stops between them and shows the count next to the plan's expected count |
+| Edit without a path | `Before:` / ``In `Member`, before:`` + fence + `After:` + fence → `ReplaceExact` on the task's one editable entry, else `Manual(ProseEdit)` (D32) |
+| Partial edits | ``"`p`, replace the class (keep …):"``, ``"`p`, add these members to the class:"``, `Add … :` → `Manual(ProseEdit)` |
+| Scripts | `powershell` fences that are the first block of a step or follow a run lead (`Run:`, `Preview…:`, `Apply:`, `Verify…:`, `… Then:`); any other shell fence is `Manual(Unrecognized)` (D28) |
+| Expected | prose `Expected: …`, including `build error` (expected failure) and `no matches` (`rg` exits 1); after a Manual (an `sql` block) it joins the Manual (D38) |
+| Preview/apply | a `Preview…:` / `Apply:` lead, or a `-DryRun` / `-All` body: intent Preview then Apply (D29); planrun always stops between them and shows the count next to the plan's expected count |
 | Output-dependent | "Replace … with the `Actual` values" → `Manual(OutputDependent)` |
 | Other languages | `sql` fences → `Manual(ForeignLanguage("sql"))` |
+| Prose checks | `Verify: <sentence>` → `Manual(HumanCheck)` |
+
+Step marks (D30): "…verify they fail" marks expected failures; a title ending in "on … TST" or
+starting with "Hand off" turns the step's prose into `Manual(HumanCheck)`.
+
+Checks (D31): `manifest-untouched` is off (scripts and prose edits change declared files),
+`manifest-undeclared` is a warning (items name ranges such as `0001`–`0007_*.sql`).
 
 ## 6. Recognizing a new format
 

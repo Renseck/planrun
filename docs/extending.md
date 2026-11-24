@@ -59,7 +59,7 @@ bash = ["bash", "sh", "shell"]
 title = '(?i)\bverify (?:it|they) fails?\b'              # regex over the step's title
 mark = "expected-failure"                                # expected-failure | human-check
 # expected-failure: the step's Verify scripts expect failure (none or `any` becomes Failure; an
-# expected success is the error expected-conflict). human-check: its Notes become
+# expected success is the error expected-conflict). human-check: its prose Notes become
 # Manual(HumanCheck).
 
 [checks]                                                 # optional (D31): only these two codes,

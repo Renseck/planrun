@@ -7,7 +7,7 @@ use planrun_model::{Action, Manifest, TaskId};
 
 use crate::diagnostic::Diagnostic;
 use crate::document::{BlockRange, Document, Located};
-use crate::format::FormatSettings;
+use crate::format::{FormatSettings, StepMark};
 
 /// What a recognizer may read besides the blocks.
 pub struct StepContext<'a> {
@@ -25,6 +25,8 @@ pub struct StepContext<'a> {
     /// True in a step that starts at a written boundary; false in the implicit first step (the
     /// blocks before the first boundary, where the manifest is).
     pub written_step: bool,
+    /// The mark of the step's title (decision D30).
+    pub mark: Option<StepMark>,
 }
 
 /// A position in a step's blocks. A recognizer that matches advances it past what it consumed.

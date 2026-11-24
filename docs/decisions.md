@@ -200,7 +200,8 @@ A recognizer cannot see a step's title, so the title is matched by the outline:
 - `expected-failure`: every `Verify` script of the step (never a commit or a gate) expects
   failure. A script with no expectation or with `any` becomes `Failure`; one that expects success
   is an error, `expected-conflict`.
-- `human-check`: every `Note` of the step becomes `Manual(HumanCheck)`.
+- `human-check`: every prose `Note` of the step (a paragraph, list item or quote the fallback
+  takes) becomes `Manual(HumanCheck)`; rules and tables stay Notes.
 
 ## D31 A spec may downgrade only the manifest coverage checks
 

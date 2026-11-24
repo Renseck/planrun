@@ -110,6 +110,7 @@ fn step(
             settings: format.settings(),
             previous: &actions,
             written_step: outline.written,
+            mark: outline.mark,
         };
         let (origin, outcome) = first_match(format, &cx, &mut cursor);
         let consumed = cursor.consumed() - before;
@@ -155,40 +156,14 @@ fn step(
             }
         }
     }
-    apply_mark(outline.mark, &mut actions, cov, errors);
+    if outline.mark == Some(StepMark::ExpectedFailure) {
+        errors.extend(actions.iter_mut().filter_map(expect_failure));
+    }
     Step {
         number: outline.number,
         title: outline.title.clone(),
         span: outline.span,
         actions,
-    }
-}
-
-/// Applies the mark of a step's title to its actions (decision D30).
-fn apply_mark(
-    mark: Option<StepMark>,
-    actions: &mut [Action],
-    cov: &mut TaskCoverage,
-    errors: &mut Vec<Diagnostic>,
-) {
-    match mark {
-        None => {}
-        Some(StepMark::ExpectedFailure) => {
-            errors.extend(actions.iter_mut().filter_map(expect_failure));
-        }
-        Some(StepMark::HumanCheck) => {
-            for action in actions.iter_mut() {
-                let ActionKind::Note { text } = &action.kind else {
-                    continue;
-                };
-                action.kind = ActionKind::Manual {
-                    reason: ManualReason::HumanCheck,
-                    text: text.clone(),
-                };
-                cov.notes = cov.notes.saturating_sub(1);
-                cov.manual += 1;
-            }
-        }
     }
 }
 
@@ -239,7 +214,8 @@ fn first_match<'f>(
     (FALLBACK, Recognized::No)
 }
 
-/// The built-in fallback: consumes one block. Prose becomes `Note` (or `Manual(Marked)`), a
+/// The built-in fallback: consumes one block. Prose becomes `Note`, or `Manual(Marked)` when it
+/// matches a manual marker, or `Manual(HumanCheck)` in a `human-check` step (decision D30); a
 /// fence `Manual`, a `text` fence `Note`; an HTML comment is dropped.
 fn fallback(
     cx: &StepContext<'_>,
@@ -250,13 +226,14 @@ fn fallback(
     cursor.advance(1);
     let whole = TextRef::Span(located.span);
     let prose = |text: &TextRef| {
-        if cx.settings.is_marked(cx.doc.text(text)) {
-            ActionKind::Manual {
-                reason: ManualReason::Marked,
-                text: text.clone(),
-            }
-        } else {
-            ActionKind::Note { text: text.clone() }
+        let reason = match cx.mark {
+            _ if cx.settings.is_marked(cx.doc.text(text)) => ManualReason::Marked,
+            Some(StepMark::HumanCheck) => ManualReason::HumanCheck,
+            _ => return ActionKind::Note { text: text.clone() },
+        };
+        ActionKind::Manual {
+            reason,
+            text: text.clone(),
         }
     };
     let kind = match &located.block {

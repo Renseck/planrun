@@ -78,6 +78,10 @@ impl Registry {
             "superpowers",
             include_str!("../../../formats/superpowers.toml"),
         )?;
+        registry.add_spec(
+            "before-after",
+            include_str!("../../../formats/before-after.toml"),
+        )?;
         Ok(registry)
     }
 
