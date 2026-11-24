@@ -7,7 +7,7 @@ reasons (cited as `D<n>`).
 
 ## Priorities (D1)
 
-Correctness > execution speed > low memory > predictability > maintainability/extensibility.
+Correctness > maintainability/extensibility > execution speed > low memory > predictability.
 When two of these conflict, the earlier one wins. Speed means no wasted process starts or repeated
 reads; don't optimize I/O speculatively (cargo/npm dominate wall time).
 
