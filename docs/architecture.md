@@ -140,14 +140,17 @@ guess.
 
 The format finds: plan metadata, tasks (heading pattern, `ord` capture for ordering), each task's
 manifest (marker + item pattern), and step boundaries. The manifest's blocks are consumed by the
-outline: they fall in no step, and coverage counts them as "manifest". A format with a manifest
-pattern requires one per task (`manifest-missing`); an item that does not match is
-`manifest-item`. Blocks between a task heading and its first step form an unnumbered **intro
+outline: they fall in no step, and coverage counts them as "manifest"; its items end at the first
+step boundary (D37). A format with a manifest pattern requires one per task (`manifest-missing`)
+unless it sets `required = false` (D27); an item that does not match is `manifest-item`. Paths in
+items may be completed from the item itself (`:lines` tokens, and sibling file names where the
+format opts in, D32). Blocks between a task heading and its first step form an unnumbered **intro
 step** (it can hold a `Generated` notice or `Manual` text). A heading at the task level inside the
-tasks that is not a task is `bad-task-heading`. A task
-with no step boundaries is one implicit step. Text after the tasks (a heading at or above
-`tasks_end_level`) is not executed: `show` lists it; `check` reports `Manual` markers in it as
-notes.
+tasks that is not a task is `bad-task-heading`. A task with no step boundaries is one implicit
+step. A step title can carry a **mark** (`[[step_marks]]`, D30): expected failure or human check.
+Text after the tasks (a heading that is no task, at or above `tasks_end_level`) is not executed:
+`show` lists it; `check` reports `Manual` markers in it as notes. A task heading after that point
+is `task-after-end` (D37).
 
 ### 4.4 Recognition
 
@@ -160,13 +163,17 @@ tried **in order**; the first that answers anything but `No` wins:
   whose paths disagree with its lead). This is a **parse error, never a fallback** to Manual.
 
 If no recognizer matches, the built-in fallback consumes one block: a paragraph or list item
-becomes `Note` (or `Manual(Marked)` on a manual marker); a fence becomes `Manual(Unrecognized)`, or
+becomes `Note` (or `Manual(Marked)` on a manual marker, `Manual(HumanCheck)` in a human-check
+step); a fence becomes `Manual(Unrecognized)`, or
 `Manual(ForeignLanguage)` for `sql` and other non-shell languages, and a `text` fence becomes
 `Note`; tables, blockquotes (or `Manual(Marked)` on a marker), headings and rules become `Note`;
 HTML comments are dropped (they are corpus metadata).
 
 Recognizers are pure (no I/O, no state between calls) and see a `StepContext`: the document, the
-task id, the manifest, the format settings, and the step's previous actions.
+task id, the manifest, the format settings, the step's previous actions, whether the step starts
+at a written boundary, and its mark. The cursor also shows the block before the current one, so
+`script` can require a run lead (D28). After recognition, an expected-failure step's verify
+scripts expect failure (`expected-conflict` when one says success).
 
 ### 4.5 Checks
 
@@ -177,7 +184,9 @@ checks only. A check that needs the repository (the first preimage against the f
 preflight in planrun-exec.
 
 Rules run only when the outline and recognition had no errors, so a broken block is reported
-once, not again as a missing manifest touch.
+once, not again as a missing manifest touch. A format's `[checks]` table may make
+`manifest-untouched` and `manifest-undeclared` warnings or switch them off, and nothing else
+(D31).
 
 The **coverage report** is part of `check`, not a rule: per task, how many blocks became actions,
 were absorbed (the patch ceremony, listed with their positions), were the manifest, or became

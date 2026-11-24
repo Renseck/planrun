@@ -2,8 +2,8 @@
 //! and fresh clones stay green: `cargo test -- --ignored local_corpus`.
 //!
 //! Every plan must parse with zero errors, except plans no built-in format detects yet (the
-//! three formats of P2), which are listed as skipped. A coverage line per task is printed; run
-//! with `--nocapture` to see it.
+//! devready plans until P2b), which are listed as skipped. A coverage line per task and the
+//! warnings are printed; run with `--nocapture` to see them.
 
 use std::path::Path;
 
@@ -37,8 +37,9 @@ fn local_corpus() {
             }
         };
         parsed += 1;
+        let warnings: Vec<&str> = result.diagnostics.0.iter().map(|d| d.code).collect();
         println!(
-            "{name}: {} ({} tasks)",
+            "{name}: {} ({} tasks), diagnostics {warnings:?}",
             result.plan.format.0,
             result.plan.tasks.len()
         );

@@ -14,11 +14,15 @@ reads; don't optimize I/O speculatively (cargo/npm dominate wall time).
 ## Layout
 
 ```
-crates/planrun-model   the IR: Plan, Task, Step, Action, Span/TextRef, RepoPath, AbbrevBlobId
-crates/planrun-parse   Markdown → IR: source, document, format, recognizer, registry, spec, check
+crates/planrun-model   the IR: Plan, Task, Step, Action, Span/TextRef, RepoPath, PathOrigin,
+                       AbbrevBlobId
+crates/planrun-parse   Markdown → IR: source, document, format, spec, registry, outline,
+                       recognizer, recognize, kinds/ (one file per recognizer kind), patch, check,
+                       diagnostic
 crates/planrun-exec    IR → effects: workspace, git, shells, expect, policy, journal, runner
-crates/planrun-cli     the `planrun` binary
-formats/*.toml         built-in plan formats (embedded); the file name is the format id
+crates/planrun-cli     the `planrun` binary: check, show (view, render)
+formats/*.toml         built-in plan formats (embedded): assay, superpowers, before-after; the
+                       file name is the format id
 docs/                  architecture, plan-grammar, extending, decisions, roadmap, plans/,
                        handovers/ (one per finished phase)
 tests/corpus/          synthetic/ (one plan per format), invalid/ (one error each), local/ (private)
