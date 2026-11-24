@@ -224,3 +224,51 @@ fn line_ranges_are_split_from_paths() {
     assert_eq!(split_lines("src/a.rs"), ("src/a.rs", None));
     assert_eq!(split_lines("a:b"), ("a:b", None));
 }
+
+#[test]
+fn a_task_heading_after_the_end_of_the_tasks_is_an_error() {
+    let text = "## Tasks\n\n### P1-T1: a\n\n**Files**\n\n- Create `a`\n\n## Green\n\nx\n\n\
+                ### P1-T2: b\n\ny\n";
+    assert_eq!(codes(outline_of(text).1), ["task-after-end"]);
+}
+
+/// Tasks and the end heading both at level 2, list-item steps (the before-after shape).
+const LIST_SPEC: &str = r#"
+id = "l"
+name = "list steps"
+[detect]
+patterns = [{ regex = '^## Task', weight = 60 }]
+[outline]
+task = { level = 2, regex = '^(?P<id>Task (?P<ord>\d+)): (?P<title>.+)$' }
+tasks_end_level = 2
+[outline.manifest]
+marker = '^\*\*Files:\*\*$'
+item = '^(?P<change>Create|Test): `(?P<paths>[^`]+)`$'
+changes = { Create = "create", Test = "test" }
+[[outline.steps]]
+block = "list-item"
+regex = '^\*\*Step (?P<n>\d+): (?P<title>.+)\*\*$'
+"#;
+
+fn list_outline(text: &str) -> Outline {
+    let spec: FormatSpec = toml::from_str(LIST_SPEC).unwrap_or_else(|e| panic!("{e}"));
+    let format = SpecFormat::compile(spec, |_| None).unwrap_or_else(|e| panic!("{e}"));
+    format
+        .outline(&doc(text))
+        .unwrap_or_else(|e| panic!("{e:?}"))
+}
+
+#[test]
+fn the_manifest_ends_at_a_list_item_step() {
+    let outline = list_outline(
+        "## Task 1: a\n\n**Files:**\n- Create: `a`\n- Test: `a`\n\n- [ ] **Step 1: write**\n\nx\n\n\
+         - [ ] **Step 2: check**\n\ny\n\n## Task 2: b\n\n**Files:**\n- Create: `b`\n\nz\n\n## Self-Review\n\nw\n",
+    );
+    let first = &outline.tasks[0];
+    assert_eq!(first.manifest.entries.len(), 2);
+    assert_eq!(first.manifest_blocks.map(|m| m.len()), Some(3));
+    let numbers: Vec<Option<u32>> = first.steps.iter().map(|s| s.number).collect();
+    assert_eq!(numbers, [Some(1), Some(2)]);
+    assert_eq!(outline.tasks.len(), 2);
+    assert_eq!(outline.after_tasks.map(|r| r.len()), Some(2));
+}

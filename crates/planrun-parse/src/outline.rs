@@ -158,7 +158,9 @@ fn tasks_start(rules: &OutlineRules, doc: &Document) -> Result<usize, Diagnostic
         })
 }
 
-/// The task headings from `start`, and the index where the tasks end.
+/// The task headings from `start`, and the index where the tasks end. A heading that matches the
+/// task rule is a task; only a heading that is no task, at or above `tasks_end_level`, ends the
+/// tasks (decision D37).
 fn task_heads(
     rules: &OutlineRules,
     doc: &Document,
@@ -176,6 +178,7 @@ fn task_heads(
         }
         let in_tasks = !heads.is_empty() || rules.tasks_after.is_some();
         if !heads.is_empty() && rules.tasks_end_level.is_some_and(|l| *level <= l) {
+            late_tasks(rules, doc, i, errors);
             return (heads, i);
         }
         if in_tasks && *level == rules.task.level {
@@ -190,6 +193,25 @@ fn task_heads(
         }
     }
     (heads, doc.blocks.len())
+}
+
+/// Task headings after the heading at `end`, which ended the tasks: they would be text that never
+/// runs, so each is an error (`task-after-end`).
+fn late_tasks(rules: &OutlineRules, doc: &Document, end: usize, errors: &mut Vec<Diagnostic>) {
+    let ended = doc.blocks[end].span;
+    let late = doc.blocks[end + 1..]
+        .iter()
+        .filter(|b| heading_matches(doc, &b.block, &rules.task));
+    for located in late {
+        errors.push(
+            Diagnostic::error(
+                "task-after-end",
+                Some(located.span),
+                "a task heading after the tasks ended: planrun would never run it",
+            )
+            .with_related(ended, "the tasks end here"),
+        );
+    }
 }
 
 fn heading_matches(doc: &Document, block: &Block, rule: &HeadingRule) -> bool {
@@ -275,7 +297,8 @@ fn capture_ref(caps: Option<&Captures<'_>>, name: &str, base: u32) -> Option<Tex
 }
 
 /// The manifest: the first block before any step boundary that matches the marker, and the list
-/// items right after it.
+/// items right after it, up to the first step boundary (a list-item step right after the items
+/// is in the same CommonMark list, decision D37).
 fn manifest(
     rules: &OutlineRules,
     doc: &Document,
@@ -301,7 +324,9 @@ fn manifest(
     let items_end = (marker + 1..body.end)
         .find(|&i| {
             let b = &doc.blocks[i];
-            !matches!(b.block, Block::ListItem { .. }) || b.depth != depth
+            !matches!(b.block, Block::ListItem { .. })
+                || b.depth != depth
+                || boundary(rules, doc, i).is_some()
         })
         .unwrap_or(body.end);
     if items_end == marker + 1 {

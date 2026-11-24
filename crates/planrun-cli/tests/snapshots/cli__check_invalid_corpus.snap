@@ -247,6 +247,18 @@ error[step-order]: step 3 where step 2 comes next in task `P1-T1`
 
 planrun: tests/corpus/invalid/step-order.md: 1 error
 
+==== task-after-end.md
+error[task-after-end]: a task heading after the tasks ended: planrun would never run it
+  --> tests/corpus/invalid/task-after-end.md:26:1
+   |
+24 | ## Green state
+   | -------------- the tasks end here
+25 |
+26 | ### P1-T2: b
+   | ^^^^^^^^^^^^
+
+planrun: tests/corpus/invalid/task-after-end.md: 1 error
+
 ==== task-order.md
 error[task-order]: task `P1-T2` comes after task `P1-T3`
   --> tests/corpus/invalid/task-order.md:46:1

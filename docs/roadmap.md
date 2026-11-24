@@ -56,11 +56,20 @@ Acceptance:
 
 ## P2 — The other three formats
 
-`formats/superpowers.toml`, `devready.toml`, `before-after.toml`, and the remaining recognizer
-kinds (`before-after`, `run-line`, `expected-failure-step`, `preview-apply`, `manual-prose`). IR
-snapshots of the three synthetic plans. All six local plans parse with zero errors, and the
-coverage report shows where each stops being automatic. Decide the `**Commit:** \`msg\`` form for
-DevReady plans (plan-grammar.md §4).
+The decisions are D26–D40. Split in two plans on one schema (D40):
+
+- **P2a.** The P1 outline fixes and `task-after-end` (D37); the spec schema (`required`, a marker
+  that captures `change`, `siblings`, `ChangeKind::Generated`, `[checks]`, `[[step_marks]]`,
+  `script` `leads`/`first_block`/intent `lead`); the kinds `run-line`, `before-after`,
+  `manual-prose`; path resolution from the manifest (D32); `formats/superpowers.toml` and
+  `before-after.toml` with IR snapshots of their synthetic plans. The superpowers and
+  before-after local plans parse with zero errors.
+- **P2b.** `formats/devready.toml`: steps whose boundary block stays in the step
+  (`keep = true`), inline Files clauses, `line_expect` (D35), the `**Commit:**` Manual (D33),
+  the IR snapshot of its synthetic plan. All six local plans parse with zero errors.
+
+Each plan lists the imperative Notes that remain in the real plans (D36). `expected-failure-step`
+became step marks (D30); `preview-apply` became script intents by lead (D29).
 
 ## P3 — Workspace, git and dry-run
 
