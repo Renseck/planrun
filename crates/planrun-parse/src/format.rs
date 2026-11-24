@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use planrun_model::{FormatId, Manifest, PlanMeta, Shell, Span, TaskId, TextRef};
 
-use crate::diagnostic::Diagnostics;
+use crate::diagnostic::{Diagnostic, Diagnostics, Severity};
 use crate::document::{BlockRange, Document};
 use crate::recognizer::Recognizer;
 
@@ -80,6 +80,23 @@ pub struct FormatSettings {
     pub pwsh_languages: Vec<String>,
     /// See `pwsh_languages`.
     pub bash_languages: Vec<String>,
+    /// Severity overrides for the codes in [`DOWNGRADABLE`] (decision D31).
+    pub checks: Vec<(&'static str, CheckLevel)>,
+}
+
+/// The only check codes a format may downgrade: manifest coverage, never a safety check
+/// (decision D31).
+pub const DOWNGRADABLE: [&str; 2] = ["manifest-untouched", "manifest-undeclared"];
+
+/// The severity a format gives a downgradable check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckLevel {
+    /// As built in.
+    Error,
+    /// Reported, does not stop the plan.
+    Warning,
+    /// Not reported.
+    Off,
 }
 
 impl FormatSettings {
@@ -92,6 +109,27 @@ impl FormatSettings {
             return Some(Shell::Bash);
         }
         None
+    }
+
+    /// `diagnostics` with this format's check levels applied.
+    pub fn apply_checks(&self, diagnostics: Vec<Diagnostic>) -> Vec<Diagnostic> {
+        let level = |code: &str| {
+            self.checks
+                .iter()
+                .find(|(c, _)| *c == code)
+                .map(|(_, level)| *level)
+        };
+        diagnostics
+            .into_iter()
+            .filter_map(|mut d| match level(d.code) {
+                Some(CheckLevel::Off) => None,
+                Some(CheckLevel::Warning) => {
+                    d.severity = Severity::Warning;
+                    Some(d)
+                }
+                _ => Some(d),
+            })
+            .collect()
     }
 
     /// True when `text` matches one of the manual markers.

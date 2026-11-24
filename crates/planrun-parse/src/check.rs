@@ -28,8 +28,9 @@ pub trait Rule: Send + Sync {
 /// - `step-order`: written step numbers count up from 1 in each task.
 /// - `manifest`: every file action's path is declared (`manifest-undeclared`); every declared
 ///   Create/Modify/Rewrite/Delete is touched by an action or a `Generated`
-///   (`manifest-untouched`); a `WriteFile { FromManifest }` on a declared path resolves to Create
-///   or Overwrite (`manifest-write-mode`). A task without a manifest block is skipped.
+///   (`manifest-untouched`); a `WriteFile` on a declared path has a mode that agrees with the
+///   entry: `FromManifest` resolves, Create is not on an existing file, Overwrite not on a new one
+///   (`manifest-write-mode`, decision D26). A task without a manifest block is skipped.
 /// - `patch-shape`: a patch has at least one hunk and its hunks' line counts match their bodies.
 ///   (Its paths and `index` line are checked when it is recognized: `patch-path`, `patch-shape`.)
 /// - `blob-chain`: per path, each patch's preimage equals the postimage of the last earlier
@@ -182,20 +183,13 @@ fn check_manifest(task: &Task, out: &mut Vec<Diagnostic>) {
             );
             continue;
         };
-        let unresolved = matches!(
-            action.kind,
-            ActionKind::WriteFile {
-                mode: WriteMode::FromManifest,
-                ..
-            }
-        );
-        if unresolved {
+        if let Some(problem) = write_mode_problem(&action.kind, entry.change) {
             out.push(
                 Diagnostic::error(
                     "manifest-write-mode",
                     Some(action.span),
                     format!(
-                        "full contents for `{path}`, declared {:?}: neither create nor overwrite",
+                        "full contents for `{path}`, declared {:?}: {problem}",
                         entry.change
                     ),
                 )
@@ -203,7 +197,7 @@ fn check_manifest(task: &Task, out: &mut Vec<Diagnostic>) {
             );
         }
     }
-    let must_touch = |c: ChangeKind| !matches!(c, ChangeKind::Test);
+    let must_touch = |c: ChangeKind| !matches!(c, ChangeKind::Test | ChangeKind::Generated);
     for entry in &task.manifest.entries {
         if must_touch(entry.change) && !touched.contains(&&entry.path) {
             out.push(Diagnostic::error(
@@ -215,6 +209,24 @@ fn check_manifest(task: &Task, out: &mut Vec<Diagnostic>) {
                 ),
             ));
         }
+    }
+}
+
+/// What is wrong with a full-contents write to a path the manifest declares `change`: a mode the
+/// manifest cannot resolve, or an op that contradicts it (decision D26).
+fn write_mode_problem(kind: &ActionKind, change: ChangeKind) -> Option<&'static str> {
+    let ActionKind::WriteFile { mode, .. } = kind else {
+        return None;
+    };
+    match (mode, change) {
+        (WriteMode::FromManifest, _) => Some("neither create nor overwrite"),
+        (WriteMode::Create, ChangeKind::Modify | ChangeKind::Rewrite | ChangeKind::Delete) => {
+            Some("the plan creates a file the manifest says exists")
+        }
+        (WriteMode::Overwrite, ChangeKind::Create | ChangeKind::Delete) => {
+            Some("the plan overwrites a file the manifest says is new or deleted")
+        }
+        _ => None,
     }
 }
 

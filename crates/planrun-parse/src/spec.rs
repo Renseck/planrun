@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 use crate::diagnostic::Diagnostics;
 use crate::document::Document;
-use crate::format::{Format, FormatSettings, Outline};
+use crate::format::{CheckLevel, DOWNGRADABLE, Format, FormatSettings, Outline};
 use crate::outline::{self, HeadingRule, ManifestRules, OutlineRules, StepBlock, StepRule};
 use crate::recognizer::{Recognizer, RecognizerFactory};
 
@@ -32,6 +32,11 @@ pub struct FormatSpec {
     /// Shells and manual markers.
     #[serde(default)]
     pub settings: SettingsSpec,
+    /// Severity overrides for the manifest coverage checks (decision D31): check code →
+    /// `error`, `warning` or `off`. Only `manifest-untouched` and `manifest-undeclared` may
+    /// appear.
+    #[serde(default)]
+    pub checks: std::collections::BTreeMap<String, String>,
     /// Recognizer instances, in order; each table has `kind` plus the kind's parameters.
     #[serde(default, rename = "recognizer")]
     pub recognizers: Vec<toml::Table>,
@@ -87,14 +92,21 @@ pub struct HeadingPattern {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestSpec {
-    /// Regex over the marker paragraph (`^\*\*Files:?\*\*$`).
+    /// Regex over the marker paragraph (`^\*\*Files:?\*\*$`); may capture `change`, which then
+    /// applies to every item that does not capture its own.
     pub marker: String,
-    /// Regex over each list item; captures `change` and `paths` (split by `path_list` when set).
+    /// Regex over each list item; captures `paths` (split by `path_list` when set), and `change`
+    /// unless the marker captures it.
     pub item: String,
     /// Maps the captured `change` word to Create / Modify / Rewrite / Delete / Test.
     pub changes: std::collections::BTreeMap<String, String>,
     /// When set, the `paths` capture is split on this regex into several paths.
     pub path_list: Option<String>,
+    /// Every task has a manifest; default true. False lets a task have none (decision D27).
+    pub required: Option<bool>,
+    /// A bare file name after a path with a directory is in that directory; default false
+    /// (decision D32).
+    pub siblings: Option<bool>,
 }
 
 /// A block that starts a step.
@@ -155,7 +167,8 @@ impl SpecFormat {
             .map(|p| Ok((compile_regex("detect", &p.regex, &[])?, p.weight)))
             .collect::<Result<_, String>>()?;
         let outline = compile_outline(&spec.outline)?;
-        let settings = compile_settings(&spec.settings)?;
+        let mut settings = compile_settings(&spec.settings)?;
+        settings.checks = compile_checks(&spec.checks)?;
         let recognizers = spec
             .recognizers
             .iter()
@@ -249,15 +262,24 @@ fn compile_manifest(spec: &ManifestSpec) -> Result<ManifestRules, String> {
         .iter()
         .map(|(word, kind)| Ok((word.clone(), change_kind(kind)?)))
         .collect::<Result<_, String>>()?;
+    let marker = compile_regex("outline.manifest.marker", &spec.marker, &[])?;
+    let marker_change = marker.capture_names().flatten().any(|n| n == "change");
+    let item_needs: &[&str] = if marker_change {
+        &["paths"]
+    } else {
+        &["change", "paths"]
+    };
     Ok(ManifestRules {
-        marker: compile_regex("outline.manifest.marker", &spec.marker, &[])?,
-        item: compile_regex("outline.manifest.item", &spec.item, &["change", "paths"])?,
+        marker,
+        item: compile_regex("outline.manifest.item", &spec.item, item_needs)?,
         changes,
         path_list: spec
             .path_list
             .as_deref()
             .map(|p| compile_regex("outline.manifest.path_list", p, &[]))
             .transpose()?,
+        required: spec.required.unwrap_or(true),
+        siblings: spec.siblings.unwrap_or(false),
     })
 }
 
@@ -268,8 +290,9 @@ fn change_kind(name: &str) -> Result<ChangeKind, String> {
         "rewrite" => Ok(ChangeKind::Rewrite),
         "delete" => Ok(ChangeKind::Delete),
         "test" => Ok(ChangeKind::Test),
+        "generated" => Ok(ChangeKind::Generated),
         other => Err(format!(
-            "outline.manifest.changes: `{other}` is not create, modify, rewrite, delete or test"
+            "outline.manifest.changes: `{other}` is not create, modify, rewrite, delete, test or generated"
         )),
     }
 }
@@ -283,6 +306,34 @@ fn step_block(name: &str) -> Result<StepBlock, String> {
             "outline.steps: block `{other}` is not paragraph, list-item or heading"
         )),
     }
+}
+
+/// The `[checks]` table: only the allowlisted codes, each `error`, `warning` or `off`.
+fn compile_checks(
+    table: &std::collections::BTreeMap<String, String>,
+) -> Result<Vec<(&'static str, CheckLevel)>, String> {
+    table
+        .iter()
+        .map(|(code, level)| {
+            let Some(code) = DOWNGRADABLE.iter().find(|c| **c == code.as_str()) else {
+                return Err(format!(
+                    "checks: `{code}` cannot be changed; only {} can",
+                    DOWNGRADABLE.join(" and ")
+                ));
+            };
+            let level = match level.as_str() {
+                "error" => CheckLevel::Error,
+                "warning" => CheckLevel::Warning,
+                "off" => CheckLevel::Off,
+                other => {
+                    return Err(format!(
+                        "checks.{code}: `{other}` is not error, warning or off"
+                    ));
+                }
+            };
+            Ok((*code, level))
+        })
+        .collect()
 }
 
 fn compile_settings(spec: &SettingsSpec) -> Result<FormatSettings, String> {
@@ -301,6 +352,7 @@ fn compile_settings(spec: &SettingsSpec) -> Result<FormatSettings, String> {
             .bash
             .clone()
             .unwrap_or_else(|| strings(&["bash", "sh", "shell"])),
+        checks: Vec::new(),
     })
 }
 

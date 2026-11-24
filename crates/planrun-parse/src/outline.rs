@@ -3,7 +3,8 @@
 //! format may too.
 
 use planrun_model::{
-    ChangeKind, LineRange, Manifest, ManifestEntry, PlanMeta, RepoPath, Span, TaskId, TextRef,
+    ChangeKind, LineRange, Manifest, ManifestEntry, PathOrigin, PlanMeta, RepoPath, Span, TaskId,
+    TextRef,
 };
 use regex::{Captures, Regex};
 
@@ -35,14 +36,18 @@ pub struct HeadingRule {
 
 /// A manifest: a marker paragraph and the list items after it.
 pub struct ManifestRules {
-    /// Over the marker paragraph.
+    /// Over the marker paragraph; may capture `change` for items that are bare paths.
     pub marker: Regex,
-    /// Over each item; captures `change` and `paths`.
+    /// Over each item; captures `paths`, and `change` unless the marker does.
     pub item: Regex,
     /// The captured change word and what it means.
     pub changes: Vec<(String, ChangeKind)>,
     /// Splits `paths` into several, when set.
     pub path_list: Option<Regex>,
+    /// When false, a task may have no manifest (decision D27).
+    pub required: bool,
+    /// A bare file name after a path with a directory is in that directory (decision D32).
+    pub siblings: bool,
 }
 
 /// A block that starts a step.
@@ -313,12 +318,22 @@ fn manifest(
         .take_while(|&i| boundary(rules, doc, i).is_none())
         .find(|&i| matches!(&doc.blocks[i].block, Block::Paragraph { text } if spec.marker.is_match(doc.text(text))));
     let Some(marker) = marker else {
-        errors.push(Diagnostic::error(
-            "manifest-missing",
-            Some(doc.blocks[head].span),
-            format!("the task has no manifest (`{}`)", spec.marker.as_str()),
-        ));
+        if spec.required {
+            errors.push(Diagnostic::error(
+                "manifest-missing",
+                Some(doc.blocks[head].span),
+                format!("the task has no manifest (`{}`)", spec.marker.as_str()),
+            ));
+        }
         return (Manifest::default(), None);
+    };
+    let marker_change = match &doc.blocks[marker].block {
+        Block::Paragraph { text } => spec
+            .marker
+            .captures(doc.text(text))
+            .and_then(|c| c.name("change"))
+            .map(|m| m.as_str()),
+        _ => None,
     };
     let depth = doc.blocks[marker].depth;
     let items_end = (marker + 1..body.end)
@@ -338,7 +353,7 @@ fn manifest(
     }
     let mut entries = Vec::new();
     for i in marker + 1..items_end {
-        manifest_item(spec, doc, i, &mut entries, errors);
+        manifest_item(spec, doc, i, marker_change, &mut entries, errors);
     }
     let range = BlockRange {
         start: marker,
@@ -355,10 +370,12 @@ fn manifest(
     (manifest, Some(range))
 }
 
+/// One manifest item: its change (captured by the item, or else by the marker) and its paths.
 fn manifest_item(
     spec: &ManifestRules,
     doc: &Document,
     index: usize,
+    marker_change: Option<&str>,
     entries: &mut Vec<ManifestEntry>,
     errors: &mut Vec<Diagnostic>,
 ) {
@@ -369,7 +386,7 @@ fn manifest_item(
     let base = text.span().start;
     let item = doc.text(text);
     let parsed = spec.item.captures(item).and_then(|caps| {
-        let change = caps.name("change")?.as_str();
+        let change = caps.name("change").map(|m| m.as_str()).or(marker_change)?;
         let kind = spec.changes.iter().find(|(w, _)| w == change)?.1;
         Some((kind, caps.name("paths")?))
     });
@@ -389,15 +406,27 @@ fn manifest_item(
         None => vec![paths.as_str()],
     };
     let paths_span = Span::new(base + offset(paths.start()), base + offset(paths.end()));
+    let mut previous: Option<(RepoPath, PathOrigin)> = None;
     for piece in pieces.iter().map(|p| p.trim()) {
-        let (path, lines) = split_lines(piece);
-        match RepoPath::new(path) {
-            Ok(path) => entries.push(ManifestEntry {
-                path,
-                change,
-                lines,
-                span: located.span,
-            }),
+        let Some((path, origin, lines)) = token(spec, piece, previous.as_ref()) else {
+            errors.push(Diagnostic::error(
+                "bad-path",
+                Some(paths_span),
+                format!("`{piece}` is not a path"),
+            ));
+            continue;
+        };
+        match path {
+            Ok(path) => {
+                previous = Some((path.clone(), origin));
+                entries.push(ManifestEntry {
+                    path,
+                    change,
+                    lines,
+                    span: located.span,
+                    origin,
+                });
+            }
             Err(e) => errors.push(Diagnostic::error(
                 "bad-path",
                 Some(paths_span),
@@ -407,16 +436,51 @@ fn manifest_item(
     }
 }
 
+/// A path as spelled.
+type Spelled = Result<RepoPath, planrun_model::RepoPathError>;
+
+/// One token of a manifest item, after the token `previous` (decision D32): `:3-10` is more lines
+/// of the previous path; with `siblings`, a bare file name after a path with a directory is in
+/// that directory. `None` for a `:lines` token with no path before it.
+fn token(
+    spec: &ManifestRules,
+    piece: &str,
+    previous: Option<&(RepoPath, PathOrigin)>,
+) -> Option<(Spelled, PathOrigin, Option<LineRange>)> {
+    if let Some(range) = piece.strip_prefix(':') {
+        let (path, origin) = previous?;
+        return Some((Ok(path.clone()), *origin, line_range(range)));
+    }
+    let (path, lines) = split_lines(piece);
+    let dir = previous.and_then(|(p, _)| p.dir());
+    match dir {
+        Some(dir) if spec.siblings && !path.contains('/') => Some((
+            RepoPath::new(&format!("{dir}/{path}")),
+            PathOrigin::Sibling,
+            lines,
+        )),
+        _ => Some((RepoPath::new(path), PathOrigin::Written, lines)),
+    }
+}
+
 /// `src/a.rs:3-10` → (`src/a.rs`, 3–10); `src/a.rs:7` → (`src/a.rs`, 7–7).
 fn split_lines(path: &str) -> (&str, Option<LineRange>) {
     let Some((file, range)) = path.rsplit_once(':') else {
         return (path, None);
     };
-    let (start, end) = range.split_once('-').unwrap_or((range, range));
-    match (start.parse(), end.parse()) {
-        (Ok(start), Ok(end)) => (file, Some(LineRange { start, end })),
-        _ => (path, None),
+    match line_range(range) {
+        Some(lines) => (file, Some(lines)),
+        None => (path, None),
     }
+}
+
+/// `3-10` or `7`.
+fn line_range(range: &str) -> Option<LineRange> {
+    let (start, end) = range.split_once('-').unwrap_or((range, range));
+    Some(LineRange {
+        start: start.parse().ok()?,
+        end: end.parse().ok()?,
+    })
 }
 
 /// A step boundary's `n` capture.

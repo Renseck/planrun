@@ -18,7 +18,7 @@ mod span;
 pub use action::{Action, ActionKind, ManualReason, Script, ScriptIntent, Shell, WriteMode};
 pub use expect::{ExitExpect, Expectation};
 pub use ids::{AbbrevBlobId, BlobIdError, FormatId, RecognizerId, TaskId};
-pub use path::{RepoPath, RepoPathError};
+pub use path::{PathOrigin, RepoPath, RepoPathError};
 pub use plan::{ChangeKind, LineRange, Manifest, ManifestEntry, Plan, PlanMeta, Step, Task};
 pub use source::PlanSource;
 pub use span::{LineCol, Span, TextRef};

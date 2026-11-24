@@ -295,7 +295,12 @@ fn entry(entry: &ManifestEntry) -> String {
         .lines
         .map(|l| format!(":{}-{}", l.start, l.end))
         .unwrap_or_default();
-    format!("{:?} {}{lines}", entry.change, entry.path)
+    let sibling = if entry.origin.is_written() {
+        ""
+    } else {
+        " (in the directory of the path before)"
+    };
+    format!("{:?} {}{lines}{sibling}", entry.change, entry.path)
 }
 
 /// How much of each action `show` prints.

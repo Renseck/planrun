@@ -32,12 +32,19 @@ task = { level = 3, regex = '^(?P<id>(?P<phase>P\d+)-T(?P<ord>\d+)): (?P<title>.
 tasks_end_level = 2                                      # optional
 # captures: id, ord (a number), title (all required); phase (optional, from the first task)
 
-[outline.manifest]                                       # optional; when set, every task has one
-# The marker and its items are consumed by the outline: they fall in no step.
-marker = '^\*\*Files\*\*$'
-item = '^(?P<change>Create|Modify|Delete) `(?P<paths>[^`]+)`$'
-changes = { Create = "create", Modify = "modify", Delete = "delete" }   # → create|modify|rewrite|delete|test
-path_list = ', '                                         # optional: split `paths` into several
+[outline.manifest]                                       # optional
+# The marker and its items are consumed by the outline: they fall in no step. The items end at
+# the first block that is no list item at the marker's depth, or that is a step boundary (D37).
+marker = '^\*\*Files\*\*$'                                # may capture `change` (`**Files:** create`)
+item = '^(?P<change>Create|Modify|Delete) `(?P<paths>[^`]+)`$'   # `change` unless the marker has it
+changes = { Create = "create", Modify = "modify", Delete = "delete" }
+# → create | modify | rewrite | delete | test | generated (D27)
+path_list = ', '                                         # optional: split `paths` into several;
+# a `:3-10` piece adds lines to the path before it (D32)
+required = true                                          # optional, default true: false lets a
+                                                         # task have no manifest (D27)
+siblings = false                                         # optional, default false: a bare file
+                                                         # name after `a/b.rs` is `a/<name>` (D32)
 
 [[outline.steps]]                                        # zero or more; none = one implicit step
 block = "paragraph"                                      # paragraph | list-item | heading
@@ -47,6 +54,10 @@ regex = '^\*\*Step (?P<n>\d+) — (?P<title>[^*]+)\*\*$'   # n and title optiona
 manual_markers = ['(?i)\bby hand\b']                     # paragraph → Manual(Marked)
 pwsh = ["powershell", "pwsh", "ps1"]                     # optional; these are the defaults
 bash = ["bash", "sh", "shell"]
+
+[checks]                                                 # optional (D31): only these two codes,
+manifest-untouched = "off"                               # each error | warning | off; any
+manifest-undeclared = "warning"                          # other key fails the spec load
 
 [[recognizer]]                                           # ordered; first match wins
 kind = "file-block"                                      # a registered kind (§3)

@@ -63,6 +63,37 @@ impl RepoPath {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// The last segment (`lib.rs` of `src/lib.rs`).
+    pub fn file_name(&self) -> &str {
+        self.0.rsplit('/').next().unwrap_or(&self.0)
+    }
+
+    /// The directory, without a trailing slash; `None` at the repository root.
+    pub fn dir(&self) -> Option<&str> {
+        self.0.rsplit_once('/').map(|(dir, _)| dir)
+    }
+}
+
+/// Where a path in the IR came from, when the plan did not write it in full (decision D32).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PathOrigin {
+    /// Written in full where it is used.
+    #[default]
+    Written,
+    /// A manifest token without a directory, placed in the directory of the token before it.
+    Sibling,
+    /// A lead that names only a file name: the one manifest entry with that file name.
+    FileName,
+    /// A lead that names no path: the task's one editable manifest entry.
+    OnlyEntry,
+}
+
+impl PathOrigin {
+    /// True when the plan wrote the path in full.
+    pub fn is_written(&self) -> bool {
+        *self == PathOrigin::Written
+    }
 }
 
 impl TryFrom<String> for RepoPath {

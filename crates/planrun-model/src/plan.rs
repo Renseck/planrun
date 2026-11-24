@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::action::Action;
 use crate::ids::{FormatId, TaskId};
-use crate::path::RepoPath;
+use crate::path::{PathOrigin, RepoPath};
 use crate::source::PlanSource;
 use crate::span::{Span, TextRef};
 
@@ -92,6 +92,8 @@ pub struct ManifestEntry {
     pub lines: Option<LineRange>,
     /// The entry's text.
     pub span: Span,
+    /// `Sibling` when the item named only a file name after a path with a directory.
+    pub origin: PathOrigin,
 }
 
 /// What a task declares it does to a file.
@@ -107,6 +109,8 @@ pub enum ChangeKind {
     Delete,
     /// A test file (created or modified; the actions decide).
     Test,
+    /// Produced by a command the task runs; no file action needed (decision D27).
+    Generated,
 }
 
 /// `start-end`, 1-based inclusive.

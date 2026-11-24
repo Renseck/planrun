@@ -73,9 +73,11 @@ pub fn parse_plan(
         meta: outline.meta,
         tasks,
     };
+    let mut checked = Vec::new();
     for rule in check::default_rules() {
-        rule.check(&plan, &mut found);
+        rule.check(&plan, &mut checked);
     }
+    found.extend(format.settings().apply_checks(checked));
     let mut diagnostics = Diagnostics(found);
     diagnostics.sort();
     if diagnostics.has_errors() {
