@@ -8,11 +8,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::diagnostic::Diagnostic;
+use crate::document::Document;
 use crate::format::Format;
 use crate::recognizer::RecognizerFactory;
+use crate::spec::{FormatSpec, SpecFormat};
 
 /// Recognizer factories and formats.
-#[derive(Default)]
 pub struct Registry {
     factories: HashMap<&'static str, Arc<dyn RecognizerFactory>>,
     formats: Vec<Arc<dyn Format>>,
@@ -47,12 +49,19 @@ pub enum RegistryError {
     },
 }
 
+impl Default for Registry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Registry {
-    /// An empty registry.
+    /// An empty registry with the default threshold (50).
     pub fn new() -> Self {
         Self {
+            factories: HashMap::new(),
+            formats: Vec::new(),
             min_score: 50,
-            ..Self::default()
         }
     }
 
@@ -83,13 +92,34 @@ impl Registry {
         Ok(())
     }
 
-    /// Builds a format from TOML spec text and registers it (Phase 1).
+    /// Builds a format from TOML spec text and registers it. `origin` is the spec's file stem,
+    /// which must equal its `id` (docs/extending.md §2).
     pub fn add_spec(&mut self, origin: &str, toml_text: &str) -> Result<(), RegistryError> {
-        let _ = toml_text;
-        Err(RegistryError::InvalidSpec {
+        let invalid = |message: String| RegistryError::InvalidSpec {
             format: origin.to_owned(),
-            message: "spec loading is implemented in Phase 1".to_owned(),
-        })
+            message,
+        };
+        let spec: FormatSpec = toml::from_str(toml_text).map_err(|e| invalid(e.to_string()))?;
+        if spec.id != origin {
+            return Err(invalid(format!(
+                "the id `{}` is not the file name `{origin}`",
+                spec.id
+            )));
+        }
+        let unknown = spec
+            .recognizers
+            .iter()
+            .filter_map(|t| t.get("kind").and_then(|k| k.as_str()))
+            .find(|kind| !self.factories.contains_key(kind));
+        if let Some(kind) = unknown {
+            return Err(RegistryError::UnknownKind {
+                format: origin.to_owned(),
+                kind: kind.to_owned(),
+            });
+        }
+        let format =
+            SpecFormat::compile(spec, |kind| self.factories.get(kind).cloned()).map_err(invalid)?;
+        self.add_format(Arc::new(format))
     }
 
     /// The factory for `kind`.
@@ -101,4 +131,56 @@ impl Registry {
     pub fn formats(&self) -> &[Arc<dyn Format>] {
         &self.formats
     }
+
+    /// The format for `doc`: the one named by `forced` (`unknown-format` when none has that
+    /// id), else the single highest detection score at or above [`Registry::min_score`]
+    /// (`no-format` when none reaches it, `ambiguous-format` on a tie). Never a guess.
+    pub fn select(
+        &self,
+        doc: &Document,
+        forced: Option<&str>,
+    ) -> Result<Arc<dyn Format>, Diagnostic> {
+        if let Some(id) = forced {
+            return self
+                .formats
+                .iter()
+                .find(|f| &*f.id().0 == id)
+                .cloned()
+                .ok_or_else(|| {
+                    Diagnostic::error("unknown-format", None, format!("no format has id `{id}`"))
+                });
+        }
+        let mut scored: Vec<(u8, &Arc<dyn Format>)> = self
+            .formats
+            .iter()
+            .map(|f| (f.detect(doc), f))
+            .filter(|(score, _)| *score >= self.min_score)
+            .collect();
+        scored.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
+        match scored.as_slice() {
+            [] => Err(Diagnostic::error(
+                "no-format",
+                None,
+                format!(
+                    "no format recognizes this plan (no detection score reaches {}); name one \
+                     with --format",
+                    self.min_score
+                ),
+            )),
+            [(a, first), (b, second), ..] if a == b => Err(Diagnostic::error(
+                "ambiguous-format",
+                None,
+                format!(
+                    "formats `{}` and `{}` both score {a}; name one with --format",
+                    first.id().0,
+                    second.id().0
+                ),
+            )),
+            [(_, first), ..] => Ok(Arc::clone(first)),
+        }
+    }
 }
+
+#[cfg(test)]
+#[path = "registry_tests.rs"]
+mod tests;

@@ -40,6 +40,8 @@ pub struct PlanMeta {
     /// Paragraphs before the first task that match the format's `manual_markers`: text the user
     /// must read before task 1.
     pub preamble: Vec<TextRef>,
+    /// The text after the tasks (`## Part 1 green state`, …): shown, never run.
+    pub after_tasks: Option<Span>,
 }
 
 /// One task.

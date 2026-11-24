@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use planrun_model::{FormatId, Manifest, PlanMeta, Span, TaskId, TextRef};
+use planrun_model::{FormatId, Manifest, PlanMeta, Shell, Span, TaskId, TextRef};
 
 use crate::diagnostic::Diagnostics;
 use crate::document::{BlockRange, Document};
@@ -36,6 +36,8 @@ pub struct Outline {
     pub meta: PlanMeta,
     /// Tasks in order.
     pub tasks: Vec<OutlineTask>,
+    /// The blocks after the tasks (from a heading at or above `tasks_end_level`): never run.
+    pub after_tasks: Option<BlockRange>,
 }
 
 /// A task before recognition.
@@ -49,6 +51,9 @@ pub struct OutlineTask {
     pub span: Span,
     /// The parsed manifest.
     pub manifest: Manifest,
+    /// The manifest's blocks (marker and items): consumed by the outline, in no step. Recognition
+    /// skips them where they fall inside a step's range.
+    pub manifest_blocks: Option<BlockRange>,
     /// Steps: number, title, blocks.
     pub steps: Vec<OutlineStep>,
 }
@@ -75,4 +80,22 @@ pub struct FormatSettings {
     pub pwsh_languages: Vec<String>,
     /// See `pwsh_languages`.
     pub bash_languages: Vec<String>,
+}
+
+impl FormatSettings {
+    /// The shell that runs a fence in `language`, if any.
+    pub fn shell_for(&self, language: &str) -> Option<Shell> {
+        if self.pwsh_languages.iter().any(|l| l == language) {
+            return Some(Shell::Pwsh);
+        }
+        if self.bash_languages.iter().any(|l| l == language) {
+            return Some(Shell::Bash);
+        }
+        None
+    }
+
+    /// True when `text` matches one of the manual markers.
+    pub fn is_marked(&self, text: &str) -> bool {
+        self.manual_markers.iter().any(|m| m.is_match(text))
+    }
 }

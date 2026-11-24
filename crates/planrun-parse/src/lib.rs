@@ -16,6 +16,7 @@ pub mod check;
 pub mod diagnostic;
 pub mod document;
 pub mod format;
+pub mod outline;
 pub mod recognizer;
 pub mod registry;
 pub mod source;

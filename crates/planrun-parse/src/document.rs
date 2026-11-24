@@ -107,12 +107,27 @@ impl Document {
         self.source.resolve(text)
     }
 
-    /// The byte ranges of every fence, in order (format detection skips them).
-    pub fn fence_spans(&self) -> impl Iterator<Item = Span> + '_ {
-        self.blocks
+    /// The lines outside fenced blocks, without their newline (format detection reads only
+    /// these).
+    pub fn lines_outside_fences(&self) -> Vec<&str> {
+        let mut fences = self
+            .blocks
             .iter()
             .filter(|b| matches!(b.block, Block::Fence { .. }))
             .map(|b| b.span)
+            .peekable();
+        let mut lines = Vec::new();
+        let mut at = 0usize;
+        for line in self.source.text().split_inclusive('\n') {
+            let start = at;
+            at += line.len();
+            while fences.next_if(|f| f.end as usize <= start).is_some() {}
+            let inside = fences.peek().is_some_and(|f| f.start as usize <= start);
+            if !inside {
+                lines.push(line.trim_end_matches('\n'));
+            }
+        }
+        lines
     }
 }
 
