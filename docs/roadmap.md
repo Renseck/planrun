@@ -13,7 +13,7 @@ Workspace of four crates; the IR in `planrun-model` with its tests; the parse an
 points as traits; the CLI argument surface; `formats/assay.toml`; the synthetic and invalid
 corpus; the greeter fixture; these docs.
 
-## P1 — Parse the assay format strictly
+## P1 — Parse the assay format strictly (done)
 
 The deliverable: `planrun check` and `planrun show` on assay plans, with precise diagnostics.
 

@@ -19,7 +19,8 @@ crates/planrun-parse   Markdown → IR: source, document, format, recognizer, re
 crates/planrun-exec    IR → effects: workspace, git, shells, expect, policy, journal, runner
 crates/planrun-cli     the `planrun` binary
 formats/*.toml         built-in plan formats (embedded); the file name is the format id
-docs/                  architecture, plan-grammar, extending, decisions, roadmap, plans/
+docs/                  architecture, plan-grammar, extending, decisions, roadmap, plans/,
+                       handovers/ (one per finished phase)
 tests/corpus/          synthetic/ (one plan per format), invalid/ (one error each), local/ (private)
 tests/fixtures/greeter the repo the synthetic assay plan applies to
 ```
@@ -97,3 +98,6 @@ The gate for every task is all three of fmt, clippy (warnings are errors) and te
   code blocks.
 - Rens works on Windows with PowerShell 7. Commands in plans are PowerShell 7.
 - One commit per task, message `P<N>-T<n>: <title>`. Don't push.
+- When a phase is done, write a handover for the next session:
+  `docs/handovers/YYYY-MM-DD-p<N>-to-p<N+1>.md` (state, what the phase built, open items, notes
+  for the next phase, how plans are verified). A new session starts from the latest one.
