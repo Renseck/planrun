@@ -6,7 +6,7 @@ use planrun_model::{Action, ActionKind, RecognizerId};
 use regex::Regex;
 
 use super::params::Params;
-use super::{lead_path, paragraph};
+use super::{paragraph, resolved_lead_path};
 use crate::recognizer::{Cursor, Recognized, Recognizer, RecognizerFactory, StepContext};
 
 /// Builds `delete` recognizers.
@@ -22,8 +22,14 @@ impl RecognizerFactory for DeleteFactory {
         let id = p.id()?;
         let lead = p.regex("lead", &["path"])?;
         let via_git = p.opt_bool("via_git")?.unwrap_or(false);
+        let by_file_name = p.opt_bool("file_name_from_manifest")?.unwrap_or(false);
         p.finish()?;
-        Ok(Arc::new(Delete { id, lead, via_git }))
+        Ok(Arc::new(Delete {
+            id,
+            lead,
+            via_git,
+            by_file_name,
+        }))
     }
 }
 
@@ -31,6 +37,8 @@ struct Delete {
     id: RecognizerId,
     lead: Regex,
     via_git: bool,
+    /// Resolve a bare file name against the manifest (decision D32).
+    by_file_name: bool,
 }
 
 impl Recognizer for Delete {
@@ -48,10 +56,11 @@ impl Recognizer for Delete {
         let Some(caps) = self.lead.captures(text) else {
             return Recognized::No;
         };
-        let path = match lead_path(&caps, base, lead.span) {
-            Ok(path) => path,
-            Err(d) => return Recognized::Malformed(d),
-        };
+        let (path, path_origin) =
+            match resolved_lead_path(cx, &caps, base, lead.span, self.by_file_name) {
+                Ok(resolved) => resolved,
+                Err(d) => return Recognized::Malformed(d),
+            };
         cursor.advance(1);
         Recognized::Yes(vec![Action {
             kind: ActionKind::Delete {
@@ -60,6 +69,7 @@ impl Recognizer for Delete {
             },
             span: lead.span,
             origin: self.id.clone(),
+            path_origin,
         }])
     }
 }

@@ -18,7 +18,7 @@ use crate::recognizer::{Cursor, Recognized, StepContext};
 pub struct TaskCoverage {
     /// The task.
     pub task: TaskId,
-    /// Blocks that became actions, expectations included.
+    /// Blocks that became actions other than `Manual`, expectations included.
     pub actions: usize,
     /// Blocks absorbed without an action (the patch ceremony), with where they are.
     pub absorbed: Vec<Absorbed>,
@@ -26,7 +26,7 @@ pub struct TaskCoverage {
     pub manifest: usize,
     /// Blocks that became `Note`.
     pub notes: usize,
-    /// Blocks that became `Manual`.
+    /// Blocks that became `Manual`, through the fallback or a recognizer (`manual-prose`).
     pub manual: usize,
     /// HTML comments, dropped.
     pub dropped: usize,
@@ -136,7 +136,13 @@ fn step(
                 span: at,
             }),
             Recognized::Yes(new) => {
-                cov.actions += consumed;
+                let manual = new
+                    .iter()
+                    .all(|a| matches!(a.kind, ActionKind::Manual { .. }));
+                match manual {
+                    true => cov.manual += consumed,
+                    false => cov.actions += consumed,
+                }
                 actions.extend(new);
             }
             Recognized::Amend(action) => {
@@ -275,6 +281,7 @@ fn fallback(
         kind,
         span: located.span,
         origin: RecognizerId(FALLBACK.into()),
+        path_origin: Default::default(),
     })
 }
 

@@ -2,8 +2,8 @@
 //! a line (`L37`). `planrun show` prints it; the IR snapshot is its YAML.
 
 use planrun_model::{
-    Action, ActionKind, ExitExpect, Expectation, ManifestEntry, Plan, Script, Span, Step, Task,
-    TextRef,
+    Action, ActionKind, ExitExpect, Expectation, ManifestEntry, PathOrigin, Plan, Script, Span,
+    Step, Task, TextRef,
 };
 use serde::Serialize;
 
@@ -59,6 +59,9 @@ pub struct ActionView {
     pub at: String,
     /// The recognizer that produced it.
     pub by: String,
+    /// How the path was found when the plan did not write it in full (decision D32).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_from: Option<String>,
     /// What it does.
     #[serde(flatten)]
     pub what: What,
@@ -215,6 +218,7 @@ impl<'a> Viewer<'a> {
         ActionView {
             at: self.at(action.span),
             by: action.origin.0.to_string(),
+            path_from: path_from(action.path_origin),
             what: self.what(&action.kind),
         }
     }
@@ -290,6 +294,17 @@ impl<'a> Viewer<'a> {
     }
 }
 
+/// How a resolved path was found; `None` when the plan wrote it.
+fn path_from(origin: PathOrigin) -> Option<String> {
+    let how = match origin {
+        PathOrigin::Written => return None,
+        PathOrigin::Sibling => "the directory of the manifest path before it",
+        PathOrigin::FileName => "the manifest entry with this file name",
+        PathOrigin::OnlyEntry => "the task's only editable manifest entry",
+    };
+    Some(format!("resolved from manifest: {how}"))
+}
+
 fn entry(entry: &ManifestEntry) -> String {
     let lines = entry
         .lines
@@ -337,6 +352,9 @@ fn action_text(action: &ActionView, detail: Detail, out: &mut String) {
         "    {:<6} {label:<11} {summary}  ({})\n",
         action.at, action.by
     ));
+    if let Some(from) = &action.path_from {
+        out.push_str(&format!("           path {from}\n"));
+    }
     if let What::Run(s) | What::Commit(s) = &action.what
         && let Some(e) = &s.expect
     {

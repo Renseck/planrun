@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::expect::Expectation;
 use crate::ids::{AbbrevBlobId, RecognizerId};
-use crate::path::RepoPath;
+use crate::path::{PathOrigin, RepoPath};
 use crate::span::{Span, TextRef};
 
 /// One action of a step, with where it came from.
@@ -16,6 +16,10 @@ pub struct Action {
     pub span: Span,
     /// The recognizer instance that produced it.
     pub origin: RecognizerId,
+    /// Where the action's path came from, when the plan did not write it in full (decision
+    /// D32). `Written` for actions without a path.
+    #[serde(default)]
+    pub path_origin: PathOrigin,
 }
 
 /// What to do. Adding a variant is a cross-cutting change: a handler, a policy class, a journal

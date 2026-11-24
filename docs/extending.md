@@ -82,21 +82,20 @@ Rules:
 
 ## 3. Built-in recognizer kinds
 
-Phase 1 implements the kinds the `assay` spec uses; Phase 2 the rest. Parameters in *italics* are
-optional.
+Parameters in *italics* are optional.
 
 | Kind | Matches | Produces | Parameters |
 |---|---|---|---|
-| `file-block` | a lead paragraph naming a path (and op), then one fence | `WriteFile` / `ApplyPatch` | `lead` (captures `path`, *`op`*), `ops` (op prefix → `write` \| `create` \| `overwrite` \| `patch`), *`default_op`* |
-| `before-after` | lead naming a path, fence, *separator paragraph*, fence | `ReplaceExact` | `lead` (captures `path`), *`separator`* (e.g. `^After:$`; absent = two fences back to back) |
-| `delete` | a sentence or inline `git rm` | `Delete` | `lead` (captures `path`), *`via_git`* |
+| `file-block` | a lead paragraph naming a path (and op), then one fence | `WriteFile` / `ApplyPatch` | `lead` (captures `path`, *`op`*), `ops` (op prefix → `write` \| `create` \| `overwrite` \| `patch`), *`default_op`*, *`file_name_from_manifest`* |
+| `before-after` | lead (naming a path), fence, *separator paragraph*, fence | `ReplaceExact`, or `Manual(ProseEdit)` when `infer_path` finds no single entry | `lead` (captures `path`, or none with `infer_path = true`), *`separator`* (e.g. `^After:$`; absent = two fences back to back), *`file_name_from_manifest`* |
+| `delete` | a sentence or inline `git rm` | `Delete` | `lead` (captures `path`), *`via_git`*, *`file_name_from_manifest`* |
 | `generated` | a "generated, not by hand" sentence | `Generated` | `lead` (captures `path`) |
 | `ceremony` | a fence directly after a given action whose body matches | nothing (absorbed) | `after` (`patch`), `body` |
 | `script` | a fence in a shell language | `RunScript` / `Commit` | *`intents`* (`[{ intent, body?, lead? }]`: `commit` \| `gate` \| `preview` \| `apply` \| `verify` \| `other`), *`leads`* (regexes), *`first_block`* |
-| `run-line` | `` Run: `cmd` `` in a paragraph | `RunScript` (one line, the format's default shell) | `lead` (captures `cmd`), `shell` |
+| `run-line` | `` Run: `cmd` `` in a paragraph, with an optional expectation in the same paragraph | `RunScript` / `Commit` (one line) | `lead` (captures `cmd`, *`expected`*), `shell` (`pwsh` \| `bash`), *`exit`* table over `expected` (field `text`), *`intents`* (`[{ intent, body }]`) |
 | `expected-block` | `Expected (…):` paragraph + `text` fence after a script | amends the script | `lead` (captures `spec`), `exit` table, `lines = "summary"` |
 | `expected-prose` | `Expected: …` sentence after a script | amends the script | `lead` (captures `text`), `exit` table (`success` \| `failure` \| `any` \| `code:N`) |
-| `manual-prose` | a paragraph + optional fence that describe an edit with no exact anchor | `Manual(reason)` | `lead`, `reason` (`prose-edit` \| `output-dependent` \| `human-check`), *`takes_fence`* |
+| `manual-prose` | a paragraph (+ the fence after it, with `takes_fence`) that describes what planrun cannot do exactly | `Manual(reason)` | `lead`, `reason` (`prose-edit` \| `output-dependent` \| `human-check`), *`takes_fence`* |
 
 Notes on the kinds:
 
@@ -104,6 +103,17 @@ Notes on the kinds:
   Overwrite from the manifest. Once the lead matched, an op no prefix covers is
   `Malformed(unknown-file-op)`, a lead without its fence `Malformed(missing-block)`, and for
   `patch` a patch whose paths differ from the lead's `Malformed(patch-path)`.
+- Paths from the manifest (D32): `file_name_from_manifest = true` resolves a lead path without
+  `/` that is not an entry itself to the one entry with that file name, when that entry was
+  written in full (not a sibling); otherwise the path stays as written. `before-after` with
+  `infer_path = true` takes the task's one entry that is not Test, Generated or Delete; with none
+  or several, the lead and both fences become one `Manual(ProseEdit)`. `infer_path` is never
+  available for writes. Each resolved action carries its `PathOrigin`; `show` marks it.
+- `run-line`: the command is the `cmd` capture, run as one line in `shell` (D39). The `expected`
+  capture, when the lead has one and it matched, becomes a prose expectation through the `exit`
+  table (no row matches: `any`). An empty command is `Malformed(missing-block)`.
+- `before-after`: once the lead matched, a missing fence or separator is
+  `Malformed(missing-block)`.
 - `script`: `intent = "commit"` selects the `Commit` action kind, not a `ScriptIntent`; a commit
   script carries `ScriptIntent::Other`. The other intents set the `ScriptIntent`; no match is
   `verify`. A row matches the fence body (`body`), the paragraph directly before the fence
@@ -117,6 +127,8 @@ Notes on the kinds:
   is `Malformed(expected-without-script)`; a second expectation on one script is
   `Malformed(expected-twice)`. `expected-block` needs a `text` fence (`missing-block`). An
   `expected-prose` sentence directly after a `Manual` joins that Manual's text instead (D38).
+- Coverage counts the blocks of a recognizer's `Manual` (and of an expectation joined to a
+  Manual) as manual, not as actions.
 - **Exit tables are first match**: rows are tried in order and the first whose regex matches
   decides, so their order matters. Values: `success`, `failure`, `any` (`ExitExpect::Unknown`: not
   checked; prose is still confirmed, D11), `code:N`, and `code` (the row's regex captures `code`;

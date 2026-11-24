@@ -7,7 +7,7 @@ use planrun_model::{Action, ActionKind, ChangeKind, Manifest, RecognizerId, Repo
 use regex::Regex;
 
 use super::params::Params;
-use super::{lead_path, paragraph};
+use super::{paragraph, resolved_lead_path};
 use crate::diagnostic::Diagnostic;
 use crate::document::Block;
 use crate::patch;
@@ -42,6 +42,7 @@ impl RecognizerFactory for FileBlockFactory {
             })
             .collect::<Result<Vec<_>, String>>()?;
         let default_op = p.opt_string("default_op")?.map(op_named).transpose()?;
+        let by_file_name = p.opt_bool("file_name_from_manifest")?.unwrap_or(false);
         p.finish()?;
         let has_op = lead.capture_names().flatten().any(|n| n == "op");
         if !has_op && default_op.is_none() {
@@ -52,6 +53,7 @@ impl RecognizerFactory for FileBlockFactory {
             lead,
             ops,
             default_op,
+            by_file_name,
         }))
     }
 }
@@ -73,6 +75,8 @@ struct FileBlock {
     lead: Regex,
     ops: Vec<(String, Op)>,
     default_op: Option<Op>,
+    /// Resolve a bare file name against the manifest (decision D32).
+    by_file_name: bool,
 }
 
 impl FileBlock {
@@ -129,10 +133,11 @@ impl Recognizer for FileBlock {
                 "this sentence announces a fenced block, and none follows it",
             ));
         };
-        let path = match lead_path(&caps, base, lead.span) {
-            Ok(path) => path,
-            Err(d) => return Recognized::Malformed(d),
-        };
+        let (path, path_origin) =
+            match resolved_lead_path(cx, &caps, base, lead.span, self.by_file_name) {
+                Ok(resolved) => resolved,
+                Err(d) => return Recognized::Malformed(d),
+            };
         let Block::Fence { body, .. } = &fence.block else {
             return Recognized::No;
         };
@@ -150,6 +155,7 @@ impl Recognizer for FileBlock {
             kind,
             span: lead.span.join(fence.span),
             origin: self.id.clone(),
+            path_origin,
         }])
     }
 }

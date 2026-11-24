@@ -55,6 +55,7 @@ impl Recognizer for Generated {
             kind: ActionKind::Generated { path },
             span: lead.span,
             origin: self.id.clone(),
+            path_origin: Default::default(),
         }])
     }
 }

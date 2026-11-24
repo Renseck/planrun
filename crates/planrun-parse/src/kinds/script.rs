@@ -195,6 +195,7 @@ impl Recognizer for ScriptRecognizer {
             kind,
             span: located.span,
             origin: self.id.clone(),
+            path_origin: Default::default(),
         }])
     }
 }
