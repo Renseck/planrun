@@ -1,0 +1,99 @@
+# The superpowers format: plans written by the writing-plans skill (docs/plan-grammar.md §3).
+# Hand-written, partly automatable: full-file writes, exact before/after edits, run lines and
+# commit fences run; edits described in prose are Manual. Every regex is matched against raw
+# block text (inline markup kept), anchored per block.
+
+id = "superpowers"
+name = "Superpowers plan (writing-plans skill)"
+
+[detect]
+patterns = [
+  { regex = '^### Task \d+: ', weight = 40 },
+  { regex = '^- \[ \] \*\*Step \d+: ', weight = 40 },
+  { regex = '^Run: `', weight = 20 },
+]
+
+[outline]
+task = { level = 3, regex = '^(?P<id>Task (?P<ord>\d+)): (?P<title>.+)$' }
+# `## Self-Review` and the like end the tasks.
+tasks_end_level = 2
+
+[outline.manifest]
+marker = '^\*\*Files:\*\*$'
+# - Create: `p`   - Modify: `p:3-4` (the `X` record)   - Test: `p`
+item = '^(?P<change>Create|Modify|Test): `(?P<paths>[^`]+)`(?: \(.+\))?$'
+changes = { Create = "create", Modify = "modify", Test = "test" }
+required = false
+
+[[outline.steps]]
+block = "list-item"
+regex = '^\*\*Step (?P<n>\d+): (?P<title>.+)\*\*$'
+
+# A step title that says the step fails or is checked by eye marks the whole step (D30).
+[[step_marks]]
+title = '(?i)\bverify (?:it|they) fails?\b'
+mark = "expected-failure"
+
+[[step_marks]]
+title = '(?i)\b(?:manual verification|check by eye|by eye)\b'
+mark = "human-check"
+
+[settings]
+manual_markers = ['(?i)\bby hand\b', '(?i)\bRens runs\b', '(?i)\bmanual step\b']
+
+# Prose edits change declared files, so "declared, untouched" is not a finding here (D31).
+[checks]
+manifest-untouched = "off"
+manifest-undeclared = "warning"
+
+# --- Recognizers, tried in this order at each position of a step -------------------------------
+
+[[recognizer]]
+kind = "file-block"
+id = "file-block#superpowers"
+# Create `p` with only the test module:   Replace the entire contents of `p` with:
+lead = '^(?P<op>Create|Replace the entire contents of) `(?P<path>[^`]+)`(?: with\b[^:]*)?:$'
+ops = { "Create" = "create", "Replace the entire contents of" = "overwrite" }
+
+[[recognizer]]
+kind = "before-after"
+id = "before-after#change-to"
+# In `p`, line 134, change:  + fence + to: + fence
+lead = '^In `(?P<path>[^`]+)`, lines? [\d~-]+, change:$'
+separator = '^to:$'
+
+[[recognizer]]
+kind = "run-line"
+id = "run-line#superpowers"
+# Run: `cmd`, with `Expected: …` on the next line of the same paragraph (D39: pwsh).
+lead = '^Run: `(?P<cmd>[^`]+)`(?:\nExpected: (?P<expected>.+))?$'
+shell = "pwsh"
+exit = [
+  { text = '(?i)\b(fail|build error|does not exist)', exit = "failure" },
+  { text = '(?i)\b(pass(es)?|succeeds?|succeeded)\b', exit = "success" },
+]
+
+[[recognizer]]
+kind = "manual-prose"
+id = "manual-prose#edit"
+# Append to `Class`:   In `p`, replace … with:   Above the test module in `p`, add:
+lead = '^(?:Append|Above|Below|In|Add|At the top of|Replace|And change|Change)\b.*:$'
+reason = "prose-edit"
+takes_fence = true
+
+[[recognizer]]
+kind = "script"
+id = "script#superpowers"
+# Only the commit fences run: the first block of a written step, or behind `Run:` (D28).
+leads = ['^Run:$']
+first_block = true
+intents = [{ intent = "commit", body = '(?m)\bgit commit\b' }]
+
+[[recognizer]]
+kind = "expected-prose"
+id = "expected-prose#superpowers"
+lead = '^Expected: (?P<text>.+)$'
+exit = [
+  { text = '(?i)\b(fail|build error|does not exist)', exit = "failure" },
+  { text = '(?i)\b(pass(es)?|succeeds?|succeeded)\b', exit = "success" },
+]

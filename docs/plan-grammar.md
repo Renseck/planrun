@@ -79,20 +79,28 @@ Notes:
 
 ## 3. `superpowers` — the writing-plans skill
 
-Hand-written by Claude; partly automatable. Example: `superpowers-style.md`.
+Hand-written by Claude; partly automatable. Spec: `formats/superpowers.toml`. Example:
+`superpowers-style.md`.
 
 | Element | Form |
 |---|---|
-| Task | `### Task 1: title` (ordinal from the number) |
-| Manifest | `**Files:**` + `- Create: \`p\``, `- Modify: \`p:3-10\``, `- Test: \`p\`` |
-| Step | list item `- [ ] **Step 1: title**` |
-| Run | `` Run: `cmd` `` in a paragraph, often with `Expected: PASS` / `Expected: FAIL …` on the next line |
-| Edits | usually prose + fence ("Above the test module in `x`, add:"): **`Manual(ProseEdit)`** |
-| Create | "Create `p` with …:" + fence → `WriteFile(Create)` only when the sentence names exactly one path and the manifest says Create; otherwise Manual |
-| Commit | `bash` fence with `git commit` |
+| Task | `### Task 1: title` (id `Task 1`, ordinal from the number) |
+| Tasks end | the next level-2 heading (`## Self-Review`) |
+| Manifest | `**Files:**` + `- Create: \`p\``, `- Modify: \`p:3-10\``, `- Test: \`p\``, each optionally followed by a parenthesised note. Optional: a task may have none (D27) |
+| Step | list item `- [ ] **Step 1: title**`; the manifest's items end at the first step (D37) |
+| Run | `` Run: `cmd` `` in a paragraph, often with `Expected: …` on the next line **of the same paragraph** → `RunScript` in pwsh with that expectation (`run-line`, D39) |
+| Create | ``Create `p` with …:`` + fence → `WriteFile(Create)`; ``Replace the entire contents of `p` with:`` + fence → `WriteFile(Overwrite)`. The op decides; a manifest entry that disagrees is `manifest-write-mode` (D26) |
+| Exact edit | ``In `p`, line 134, change:`` + fence + `to:` + fence → `ReplaceExact` |
+| Prose edits | `Append to …:`, ``In `p`, replace … with:``, `Above …, add:` + fence → **`Manual(ProseEdit)`** (`manual-prose`) |
+| Commit | `bash` fence with `git commit`, as the first block of its step |
+| Other shell fences | only behind `Run:`; otherwise `Manual(Unrecognized)` (D28) |
 
-A step titled "…verify it fails" or an `Expected: FAIL` is an **expected failure**: skipped by
-default (D12).
+Step marks (D30): a title like "…verify it fails" marks the step's verify scripts as **expected
+failures**, skipped by default (D12); "Manual verification", "Check by eye" turn the step's Notes
+into `Manual(HumanCheck)`.
+
+Checks (D31): `manifest-untouched` is off (prose edits change declared files),
+`manifest-undeclared` is a warning.
 
 ## 4. `devready` — DevReady plans
 

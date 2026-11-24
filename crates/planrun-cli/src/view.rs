@@ -456,25 +456,34 @@ mod tests {
 
     use super::*;
 
-    fn synthetic() -> Plan {
+    /// The synthetic plan `name` (`assay-style.md`), parsed with the built-in formats.
+    fn synthetic_plan(name: &str) -> Plan {
+        let relative = format!("tests/corpus/synthetic/{name}");
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/corpus/synthetic/assay-style.md");
+            .join("../..")
+            .join(&relative);
         let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         let registry = Registry::with_builtins().unwrap_or_else(|e| panic!("{e}"));
-        parse_plan(
-            &registry,
-            "tests/corpus/synthetic/assay-style.md",
-            &bytes,
-            None,
-        )
-        .unwrap_or_else(|d| panic!("{:?}", d.error_codes()))
-        .plan
+        parse_plan(&registry, &relative, &bytes, None)
+            .unwrap_or_else(|d| panic!("{name}: {:?}", d.error_codes()))
+            .plan
+    }
+
+    fn synthetic() -> Plan {
+        synthetic_plan("assay-style.md")
     }
 
     #[test]
     fn the_ir_of_the_synthetic_assay_plan() {
         let plan = synthetic();
         insta::assert_yaml_snapshot!("assay_style_ir", Viewer::new(&plan).plan());
+    }
+
+    #[test]
+    fn the_ir_of_the_synthetic_superpowers_plan() {
+        let plan = synthetic_plan("superpowers-style.md");
+        assert_eq!(&*plan.format.0, "superpowers");
+        insta::assert_yaml_snapshot!("superpowers_style_ir", Viewer::new(&plan).plan());
     }
 
     #[test]

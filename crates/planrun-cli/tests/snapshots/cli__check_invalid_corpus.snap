@@ -90,6 +90,16 @@ error[duplicate-task-id]: task `P1-T1` is defined twice
 
 planrun: tests/corpus/invalid/duplicate-task-id.md: 1 error
 
+==== expected-conflict.md
+error[expected-conflict]: the step's title says this fails, and its expectation says it succeeds
+  --> tests/corpus/invalid/expected-conflict.md:21:1
+   |
+21 | / Run: `cargo test a`
+22 | | Expected: PASS
+   | |______________^
+
+planrun: tests/corpus/invalid/expected-conflict.md: 1 error
+
 ==== expected-spec.md
 error[expected-spec]: `summary lines` names no exit status this format knows
   --> tests/corpus/invalid/expected-spec.md:30:1

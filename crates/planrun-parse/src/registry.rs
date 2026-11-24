@@ -67,13 +67,17 @@ impl Registry {
     }
 
     /// The built-in recognizer kinds and formats (Phase 1: the `assay` format and the kinds it
-    /// uses; Phase 2: the other three).
+    /// uses; Phase 2: the hand-written ones).
     pub fn with_builtins() -> Result<Self, RegistryError> {
         let mut registry = Self::new();
         for factory in kinds::builtin_factories() {
             registry.add_factory(factory)?;
         }
         registry.add_spec("assay", include_str!("../../../formats/assay.toml"))?;
+        registry.add_spec(
+            "superpowers",
+            include_str!("../../../formats/superpowers.toml"),
+        )?;
         Ok(registry)
     }
 

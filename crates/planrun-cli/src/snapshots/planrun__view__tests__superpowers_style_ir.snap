@@ -1,0 +1,117 @@
+---
+source: crates/planrun-cli/src/view.rs
+expression: "Viewer::new(&plan).plan()"
+---
+plan: tests/corpus/synthetic/superpowers-style.md
+format: superpowers
+title: Farewell Implementation Plan
+phase: ~
+preamble: []
+tasks:
+  - id: Task 1
+    title: The farewell module
+    at: L13
+    files:
+      - Create src/farewell.rs
+      - "Modify src/lib.rs:3-4"
+      - Test src/farewell.rs
+    steps:
+      - step: 1 — Write the failing test
+        at: L20
+        actions:
+          - at: L22
+            by: "file-block#superpowers"
+            write-file:
+              path: src/farewell.rs
+              mode: Create
+              body: "#[cfg(test)]\nmod tests {\n    #[test]\n    fn says_goodbye_by_name() {\n        assert_eq!(super::farewell(\"Rens\"), \"Goodbye, Rens.\");\n    }\n}\n"
+      - step: 2 — Run test to verify it fails
+        at: L34
+        actions:
+          - at: L36
+            by: "run-line#superpowers"
+            run:
+              shell: pwsh
+              intent: verify
+              body: cargo test farewell
+              expect:
+                exit: fails
+                lines: ~
+                prose: "FAIL with \"cannot find function `farewell` in module `super`\""
+      - step: 3 — Write minimal implementation
+        at: L39
+        actions:
+          - at: L41
+            by: "manual-prose#edit"
+            manual:
+              reason: ProseEdit
+              text: "Above the test module in `src/farewell.rs`, add:\n\n```rust\n/// The farewell for `name`.\npub fn farewell(name: &str) -> String {\n    format!(\"Goodbye, {name}.\")\n}\n```"
+          - at: L50
+            by: "manual-prose#edit"
+            manual:
+              reason: ProseEdit
+              text: "In `src/lib.rs`, below `pub mod greet;` (line 3), add `pub mod farewell;` and change the re-export to:\n\n```rust\npub use farewell::farewell;\npub use greet::greeting;\n```"
+      - step: 4 — Run test to verify it passes
+        at: L57
+        actions:
+          - at: L59
+            by: "run-line#superpowers"
+            run:
+              shell: pwsh
+              intent: verify
+              body: cargo test farewell
+              expect:
+                exit: exit 0
+                lines: ~
+                prose: PASS
+      - step: 5 — Commit
+        at: L62
+        actions:
+          - at: L64
+            by: "script#superpowers"
+            commit:
+              shell: bash
+              intent: other
+              body: "git add src/farewell.rs src/lib.rs\ngit commit -m \"feat: farewell\"\n"
+              expect: ~
+          - at: L69
+            by: fallback
+            note:
+              text: "---"
+  - id: Task 2
+    title: Document the API
+    at: L71
+    files:
+      - Modify README.md
+    steps:
+      - step: 1 — Add the section
+        at: L76
+        actions:
+          - at: L78
+            by: "manual-prose#edit"
+            manual:
+              reason: ProseEdit
+              text: "Append to `README.md`:\n\n```markdown\n## API\n\n- `greeting(name)`: `Hello, <name>!`\n- `farewell(name)`: `Goodbye, <name>.`\n```"
+      - step: 2 — Check by eye
+        at: L87
+        actions:
+          - at: L89
+            by: fallback
+            manual:
+              reason: HumanCheck
+              text: "Open `README.md` in a Markdown preview: both bullets render, the code spans are monospace."
+      - step: 3 — Commit
+        at: L91
+        actions:
+          - at: L93
+            by: "script#superpowers"
+            commit:
+              shell: bash
+              intent: other
+              body: "git add README.md\ngit commit -m \"docs: API section\"\n"
+              expect: ~
+          - at: L98
+            by: fallback
+            note:
+              text: "---"
+after_tasks: L100
