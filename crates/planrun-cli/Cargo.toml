@@ -1,0 +1,22 @@
+[package]
+name = "planrun-cli"
+description = "The planrun binary: check, show, run, resume, status"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "planrun"
+path = "src/main.rs"
+
+[dependencies]
+annotate-snippets.workspace = true
+clap.workspace = true
+dialoguer.workspace = true
+planrun-exec.workspace = true
+planrun-model.workspace = true
+planrun-parse.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,5 @@
+/target
+**/*.rs.bk
+# Real plans: private (D16). Keep the README.
+/tests/corpus/local/*
+!/tests/corpus/local/README.md

@@ -1,0 +1,19 @@
+[package]
+name = "planrun-exec"
+description = "Executes a typed plan against a git repository: workspace, git, shells, expectations, policy, journal, runner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Deliberately no dependency on planrun-parse: execution sees only the IR (D2).
+[dependencies]
+planrun-model.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha1_smol.workspace = true
+similar.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
