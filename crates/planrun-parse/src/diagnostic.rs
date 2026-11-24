@@ -49,6 +49,14 @@ impl Diagnostic {
         }
     }
 
+    /// A note (information, never blocks).
+    pub fn note(code: &'static str, span: Option<Span>, message: impl Into<String>) -> Self {
+        Self {
+            severity: Severity::Note,
+            ..Self::error(code, span, message)
+        }
+    }
+
     /// Adds a related span.
     pub fn with_related(mut self, span: Span, label: impl Into<String>) -> Self {
         self.related.push((span, label.into()));
@@ -69,5 +77,19 @@ impl Diagnostics {
     /// True when any diagnostic is an error.
     pub fn has_errors(&self) -> bool {
         self.0.iter().any(|d| d.severity == Severity::Error)
+    }
+
+    /// The codes of the errors, in order.
+    pub fn error_codes(&self) -> Vec<&'static str> {
+        self.0
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .map(|d| d.code)
+            .collect()
+    }
+
+    /// Sorts into source order (diagnostics without a span first); stable.
+    pub fn sort(&mut self) {
+        self.0.sort_by_key(|d| d.span.map(|s| s.start));
     }
 }

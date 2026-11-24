@@ -11,6 +11,7 @@ use std::sync::Arc;
 use crate::diagnostic::Diagnostic;
 use crate::document::Document;
 use crate::format::Format;
+use crate::kinds;
 use crate::recognizer::RecognizerFactory;
 use crate::spec::{FormatSpec, SpecFormat};
 
@@ -68,7 +69,12 @@ impl Registry {
     /// The built-in recognizer kinds and formats (Phase 1: the `assay` format and the kinds it
     /// uses; Phase 2: the other three).
     pub fn with_builtins() -> Result<Self, RegistryError> {
-        Ok(Self::new())
+        let mut registry = Self::new();
+        for factory in kinds::builtin_factories() {
+            registry.add_factory(factory)?;
+        }
+        registry.add_spec("assay", include_str!("../../../formats/assay.toml"))?;
+        Ok(registry)
     }
 
     /// Registers a recognizer factory.

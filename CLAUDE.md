@@ -5,7 +5,7 @@ task, step by step: exactly what the plan says, nothing more. It is not an agent
 `docs/architecture.md` before changing code; `docs/decisions.md` holds the rules below with their
 reasons (cited as `D<n>`).
 
-## Priorities (D1)
+## Priorities (D1, D25)
 
 Correctness > maintainability/extensibility > execution speed > low memory > predictability.
 When two of these conflict, the earlier one wins. Speed means no wasted process starts or repeated

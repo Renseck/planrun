@@ -25,31 +25,60 @@ pub struct StepContext<'a> {
 }
 
 /// A position in a step's blocks. A recognizer that matches advances it past what it consumed.
+/// Blocks in the `skip` range (the task's manifest) are invisible to it.
 pub struct Cursor<'a> {
     blocks: &'a [Located],
     range: BlockRange,
+    skip: Option<BlockRange>,
     position: usize,
+    consumed: usize,
 }
 
 impl<'a> Cursor<'a> {
     /// A cursor at the start of `range`.
     pub fn new(doc: &'a Document, range: BlockRange) -> Self {
-        Self {
+        Self::with_skip(doc, range, None)
+    }
+
+    /// A cursor at the start of `range` that never sees the blocks of `skip`.
+    pub fn with_skip(doc: &'a Document, range: BlockRange, skip: Option<BlockRange>) -> Self {
+        let mut cursor = Self {
             blocks: &doc.blocks,
             range,
+            skip,
             position: range.start,
+            consumed: 0,
+        };
+        cursor.position = cursor.settle(range.start);
+        cursor
+    }
+
+    /// `index`, or the first index after the skipped range when it falls inside it.
+    fn settle(&self, index: usize) -> usize {
+        match self.skip {
+            Some(skip) if skip.contains(index) => skip.end,
+            _ => index,
         }
     }
 
     /// The block `offset` positions ahead, if it is still in the step.
     pub fn peek(&self, offset: usize) -> Option<&'a Located> {
-        let index = self.position + offset;
+        let mut index = self.position;
+        for _ in 0..offset {
+            index = self.settle(index + 1);
+        }
         (index < self.range.end).then(|| &self.blocks[index])
     }
 
     /// Consumes `count` blocks.
     pub fn advance(&mut self, count: usize) {
-        self.position = (self.position + count).min(self.range.end);
+        for _ in 0..count {
+            if self.is_done() {
+                return;
+            }
+            self.position = self.settle(self.position + 1);
+            self.consumed += 1;
+        }
     }
 
     /// True when every block of the step is consumed.
@@ -60,6 +89,11 @@ impl<'a> Cursor<'a> {
     /// The current position (for coverage and diagnostics).
     pub fn position(&self) -> usize {
         self.position
+    }
+
+    /// How many blocks have been consumed so far.
+    pub fn consumed(&self) -> usize {
+        self.consumed
     }
 }
 
@@ -96,4 +130,32 @@ pub trait RecognizerFactory: Send + Sync {
     /// One instance from its spec table (`params` excludes `kind`). Invalid params are an
     /// error when the registry loads the format, never at parse time.
     fn build(&self, params: &toml::Table) -> Result<Arc<dyn Recognizer>, String>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::source;
+
+    #[test]
+    fn the_cursor_never_sees_the_skipped_blocks() {
+        let text = "a\n\nb\n\nc\n\nd\n";
+        let source = source::load("t", text.as_bytes()).unwrap_or_else(|e| panic!("{e:?}"));
+        let doc = Document::build(source).unwrap_or_else(|e| panic!("{e:?}"));
+        let all = BlockRange { start: 0, end: 4 };
+        let skip = Some(BlockRange { start: 1, end: 3 });
+        let mut cursor = Cursor::with_skip(&doc, all, skip);
+        let at = |c: &Cursor<'_>, k| c.peek(k).map(|b| doc.source.slice(b.span).to_owned());
+        assert_eq!(at(&cursor, 0).as_deref(), Some("a"));
+        assert_eq!(at(&cursor, 1).as_deref(), Some("d"));
+        assert_eq!(at(&cursor, 2), None);
+        cursor.advance(1);
+        assert_eq!(cursor.position(), 3);
+        cursor.advance(5);
+        assert!(cursor.is_done());
+        assert_eq!(cursor.consumed(), 2);
+
+        let from_skip = Cursor::with_skip(&doc, BlockRange { start: 1, end: 4 }, skip);
+        assert_eq!(from_skip.position(), 3);
+    }
 }
