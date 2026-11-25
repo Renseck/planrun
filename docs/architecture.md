@@ -282,41 +282,83 @@ Done | Failed | Skipped`. Per task, the lifecycle of your §6.1 proposal:
 
 ### 6.3 Shell sessions
 
-One persistent session per shell kind per run (D24): `pwsh` for `powershell`/`pwsh`/`ps1` fences,
-`bash` for `bash`/`sh`. Variables, functions and the working directory persist across blocks, as
-in Rens' terminal (`$gate` set in the Gate block is read in the commit block; DevReady plans set
-`$P2` once).
+One persistent session per shell kind per run (D24): `pwsh` for `powershell`/`pwsh`/`ps1`
+fences, `bash` for `bash`/`sh`/`shell` (the spec defaults, extending.md §2). Variables,
+functions and the working directory persist across blocks, as in Rens' terminal (`$gate` set in
+the Gate block is read in the commit block; DevReady plans set `$P2` once). `shell::Session`
+implements `ShellSession`; P5 keeps one per shell.
 
-Protocol: each block is written to a temp file outside the repository and dot-sourced (`. 'file'`
-/ `source file`), wrapped so that a per-run random sentinel line carrying the exit status follows
-it, even when the block throws. Output is streamed to the UI line by line and captured for the
-matcher. Sessions start at the repository root with `-NoProfile`.
+- **Which shells** (D63): `pwsh` from `PATH` when it is PowerShell 7 or later, never Windows
+  PowerShell 5.1. On Windows, bash is Git for Windows' `<root>\usr\bin\bash.exe`, `<root>` found
+  from `git --exec-path` and checked with `uname -s` (MINGW or MSYS), never `bash` from `PATH`
+  (WSL); its `PATH` gets `/usr/bin` in front. Elsewhere `bash` from `PATH`.
+- **Protocol** (D60): sessions start at the repository root with `-NoProfile`
+  (`--noprofile --norc`), detached from planrun's terminal. Each block is written to a file in a
+  fresh run directory under the OS temp directory (never the working tree, D7), whose path comes
+  through the environment. Blocks get no stdin: pwsh has none at all and its `-Command` script
+  is a loop that dot-sources each block file as it appears; bash gets one ASCII line per block,
+  `source "<dir>/b<n>.sh" </dev/null`, at the top level. After each block a sentinel with a
+  per-session secret and the block's number arrives on stdout (status, `errored`, the working
+  directory) and on stderr; the block ends when both have. Output is streamed line by line with
+  its stream and kept for the matcher; order across the two streams is arrival order.
+- **How a block ends** (D61): `Exited(code)` (pwsh `$LASTEXITCODE`, reset before the block;
+  bash `$?`), `Threw` (pwsh), `SessionEnded` (bash `exit`, or the shell gone), `TimedOut`,
+  `Broken` (a sentinel that does not fit). pwsh also reports `errored`: `$Error[0]` changed.
+- **Environment** (D62): planrun's own, without `BASH_ENV`, `ENV` and the git wrapper's
+  variables, with `GIT_TERMINAL_PROMPT=0`.
+- **The process tree** (D64): a job object on Windows, `setsid` on Unix; a timeout (none by
+  default, D65) or a drop kills every descendant. `shell/kill.rs` holds planrun's only
+  `unsafe` code.
+- **Stated differences from the terminal:** `$LASTEXITCODE` is reset to 0 before each block; a
+  terminating error ends the block; `$PSScriptRoot` and `$MyInvocation` name the block's temp
+  file; pwsh `exit n` ends only the block, bash `exit n` the session; `GIT_TERMINAL_PROMPT=0`.
 
 Windows with PowerShell 7 is the primary platform (D19); Linux with pwsh and bash is supported.
 
 ### 6.4 Expectations
 
-- **Exit**: `Success` = 0; `Failure` = non-zero; `Code(n)`; `Unknown` = not checked.
-- **Summary lines** (fenced `Expected …:` blocks): every expected line must match an output line,
-  in order (a subsequence); `…` matches any run of characters; trailing whitespace ignored.
-- **Prose** (`Expected: all pass`): mapped to an exit expectation by the format's phrase table,
-  checked, and then **shown for confirmation**. Prose never passes a script on its own (D11).
-- **Expected failures** (`Expected: build error`, "run the test to verify it fails"): recorded in
-  the IR, **skipped by default** (D12). `--run-expected-failures` runs them.
-- A mismatch stops and offers: accept (journaled as accepted-with-mismatch), retry, open a shell,
-  abort.
+`expect::check` turns a run and its `Expectation` into `Pass`, `Mismatch` or `Confirm` (D66).
+
+- **Exit**: `Success` = 0; `Failure` = non-zero or a throw; `Code(n)`; `Unknown` = not checked.
+  A session that ended, timed out or broke is a mismatch whatever was expected.
+- **Summary lines** (fenced `Expected …:` blocks): every non-blank expected line must match an
+  output line, in order (a subsequence); `…` matches any run of characters, the empty one
+  included, and only `…`; the first literal segment is anchored at the start, the last at the
+  end. Output is split on LF, trailing whitespace is stripped on both sides (a CR with it), ANSI
+  CSI and OSC sequences are stripped from the output; leading whitespace counts.
+- **Prose** (`Expected: all pass`) and **comments** (`# main` after a command, D35, D48): the
+  exit status the format's phrase table derived is checked, and then the text is **shown for
+  confirmation**, the two labelled apart. Prose never passes a script on its own (D11).
+- **Asking without prose:** an exit the plan does not state that is not 0 (or a throw), and a
+  pwsh `errored` run where nothing but an exit status was expected, ask too. Every
+  confirmation shows `errored`.
+- **Expected failures** (`Expected: build error`, "run the test to verify it fails"): a Verify
+  script expecting failure is **skipped by default** (D12, D67), decided by the policy before
+  the run; `--run-expected-failures` runs it. Gates, previews and applies always run.
+- A mismatch stops and offers (P5): accept (journaled as accepted-with-mismatch), retry, open a
+  shell, abort.
 
 ### 6.5 Policy
 
 Every runnable thing has a class (D13): `Read` < `Build` < `Modify` < `Destructive`. File actions
-are `Modify`. A script's class is the highest class of any command in it, by a
-`CommandClassifier` (known heads: `git status|diff|log|show`, `rg`, `Get-Content` → Read;
-`cargo|dotnet|npm|npx test|build|check|ci` → Build; `git add|commit|apply|rm|switch|checkout`,
-`replace … -All`, `Set-Content` → Modify; `Remove-Item -Recurse`, `rm -rf`, `git reset --hard`,
-`git push`, `git clean` → Destructive). **Unknown commands are Destructive.**
+are `Modify`. A script's class is the highest class of any command in it, by the
+`DefaultClassifier` (D68): a built-in allowlist that no spec or flag changes, over a splitter
+per shell that recurses into subexpressions, script blocks, command substitutions and
+expanding here-strings and heredocs. What it cannot take apart with confidence, and every
+command its tables do not know, is **Destructive**.
 
-Defaults: file actions run automatically; Build and Modify scripts ask; Destructive scripts show
-the script and ask for a typed `yes`; `Manual` always waits. `--auto <classes>` widens this.
+| Class | Examples |
+|---|---|
+| Read | `git status`, `diff`, `log`, `show`, `branch` (listing), `rev-parse`; `rg`; `Get-Content`, `Get-ChildItem`, `Select-String`, `Test-Path`, `Sort-Object`, `ConvertFrom-Json`, `Set-Location`; bash `cat`, `ls`, `head`, `grep`, `echo`, `test`; `replace … -DryRun`; DevReady functions whose agent mode is `safe` |
+| Build | `cargo build`/`test`/`check`/`clippy`/`fmt --check`/`doc`; `dotnet build`/`test`/`restore`; `npm ci`/`test`/`run`; `go build`/`test`/`vet`; DevReady `test` |
+| Modify | `git add`, `commit`, `apply`, `rm`, `mv`, `switch`, `checkout -b`, `stash`, `reset` (soft, mixed); `cargo fmt`, `fix`, `add`; `npm install`; `dotnet format`; `go mod tidy`; `New-Item`, `Set-Content`, `Add-Content`, `Copy-Item`, `Move-Item`, `Remove-Item` (no `-Recurse`); `mkdir`, `cp`, `mv`, `rm` (no `-r`), `sed -i`; `replace … -All`; a redirection to a relative path |
+| Destructive | `Remove-Item -Recurse`, `rm -r`; `git push`, `fetch`, `pull`, `reset --hard`, `clean`, `restore`, `checkout <name>` or `--`, `switch -f`, `branch -D`, `stash drop`; `git -c` with any key but `color.*`, `advice.*`, `core.quotepath`, `user.name`, `user.email`; `cargo run`/`install`, `dotnet run`, `npx`; `iex`, `Start-Process`, `Invoke-WebRequest`, `curl`; `pwsh -File`, `bash -c`, `cmd /c`, `source`, `eval`; a static or instance .NET call outside a short pure list; a redirection outside the repository; anything unknown |
+
+Defaults (D13, D69): file actions within the task's scope run automatically; every script asks,
+Read ones included; Destructive scripts show the script and ask for a typed `yes`; `Manual`
+always waits; a file action outside the scope (D50) and an Apply script always ask. `--auto
+read,build,modify` (any of them) lets those classes run without asking; `destructive` is
+refused. `Policy::decide` computes the decision in P4; the runner prompts in P5.
 
 ### 6.6 Journal and resume
 
@@ -346,7 +388,8 @@ tasks before it wrote, and simulate every file action. Commits are assumed. Runs
 writes nothing: not the working tree, not `.git`. Once a script, commit or Manual has gone by
 without running, a failing file action is a warning ("depends on a step that did not run") and
 its path is unknown from then on; every ok after that point assumes those steps change no files.
-Exit 0 when nothing fails, 1 when something does, 2 when git or the repository cannot be used.
+Each script and commit shows its class and what the default policy would do with it ("would ask
+(Build)", "typed yes (Destructive)", "skipped: expected failure", D69). Exit 0 when nothing fails, 1 when something does, 2 when git or the repository cannot be used.
 
 The interactive screen (line prompts first, D15):
 

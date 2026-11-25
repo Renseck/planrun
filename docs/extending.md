@@ -223,6 +223,6 @@ the outline should be new. Every block of every task must fall in exactly one st
 | Trait | Registry | For |
 |---|---|---|
 | `ActionHandler` | `HandlerSet` | how an action kind is simulated on the virtual tree (D52, D53); the transaction writes the result. `DoneState` follows in P5 |
-| `ShellSession` | one per `Shell` | another shell (`cmd`, `zsh`): a new `Shell` variant + session |
-| `CommandClassifier` | the runner's | different policy classification |
+| `ShellSession` | one per `Shell` | another shell (`cmd`, `zsh`): a new `Shell` variant, a `Dialect` in `shell/` (launch arguments, prologue, block line, sentinel; D60), its discovery and probe (D63), and its splitter in `policy/` |
+| `CommandClassifier` | the runner's | the tests' own classifier; `DefaultClassifier` is the built-in allowlist (D68), extended by adding rows to `policy/heads.rs` and their test rows, never from a format spec |
 | `Ui` | the CLI | a TUI (ratatui) later, a non-interactive batch UI |

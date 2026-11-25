@@ -102,8 +102,11 @@ blocks, a `throw` ends the block and not the session, output streams. The expect
 classifier (D13). Expected failures skipped by default (D12). Tests for each, with pwsh and bash
 when present (skipped with a message when not).
 
-Candidate (from P2b): a script working directory taken from a run lead (``(run from `$REPO`):``).
-`Script` has no cwd today, so such fences are Manual in the devready format.
+The decisions are D60–D70. Plan: `docs/plans/2026-11-25-p4-shells-expectations-policy.md`. First
+the decisions and the `unsafe` lints (D64); then the sessions (the protocol D60, how a block
+ends D61, the environment D62, which shells D63, the process tree D64); the matcher (D66); the
+classifier (D68) and the policy decisions (D67, D69); the classes in the dry run. The candidate
+(a script working directory from a run lead) is deferred (D70).
 
 ## P5 — Runner, journal, resume, interactive CLI
 

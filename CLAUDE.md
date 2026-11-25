@@ -21,8 +21,9 @@ crates/planrun-parse   Markdown → IR: source, document, format, spec, registry
                        manifest, recognizer, recognize, kinds/ (one file per recognizer kind),
                        patch, check, diagnostic
 crates/planrun-exec    IR → effects: git, workspace, eol, tree, handler, transaction,
-                       preflight, finding (P3); shells, expect, policy, journal, runner
-                       (P4–P5)
+                       preflight, finding (P3); shell/ (sessions, kill.rs: the only unsafe
+                       code), expect, policy/ (classifier, decisions) (P4); journal, runner
+                       (P5)
 crates/planrun-cli     the `planrun` binary: check, show (view, render), run --dry-run
 formats/*.toml         built-in plan formats (embedded): assay, superpowers, before-after; the
                        file name is the format id
@@ -62,6 +63,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 cargo test -- --ignored local_corpus      # parses the private real plans, when present
+cargo test -p planrun-cli --test local_classes -- --ignored --nocapture   # their script classes
 cargo run -p planrun-cli -- check tests/corpus/synthetic/assay-style.md
 ```
 
@@ -92,6 +94,9 @@ The gate for every task is all three of fmt, clippy (warnings are errors) and te
   with an environment that keeps the user's git configuration out. Exec tests build the IR by
   hand (`crates/planrun-exec/tests/support/ir.rs`, D2); tests that need a parsed plan live in
   planrun-cli.
+- Shell tests (`crates/planrun-exec/tests/shell.rs`) skip a missing shell with a message;
+  `PLANRUN_REQUIRE_SHELLS=1` makes it a failure, and every plan's verification sets it (D63).
+- Table tests (classifier, matcher) keep their rows on one line each under `#[rustfmt::skip]`.
 
 ## Docs stay in step
 
