@@ -1,6 +1,6 @@
 //! Executes a typed plan against a git repository (docs/architecture.md §6). Phases 3–5.
 //!
-//! Planned modules (docs/roadmap.md):
+//! Modules (docs/roadmap.md; P3 built the first six):
 //!
 //! - [`workspace`]: the repository root, [`RepoPath`](planrun_model::RepoPath) resolution with
 //!   the link and case check, and the one writer (temp file, second check, rename; D52).
@@ -8,19 +8,24 @@
 //! - [`git`]: a thin wrapper over the `git` binary: `apply` with the patch on stdin,
 //!   `hash-object`, `status --porcelain` without optional locks, `rev-parse`, `cat-file`,
 //!   `check-attr`, `update-index`, `ls-files`; [`BlobId`](git::BlobId).
-//! - `handler`: one [`ActionHandler`] per action kind; the [`HandlerSet`] is the execution-side
-//!   plugin point.
+//! - [`tree`]: the virtual tree, a temporary index and object directory (D52).
+//! - [`handler`]: one [`ActionHandler`] per action kind, which simulates it on a virtual tree;
+//!   the [`HandlerSet`] is the execution-side plugin point.
+//! - [`finding`]: what preflight, a simulation and the dry run report.
 //! - `shell`: persistent pwsh and bash sessions behind [`ShellSession`].
 //! - `expect`: exit-code and summary-line matching.
 //! - `policy`: command classes and the [`CommandClassifier`].
 //! - `journal`: JSONL under `.git/planrun/`.
 //! - `runner`: the state machine Task → Step → Action, talking to a [`Ui`].
 
-use planrun_model::Action;
-
 pub mod eol;
+pub mod finding;
 pub mod git;
+pub mod handler;
+pub mod tree;
 pub mod workspace;
+
+pub use handler::{ActionHandler, HandlerSet};
 
 #[cfg(test)]
 #[path = "../../../tests/support/fixture.rs"]
@@ -70,33 +75,6 @@ pub enum DoneState {
     NotDone,
     /// Some are, some are not, or neither matches: the user decides.
     Unknown,
-}
-
-/// Executes one kind of action. Registered per kind in the [`HandlerSet`].
-pub trait ActionHandler: Send + Sync {
-    /// True for the action kinds this handler executes.
-    fn handles(&self, action: &Action) -> bool;
-}
-
-/// The handlers, tried in order; the first that handles an action executes it.
-#[derive(Default)]
-pub struct HandlerSet {
-    handlers: Vec<Box<dyn ActionHandler>>,
-}
-
-impl HandlerSet {
-    /// Adds a handler.
-    pub fn add(&mut self, handler: Box<dyn ActionHandler>) {
-        self.handlers.push(handler);
-    }
-
-    /// The handler for `action`.
-    pub fn find(&self, action: &Action) -> Option<&dyn ActionHandler> {
-        self.handlers
-            .iter()
-            .find(|h| h.handles(action))
-            .map(|h| h.as_ref())
-    }
 }
 
 /// The interactive surface the runner talks to (decision D15: line prompts first).
