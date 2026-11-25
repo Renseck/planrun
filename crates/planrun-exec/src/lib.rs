@@ -2,10 +2,9 @@
 //!
 //! Planned modules (docs/roadmap.md):
 //!
-//! - `workspace`: repository root, [`RepoPath`](planrun_model::RepoPath) resolution with the
-//!   symlink check, per-task file cache, step transactions (validate every file action of a step
-//!   in memory, then write), atomic writes, line-ending policy (D10), pre-images stored with
-//!   `git hash-object -w`.
+//! - [`workspace`]: the repository root, [`RepoPath`](planrun_model::RepoPath) resolution with
+//!   the link and case check, and the one writer (temp file, second check, rename; D52).
+//! - [`eol`]: the line endings of written files (D10, D54).
 //! - [`git`]: a thin wrapper over the `git` binary: `apply` with the patch on stdin,
 //!   `hash-object`, `status --porcelain` without optional locks, `rev-parse`, `cat-file`,
 //!   `check-attr`, `update-index`, `ls-files`; [`BlobId`](git::BlobId).
@@ -19,7 +18,9 @@
 
 use planrun_model::Action;
 
+pub mod eol;
 pub mod git;
+pub mod workspace;
 
 #[cfg(test)]
 #[path = "../../../tests/support/fixture.rs"]

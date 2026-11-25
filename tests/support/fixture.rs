@@ -63,6 +63,14 @@ impl Fixture {
         &self.repo
     }
 
+    /// A directory next to the copy, outside the repository (removed with it): where a test's
+    /// links point.
+    pub fn outside(&self) -> PathBuf {
+        let dir = self.base.join("outside");
+        std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+        dir
+    }
+
     /// The environment every git call of a test gets.
     pub fn env(&self) -> Vec<(OsString, OsString)> {
         let var = |k: &str, v: &str| (OsString::from(k), OsString::from(v));
