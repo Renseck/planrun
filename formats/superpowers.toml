@@ -69,6 +69,8 @@ id = "run-line#superpowers"
 lead = '^Run: `(?P<cmd>[^`]+)`(?:\nExpected: (?P<expected>.+))?$'
 shell = "pwsh"
 exit = [
+  # A negated failure ("nothing fails", "doesn't fail") is no expected failure: checked by you.
+  { text = '''(?i)(?:\b(?:no|not|nothing|none|never|without)\b|n't\b)[^.;\n]*\b(?:fail|build error)''', exit = "any" },
   { text = '(?i)\b(fail|build error|does not exist)', exit = "failure" },
   { text = '(?i)\b(pass(es)?|succeeds?|succeeded)\b', exit = "success" },
 ]
@@ -94,6 +96,8 @@ kind = "expected-prose"
 id = "expected-prose#superpowers"
 lead = '^Expected: (?P<text>.+)$'
 exit = [
+  # A negated failure ("nothing fails", "doesn't fail") is no expected failure: checked by you.
+  { text = '''(?i)(?:\b(?:no|not|nothing|none|never|without)\b|n't\b)[^.;\n]*\b(?:fail|build error)''', exit = "any" },
   { text = '(?i)\b(fail|build error|does not exist)', exit = "failure" },
   { text = '(?i)\b(pass(es)?|succeeds?|succeeded)\b', exit = "success" },
 ]

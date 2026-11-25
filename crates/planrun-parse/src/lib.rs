@@ -78,7 +78,9 @@ pub fn parse_plan(
     for rule in check::default_rules() {
         rule.check(&plan, &mut checked);
     }
-    found.extend(format.settings().apply_checks(checked));
+    let mut checked = format.settings().apply_checks(checked);
+    check::drop_reported_write_modes(&mut checked);
+    found.extend(checked);
     let mut diagnostics = Diagnostics(found);
     diagnostics.sort();
     if diagnostics.has_errors() {

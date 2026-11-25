@@ -5,6 +5,10 @@
 //! D49): "Edit 2" directly after the ReplaceExact of "`p`, edit 1" edits `p`. Otherwise it takes
 //! the task's one editable manifest entry when `infer_path` is set; with none or several, the
 //! lead and both fences are `Manual(ProseEdit)` (decision D32).
+//!
+//! A pathless lead may capture the word before "edit" as `stem` (`README edit 2`). Then the
+//! path it continues or infers must have that file-name stem (`README` of `README.md`), or the
+//! edit is Manual: the word names the file, and a different file is never edited.
 
 use std::sync::Arc;
 
@@ -53,6 +57,10 @@ impl RecognizerFactory for BeforeAfterFactory {
             );
         }
         let lead_n = lead.capture_names().flatten().any(|n| n == "n");
+        let lead_stem = lead.capture_names().flatten().any(|n| n == "stem");
+        if has_path && lead_stem {
+            return Err("`stem` is only for a lead without a `path` capture".to_owned());
+        }
         if series.is_some() && !lead_n {
             return Err("`series` needs a lead that captures the edit number `n`".to_owned());
         }
@@ -97,6 +105,25 @@ impl BeforeAfter {
             .find(|b| b.span.start == before.span.start)?;
         let (text, _) = paragraph(cx, its_lead)?;
         (number(text)? + 1 == n).then(|| path.clone())
+    }
+
+    /// The path a lead without one edits: the series it continues, else (with `infer_path`)
+    /// the task's one editable entry. Either must agree with the lead's `stem`, when captured.
+    fn pathless(
+        &self,
+        cx: &StepContext<'_>,
+        caps: &regex::Captures<'_>,
+    ) -> Option<(RepoPath, PathOrigin)> {
+        let agrees = |path: &RepoPath| caps.name("stem").is_none_or(|s| stem(path) == s.as_str());
+        if let Some(path) = self.continued(cx, caps).filter(|p| agrees(p)) {
+            return Some((path, PathOrigin::PreviousEdit));
+        }
+        if !self.infer_path {
+            return None;
+        }
+        only_entry(cx)
+            .filter(|p| agrees(p))
+            .map(|path| (path, PathOrigin::OnlyEntry))
     }
 
     /// The two fences after the lead, and how many blocks lead through the second fence take.
@@ -158,13 +185,8 @@ impl Recognizer for BeforeAfter {
             Err(d) => return Recognized::Malformed(d),
         };
         let span = lead.span.join(after.span);
-        let continued = self.continued(cx, &caps);
-        let target = if let Some(path) = continued {
-            Some((path, PathOrigin::PreviousEdit))
-        } else if self.infer_path {
-            only_entry(cx).map(|path| (path, PathOrigin::OnlyEntry))
-        } else if self.series.is_some() {
-            None
+        let target = if self.infer_path || self.series.is_some() {
+            self.pathless(cx, &caps)
         } else {
             match resolved_lead_path(cx, &caps, base, lead.span, self.by_file_name) {
                 Ok(resolved) => Some(resolved),
@@ -201,4 +223,10 @@ impl Recognizer for BeforeAfter {
             path_origin,
         }])
     }
+}
+
+/// The file name without its last extension (`README` of `docs/README.md`).
+fn stem(path: &RepoPath) -> &str {
+    let name = path.file_name();
+    name.rsplit_once('.').map_or(name, |(stem, _)| stem)
 }

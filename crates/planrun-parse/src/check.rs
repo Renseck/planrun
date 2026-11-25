@@ -9,7 +9,7 @@ use planrun_model::{
     AbbrevBlobId, Action, ActionKind, ChangeKind, Plan, RepoPath, Span, Task, WriteMode,
 };
 
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, Severity};
 use crate::patch;
 
 /// One static check.
@@ -32,6 +32,10 @@ pub trait Rule: Send + Sync {
 ///   matches (`manifest-untouched`); a `WriteFile` on a declared path has a mode that agrees with the
 ///   entry: `FromManifest` resolves, Create is not on an existing file, Overwrite not on a new one
 ///   (`manifest-write-mode`, decision D26). A task without a manifest block is skipped.
+/// - `write-mode`: a `WriteFile` whose mode is still `FromManifest` and that no manifest entry
+///   declares (a task without a manifest, or an undeclared path where `manifest-undeclared` is
+///   only a warning) is `write-mode-unknown`, in every format (decision D58). No `[checks]`
+///   entry can switch it off.
 /// - `patch-shape`: a patch has at least one hunk and its hunks' line counts match their bodies.
 ///   (Its paths and `index` line are checked when it is recognized: `patch-path`, `patch-shape`.)
 /// - `blob-chain`: per path, each patch's preimage equals the postimage of the last earlier
@@ -47,6 +51,7 @@ pub fn default_rules() -> Vec<Box<dyn Rule>> {
         Box::new(TaskOrder),
         Box::new(StepOrder),
         Box::new(ManifestRule),
+        Box::new(WriteModeRule),
         Box::new(PatchShape),
         Box::new(BlobChain),
         Box::new(CommitRule),
@@ -144,6 +149,54 @@ impl Rule for StepOrder {
             ));
         }
     }
+}
+
+/// `write-mode`.
+pub struct WriteModeRule;
+
+impl Rule for WriteModeRule {
+    fn id(&self) -> &'static str {
+        "write-mode"
+    }
+
+    fn check(&self, plan: &Plan, out: &mut Vec<Diagnostic>) {
+        for task in &plan.tasks {
+            for action in actions(task) {
+                let ActionKind::WriteFile {
+                    path,
+                    mode: WriteMode::FromManifest,
+                    ..
+                } = &action.kind
+                else {
+                    continue;
+                };
+                if task.manifest.entries.iter().any(|e| e.path.covers(path)) {
+                    continue;
+                }
+                out.push(Diagnostic::error(
+                    "write-mode-unknown",
+                    Some(action.span),
+                    format!(
+                        "full contents for `{path}`: the plan says neither create nor \
+                         overwrite, and no manifest entry declares the file"
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+/// Drops each `write-mode-unknown` whose action already has another error (`manifest-undeclared`
+/// where the format keeps it an error), so a broken write is reported once. Runs after a
+/// format's `[checks]` levels are applied: where `manifest-undeclared` is a warning or off,
+/// `write-mode-unknown` stays (D58).
+pub fn drop_reported_write_modes(diagnostics: &mut Vec<Diagnostic>) {
+    let reported: Vec<Option<Span>> = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error && d.code != "write-mode-unknown")
+        .map(|d| d.span)
+        .collect();
+    diagnostics.retain(|d| d.code != "write-mode-unknown" || !reported.contains(&d.span));
 }
 
 /// `manifest`.

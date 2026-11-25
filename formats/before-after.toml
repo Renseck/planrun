@@ -143,6 +143,8 @@ id = "expected-prose#before-after"
 lead = '^Expected: (?P<text>.+)$'
 # First match wins: "no matches" is rg's exit 1.
 exit = [
+  # A negated failure ("nothing fails", "doesn't fail") is no expected failure: checked by you.
+  { text = '''(?i)(?:\b(?:no|not|nothing|none|never|without)\b|n't\b)[^.;\n]*\b(?:fail|build error)''', exit = "any" },
   { text = '(?i)\b(fails?|build errors?|does not exist)\b', exit = "failure" },
   { text = '(?i)\bno matches\b', exit = "code:1" },
   { text = '(?i)\b(pass(es)?|succeeds?)\b', exit = "success" },

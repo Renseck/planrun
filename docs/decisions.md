@@ -43,6 +43,9 @@ Relative, forward slashes, no `..`/`.`/empty segments, no drive letter, no backs
 Symlink escapes are refused by the workspace at write time. Nothing outside the repository is
 written except under `.git/planrun/` and the OS temp directory.
 
+Amended by D42 (wildcards), D51 (Windows-reserved spellings) and D52 (pre-images in the object
+database, the writer's temp file).
+
 ## D8 Formats are data first; built-ins are specs too
 
 Three extension levels: TOML spec (no rebuild) → recognizer kind (Rust) → Format (Rust). The
@@ -59,7 +62,7 @@ Each dependency is justified here; add none without a line.
 | `serde`, `toml` | format specs |
 | `serde_json` | the journal (JSONL) |
 | `thiserror` | error types |
-| `sha1_smol` | git blob ids in-process: the `blob-chain` check from a created file's contents (planrun-parse); the fast path in planrun-exec, where `git hash-object` is the authority |
+| `sha1_smol` | git blob ids in-process: the `blob-chain` check from a created file's contents (planrun-parse only; planrun-exec asks `git hash-object`, D56) |
 | `similar` | showing diffs of overwrites and replacements. **Not** for applying patches (D20) |
 | `clap` | arguments |
 | `dialoguer` | line prompts (D15) |
@@ -75,6 +78,8 @@ Rejected: `rusqlite` (D18), `ratatui` for now (D15), `tracing` for now (the jour
 Created files: as in the plan (LF). Overwrite and `ReplaceExact`: keep the target's existing
 convention unless `.gitattributes` says `eol=lf`; `before` is matched in LF space. Patches: through
 `git apply` unchanged.
+
+Amended by D54 (attributes, files without or with mixed line endings).
 
 ## D11 Prose never passes a script on its own
 
@@ -142,6 +147,8 @@ when every verification of the task passed or was skipped by policy (D12).
 
 All file actions of a step, up to the next non-file action, are validated in memory before any is
 written; pre-images are stored in the git object database first; writes are temp-file + rename.
+
+Amended by D52 (the virtual tree, the writer) and D53 (prepare, then commit).
 
 ## D24 One persistent session per shell kind per run
 
@@ -321,6 +328,8 @@ was chosen instead, so "no write targets a wildcard" is a property of the types.
 Amends D7: a `RepoPath` also refuses `*` and `?`. Both are invalid in Windows file names
 (D19), and a path with one is a pattern (D41). A lead that names such a path is `bad-path`.
 
+Amended by D51.
+
 ## D43 Inline Files clauses
 
 A manifest may be written inside its marker paragraph: ``**Files:** create `a`; modify `b`.``
@@ -366,7 +375,7 @@ is unknown.
 - `show` marks Bare entries. `AmbiguousPath` is produced only by this rule; it is not a
   `manual-prose` reason.
 
-  ## D46 Step labels that stay in their step
+## D46 Step labels that stay in their step
 
 `[[outline.steps]] keep = true`: the boundary block is the first block of its step instead of
 being consumed by the outline. Hand-written plans put the step's lead in its label
@@ -410,3 +419,178 @@ number `n - 1`: it edits that path, with `PathOrigin::PreviousEdit`.
 - The previous edit's number is read from its lead paragraph by `series`, because a
   recognizer cannot see another recognizer's captures (recognizers are pure and independent,
   extending.md §5); the edit with the path is usually matched by another recognizer instance.
+
+Amended by D59 (a leading word names the file).
+
+Decisions D50 onwards were agreed on 2026-11-25 at the start of P3, from the review of the
+execution design (workspace, git, dry run) against the IR that P2 left.
+
+## D50 Unscoped file actions are confirmed
+
+A file action (WriteFile, ApplyPatch, ReplaceExact, Delete) is scoped when its task has a
+manifest and either a file entry equal to its path whose origin is not Bare, or a pattern entry
+that matches it (D41). Any other file action is unscoped: in a task without a manifest
+(`required = false`), at a path no entry covers (`manifest-undeclared` downgraded, D31), or at
+a path only a Bare entry names (D45).
+
+- An unscoped file action never runs automatically: the runner shows its op, path, PathOrigin
+  and plan line and asks, whatever `--auto` says. Preflight checks it like any other action;
+  the dry run reports it as "would ask". P3 computes scope; P5 adds the prompt.
+- An action is Bare-targeted when some Bare file entry of its task equals its path. A
+  Bare-targeted WriteFile Overwrite or Delete is `path-ambiguous`, a preflight error in every
+  format: nothing in the action confirms the target, where an ApplyPatch has `pre` and a
+  ReplaceExact has "`before` exactly once". A Bare-targeted ApplyPatch or ReplaceExact stays an
+  action; it is unscoped, and a missing target is `target-missing` with the D45 hint. A path
+  with both a Written and a Bare entry is scoped and Bare-targeted at once: conservative, and
+  loud.
+- Paths resolved by D32 and D49 (FileName, OnlyEntry, PreviousEdit) are scoped: each resolves
+  only to an entry written in full.
+- Scope and Bare-targeting are `Manifest` methods in planrun-model, used by parse (D45's
+  `Manual(AmbiguousPath)`) and exec alike. Scope is computed from the IR, never read from a
+  spec: no format spec, `[checks]` entry or `--auto` value switches D50 off (as D31).
+
+Actions never carry `PathOrigin::Bare`: the manifest sets it on entries only, and a lead that
+names a bare file name resolves to `Written`. So the rule is keyed on the manifest, not on the
+action's origin.
+
+## D51 RepoPath refuses Windows-reserved spellings
+
+Amends D7 and D42. Besides absolute paths, `..`, `.`, empty segments, backslashes and
+wildcards, `RepoPath` refuses, as `bad-path` in `check`:
+
+- `:` anywhere (an NTFS alternate data stream: `a.rs:x`), `<`, `>`, `"`, `|`, and the control
+  characters 0x00–0x1F;
+- a segment that equals `.git` after ASCII case-folding and stripping trailing dots and spaces
+  (`.GIT`, `.git.`, `.git `), and its 8.3 alias `git~1` (CVE-2014-9390): a plan never writes
+  into a git directory, hooks above all;
+- a Windows device name as a segment, with or without an extension, in any case: `con`, `prn`,
+  `aux`, `nul`, `com0`–`com9`, `lpt0`–`lpt9`, the superscript forms `com¹`–`com³` and
+  `lpt¹`–`lpt³`, `conin$`, `conout$`;
+- a segment that ends in a dot or a space.
+
+`.gitattributes`, `.gitignore` and `.gitmodules` stay writable.
+
+## D52 The virtual tree, pre-images and the writer
+
+Amends D7 and D23; corrects architecture.md §6.2 and §7.
+
+- **Virtual tree.** A temporary index file and object directory in a fresh directory under the
+  OS temp directory, with the repository's objects as alternates. Its git calls get
+  `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES` on their own
+  `Command`; no other git call inherits them, and nothing in the repository is written. A path
+  is seeded from the working tree on first use (`hash-object -w --path`). The tree tells apart
+  a path not seeded yet, one absent on disk, one deleted in this run, and one whose state a
+  script that did not run may have changed (dry run, D55). Patches are applied to it with
+  `git apply --cached` (D20 holds: git applies them), so preimage and postimage ids are
+  compared in git's normalized space, with every filter and `autocrlf` applied by git.
+- **Path identity.** With `core.ignorecase=true`, paths are compared case-insensitively in the
+  virtual tree and within a step: two spellings of one path in a run are `path-collision`. A
+  plan path whose existing segments differ in case from the disk is `path-case`.
+- **Pre-images** of every path a step changes are stored in the repository's object database
+  with `git hash-object -w --no-filters` (the exact bytes, CRLF and untracked files included)
+  before anything is written. This id differs from the filtered blob id the checks use.
+- **The writer.** Every write goes through one writer, which resolves the path first: the
+  deepest existing ancestor, canonicalized, must equal the repository root plus the same
+  segments, compared exactly. That refuses symlinks, junctions, 8.3 short names and case
+  mismatches. Directories a write needs are created one segment at a time, each checked. The
+  contents go to `.planrun-<random>.tmp`, created with `create_new` in the target's directory;
+  the parent is checked again directly before the rename, and the rename replaces the target
+  (a symlink placed there is replaced, never written through). The temp file is the one thing
+  besides the plan's own writes that appears in the working tree, and only until the rename.
+- **What is not closed:** a parent directory swapped for a link between the second check and
+  the rename. planrun is no defence against a process racing it in the same tree.
+- Status calls run as `git --no-optional-locks status --porcelain -z`, so even they leave
+  `.git/index` alone.
+
+## D53 A step transaction is prepare, then commit
+
+Amends D23.
+
+- **prepare** validates a step's file actions on a virtual tree seeded from the disk, stores
+  the pre-images, and builds every post-image there: patches with `git apply --cached`, the
+  other actions as D54 bytes (`hash-object -w --path`). It returns a `PreparedStep`: per path
+  the pre-image id (or "absent"), the post-image bytes (or "delete"), and the directories it
+  will create. The bytes of a patched file are `git cat-file --filters --path=<p> <blob>`, the
+  same conversion to the working tree that `git apply` uses.
+- **commit** writes the prepared post-images with the one writer (D52), in order. It first
+  hands the `PreparedStep` to a write-ahead recorder; it cannot write without one. P5's recorder
+  is the journal; a real run without that record is not allowed. P3's CLI has only `--dry-run`,
+  so nothing in P3 commits outside the tests.
+- **Rollback:** an error during commit restores every path already written from its pre-image
+  (exact bytes), removes files it created and the directories it created (deepest first, when
+  empty), and reports any path it could not restore.
+- **The index:** a `Delete` with `via_git` also removes the path from the index, as one
+  `git update-index --force-remove` call after every working-tree write succeeded. It is the
+  last effect of the step and writes the index once, under git's lock: it either happens whole
+  or not at all, and when it fails the working-tree writes are rolled back.
+- `ActionHandler` gets `simulate` (the dry-run behaviour of extending.md §4) and no per-kind
+  write: writing is the transaction's job.
+
+## D54 Line endings of written files, refined
+
+Amends D10. For an Overwrite and a ReplaceExact target, in this order:
+
+1. An `eol` attribute (`lf` or `crlf`) decides. `-text` (or `binary`) means the bytes are used
+   unchanged: an Overwrite writes the plan's bytes, a ReplaceExact matches raw bytes.
+2. Otherwise the file decides: CRLF when it has at least one CRLF and no bare LF, LF when it
+   has at least one LF and no CRLF.
+3. A file with no line ending at all (empty, or one line): git's checkout convention for that
+   path (`core.eol`, `core.autocrlf`, attributes), found by converting a one-line blob with
+   `git cat-file --filters --path=<p>`. That is what a fresh checkout would produce.
+4. Mixed: an Overwrite uses the checkout convention (the whole file is replaced); a ReplaceExact
+   is `eol-mixed`, a preflight error, because a one-line edit must not rewrite every line
+   ending in the file.
+
+`before` is matched in LF space (D10). Created files stay LF. Attributes are read once, at the
+start of a step; a step that writes `.gitattributes` changes the attributes of later steps
+only, and the report says so.
+
+## D55 The dry run
+
+- It parses, checks, and preflights against one virtual tree carried across every task of the
+  run, so a task sees the files the tasks before it wrote. Commits are not run; the dry run
+  assumes each task's commit happens.
+- Real dirt is checked once, at the start, for the paths every task of the run touches: a dirty
+  or untracked touched path is `path-dirty` (an error); other dirt is a warning.
+- Scripts are not run, and neither are Manual steps (a prose edit changes a file by hand). Any
+  of them can touch any path, so the rule is plain: once a script, commit or Manual that did not
+  run comes earlier in the run, a failing file action is a warning, "depends on a step that did
+  not run", not a failure, and its path is unknown in the virtual tree from then on; later
+  actions on it get the same label. Only failures of the tree's state are downgraded (a missing
+  or existing target, a blob or patch mismatch, `before` not unique, `eol-mixed`); a bad path,
+  `path-ambiguous` or `write-mode-unknown` stays an error. Every ok after that point assumes
+  those steps change no files (`cargo fmt` does). The report says so in its header, and its
+  summary counts these warnings. A failure before any of them is a failure. Exit 0 when only
+  warnings remain.
+- `Generated` is "not checked" (its script did not run), a `Manual` "waits", an unscoped file
+  action "would ask" (D50).
+
+## D56 No in-process blob ids in planrun-exec
+
+Amends D9; corrects architecture.md §6.2. planrun-exec has no SHA-1 fast path: knowing that no
+filter applies costs about as much as one `git hash-object`, and D25 rules out speculative speed
+work. `sha1_smol` stays for planrun-parse's `blob-chain` check only.
+
+## D57 Pre-image objects can be pruned
+
+The pre-images D52 stores are unreachable objects: `git gc` may prune them once they are older
+than `gc.pruneExpire` (two weeks by default). P5 decides whether a resume past that window is
+detected (the object is gone: the user decides, D14) or whether the objects are pinned (for
+example by a ref under `refs/planrun/`). Recorded now, not solved in P3.
+
+## D58 A write without a mode is an error
+
+A `WriteFile` whose mode is still `FromManifest` at a path no manifest entry declares (a task
+without a manifest, or an undeclared path where `manifest-undeclared` is only a warning) is
+`write-mode-unknown`, a check error in every format. No built-in format produces one: assay
+requires a manifest and keeps `manifest-undeclared` an error, and the other formats never use
+the `write` op. Where `manifest-undeclared` is already an error on the action, it is reported
+once. planrun-exec refuses a `FromManifest` write too, as an error that never prompts.
+
+## D59 An edit series' leading word names its file
+
+Amends D49. A `before-after` lead without a path may capture the word before "edit" as `stem`
+(`README edit 2 (old → new):`). The path the lead continues (D49) or infers (D32) must then have
+that file-name stem, the file name without its last extension (`README` of `README.md`),
+compared exactly; otherwise the series does not continue, and with no other agreeing path the
+edit is `Manual(ProseEdit)`. The spec load refuses `stem` on a lead that captures `path`.

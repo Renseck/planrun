@@ -99,7 +99,7 @@ Parameters in *italics* are optional.
 | Kind | Matches | Produces | Parameters |
 |---|---|---|---|
 | `file-block` | a lead paragraph naming a path (and op), then one fence | `WriteFile` / `ApplyPatch` | `lead` (captures `path`, *`op`*), `ops` (op prefix → `write` \| `create` \| `overwrite` \| `patch`), *`default_op`*, *`file_name_from_manifest`* |
-| `before-after` | lead (naming a path), fence, *separator paragraph*, fence | `ReplaceExact`, or `Manual(ProseEdit)` when `infer_path` finds no single entry | `lead` (captures `path`, or none with `infer_path = true`), *`separator`* (e.g. `^After:$`; absent = two fences back to back), *`file_name_from_manifest`*, *`series`* (a regex capturing `n`; the lead then captures `n` too, D49) |
+| `before-after` | lead (naming a path), fence, *separator paragraph*, fence | `ReplaceExact`, or `Manual(ProseEdit)` when `infer_path` finds no single entry | `lead` (captures `path`, or none with `infer_path = true`), *`separator`* (e.g. `^After:$`; absent = two fences back to back), *`file_name_from_manifest`*, *`series`* (a regex capturing `n`; the lead then captures `n` too, D49); a pathless lead may capture *`stem`* (D59) |
 | `delete` | a sentence or inline `git rm` | `Delete` | `lead` (captures `path`), *`via_git`*, *`file_name_from_manifest`* |
 | `generated` | a "generated, not by hand" sentence | `Generated` | `lead` (captures `path`) |
 | `ceremony` | a fence directly after a given action whose body matches | nothing (absorbed) | `after` (`patch`), `body` |
@@ -135,7 +135,9 @@ Notes on the kinds:
   comment and matches gives the script a comment expectation, exit not checked; an
   `expected-prose` right after it extends it instead of being `expected-twice`.
 - `before-after` `series` (D49): a lead without a path continues the numbered edit directly
-  before it in the step (`PathOrigin::PreviousEdit`), before `infer_path` is tried.
+  before it in the step (`PathOrigin::PreviousEdit`), before `infer_path` is tried. A
+  pathless lead's `stem` capture (`README edit 2`) must equal the file-name stem of the path
+  it continues or infers, or the edit is `Manual(ProseEdit)` (D59).
 - `expected-prose` `list` (D47): the list items at the lead's depth and the paragraphs, list
   items and `text` fences nested in them belong to the expectation; no list is
   `missing-block`.

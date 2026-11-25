@@ -95,7 +95,8 @@ file_name_from_manifest = true
 kind = "before-after"
 id = "before-after#series"
 # Edit 2 (old → new): after `p`, edit 1 (D49); else the task's one editable entry (D32).
-lead = '^(?:\w+ )?[Ee]dit (?P<n>\d+) \(old → new(?:; [^)]*)?\):$'
+# `README edit 2 (old → new):` edits only a path whose file-name stem is `README`.
+lead = '^(?:(?P<stem>\w+) )?[Ee]dit (?P<n>\d+) \(old → new(?:; [^)]*)?\):$'
 series = '(?i)\bedit (?P<n>\d+) \(old → new'
 infer_path = true
 
@@ -135,7 +136,8 @@ takes_fence = true
 kind = "manual-prose"
 id = "manual-prose#run-from"
 # … (run from `$REPO`):  + its fence: a script has no working directory of its own (D24).
-lead = '\(run from `[^`]+`\):$'
+# Not end-anchored: `(run from `x`) (Bash tool):` must not reach the script lead.
+lead = '\(run from `[^`]+`\)'
 reason = "human-check"
 takes_fence = true
 
@@ -219,6 +221,8 @@ kind = "expected-prose"
 id = "expected-prose#devready"
 lead = '^Expected: (?P<text>.+)$'
 exit = [
+  # A negated failure ("nothing fails", "doesn't fail") is no expected failure: checked by you.
+  { text = '''(?i)(?:\b(?:no|not|nothing|none|never|without)\b|n't\b)[^.;\n]*\b(?:fail|build error)''', exit = "any" },
   { text = '(?i)\b(?:fails?|build errors?)\b', exit = "failure" },
   { text = '(?i)\b(?:all pass(?:es)?|0 failed|exit 0)\b', exit = "success" },
 ]
@@ -230,5 +234,7 @@ id = "expected-prose#devready-list"
 lead = '^Expected(?: \([^)]*\))?:$'
 list = true
 exit = [
+  # A negated failure ("nothing fails", "doesn't fail") is no expected failure: checked by you.
+  { text = '''(?i)(?:\b(?:no|not|nothing|none|never|without)\b|n't\b)[^.;\n]*\b(?:fail|build error)''', exit = "any" },
   { text = '(?i)\b(?:fails?|build errors?)\b', exit = "failure" },
 ]
