@@ -26,9 +26,10 @@ pub trait Rule: Send + Sync {
 /// - `task-order`: a repeated task id is `duplicate-task-id`; among the other tasks, ordinals
 ///   strictly increase (`task-order`).
 /// - `step-order`: written step numbers count up from 1 in each task.
-/// - `manifest`: every file action's path is declared (`manifest-undeclared`); every declared
-///   Create/Modify/Rewrite/Delete is touched by an action or a `Generated`
-///   (`manifest-untouched`); a `WriteFile` on a declared path has a mode that agrees with the
+/// - `manifest`: every file action's path is declared (`manifest-undeclared`), by an entry for
+///   that file or by a pattern entry that matches it (D41); every declared Create/Modify/
+///   Rewrite/Delete is touched by an action or a `Generated`, a pattern entry by any path it
+///   matches (`manifest-untouched`); a `WriteFile` on a declared path has a mode that agrees with the
 ///   entry: `FromManifest` resolves, Create is not on an existing file, Overwrite not on a new one
 ///   (`manifest-write-mode`, decision D26). A task without a manifest block is skipped.
 /// - `patch-shape`: a patch has at least one hunk and its hunks' line counts match their bodies.
@@ -162,7 +163,7 @@ impl Rule for ManifestRule {
 
 fn check_manifest(task: &Task, out: &mut Vec<Diagnostic>) {
     let manifest = task.manifest.span.unwrap_or(task.span);
-    let declared = |path: &RepoPath| task.manifest.entries.iter().find(|e| &e.path == path);
+    let declared = |path: &RepoPath| task.manifest.entries.iter().find(|e| e.path.covers(path));
     let mut touched: Vec<&RepoPath> = Vec::new();
     for action in actions(task) {
         let Some(path) = file_path(&action.kind) else {
@@ -199,7 +200,7 @@ fn check_manifest(task: &Task, out: &mut Vec<Diagnostic>) {
     }
     let must_touch = |c: ChangeKind| !matches!(c, ChangeKind::Test | ChangeKind::Generated);
     for entry in &task.manifest.entries {
-        if must_touch(entry.change) && !touched.contains(&&entry.path) {
+        if must_touch(entry.change) && !touched.iter().any(|p| entry.path.covers(p)) {
             out.push(Diagnostic::error(
                 "manifest-untouched",
                 Some(entry.span),

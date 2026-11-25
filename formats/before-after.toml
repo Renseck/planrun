@@ -21,10 +21,10 @@ tasks_end_level = 2
 [outline.manifest]
 marker = '^\*\*Files:\*\*$'
 # - Modify: `a/b.cs:3-10`   - Rewrite: `a/x.razor`, `a/x.razor.cs`   - Modify: `a/p.cs:84-85` and `:241-243`
-# - Modify: `a/r.resx`, `r.en.resx` (lines 227-230)   - Modify: `a/0001`–`0007_*.sql` (a range: kept as written)
+# - Modify: `a/r.resx`, `r.en.resx` (lines 227-230)   - Modify: `a/0001`–`0007_*.sql` (a range: one pattern entry, D41)
 item = '^(?P<change>Create|Modify|Rewrite|Test): `(?P<paths>[^`]+(?:`(?:, | and |–)`[^`]+)*)`(?: \(.+\))?$'
 changes = { Create = "create", Modify = "modify", Rewrite = "rewrite", Test = "test" }
-path_list = '`(?:, | and |–)`'
+path_list = '`(?:, | and )`'
 required = false
 siblings = true
 

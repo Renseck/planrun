@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// A path relative to the repository root, with forward slashes, that cannot leave the
 /// repository by its spelling: no absolute path, no drive letter, no `..`, no `.` segment, no
-/// empty segment, no backslash, no NUL.
+/// empty segment, no backslash, no NUL, no wildcard (`*`, `?`: decision D42).
 ///
 /// This checks the spelling only. Symlinks that point out of the repository are refused by the
 /// workspace when it resolves the path on disk (planrun-exec).
@@ -32,6 +32,9 @@ pub enum RepoPathError {
     /// A NUL byte.
     #[error("the path contains a NUL byte")]
     Nul,
+    /// A `*` or `?`: a pattern, never a file (decisions D41, D42).
+    #[error("`{0}` contains a wildcard; a pattern is not a file path")]
+    Wildcard(String),
 }
 
 impl RepoPath {
@@ -45,6 +48,9 @@ impl RepoPath {
         }
         if path.contains('\\') {
             return Err(RepoPathError::Backslash(path.to_owned()));
+        }
+        if path.contains(['*', '?']) {
+            return Err(RepoPathError::Wildcard(path.to_owned()));
         }
         let bytes = path.as_bytes();
         if path.starts_with('/') || (bytes.len() >= 2 && bytes[1] == b':') {
@@ -144,6 +150,8 @@ mod tests {
             "./a",
             "a//b",
             "a/",
+            "a/*.rs",
+            "a/b?.rs",
         ] {
             assert!(RepoPath::new(bad).is_err(), "{bad:?}");
         }

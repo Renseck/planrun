@@ -86,17 +86,20 @@ fn resolved_lead_path(
 ) -> Result<(RepoPath, PathOrigin), Diagnostic> {
     let path = lead_path(caps, base, lead)?;
     let entries = &cx.manifest.entries;
-    let unresolved =
-        !by_file_name || path.as_str().contains('/') || entries.iter().any(|e| e.path == path);
-    if unresolved {
+    let is_entry = entries.iter().any(|e| e.path.file() == Some(&path));
+    if !by_file_name || path.as_str().contains('/') || is_entry {
         return Ok((path, PathOrigin::Written));
     }
-    let same: Vec<&ManifestEntry> = entries
+    let same: Vec<(&RepoPath, &ManifestEntry)> = entries
         .iter()
-        .filter(|e| e.path.file_name() == path.as_str())
+        .filter_map(|e| e.path.file().map(|file| (file, e)))
+        .filter(|(file, _)| file.file_name() == path.as_str())
         .collect();
-    let first = same.first().map(|e| &e.path);
-    let one = first.filter(|p| same.iter().all(|e| &e.path == *p && e.origin.is_written()));
+    let first = same.first().map(|(file, _)| *file);
+    let one = first.filter(|p| {
+        same.iter()
+            .all(|(file, e)| file == p && e.origin.is_written())
+    });
     match one {
         Some(entry) => Ok((entry.clone(), PathOrigin::FileName)),
         None => Ok((path, PathOrigin::Written)),
@@ -104,18 +107,21 @@ fn resolved_lead_path(
 }
 
 /// The task's one manifest entry an edit with no path can mean (decision D32): not Test,
-/// Generated or Delete. `None` with none or several.
+/// Generated or Delete, and never a pattern (D41). `None` with none or several.
 fn only_entry(cx: &StepContext<'_>) -> Option<RepoPath> {
-    let mut editable = cx.manifest.entries.iter().filter(|e| {
-        !matches!(
-            e.change,
-            ChangeKind::Test | ChangeKind::Generated | ChangeKind::Delete
-        )
-    });
+    let mut editable = cx
+        .manifest
+        .entries
+        .iter()
+        .filter(|e| {
+            !matches!(
+                e.change,
+                ChangeKind::Test | ChangeKind::Generated | ChangeKind::Delete
+            )
+        })
+        .filter_map(|e| e.path.file());
     let first = editable.next()?;
-    editable
-        .all(|e| e.path == first.path)
-        .then(|| first.path.clone())
+    editable.all(|p| p == first).then(|| first.clone())
 }
 
 /// The script of the action an expectation amends: the last action, when it is a script.

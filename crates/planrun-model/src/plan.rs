@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::action::Action;
 use crate::ids::{FormatId, TaskId};
-use crate::path::{PathOrigin, RepoPath};
+use crate::path::PathOrigin;
+use crate::pattern::ManifestPath;
 use crate::source::PlanSource;
 use crate::span::{Span, TextRef};
 
@@ -84,8 +85,8 @@ pub struct Manifest {
 /// One declared file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManifestEntry {
-    /// The file.
-    pub path: RepoPath,
+    /// The file, or the files a pattern names (decision D41).
+    pub path: ManifestPath,
     /// What the task does to it.
     pub change: ChangeKind,
     /// A line range written after the path (`CleanupStep.cs:3-10`); informational.

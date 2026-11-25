@@ -2,8 +2,8 @@
 //! a line (`L37`). `planrun show` prints it; the IR snapshot is its YAML.
 
 use planrun_model::{
-    Action, ActionKind, ExitExpect, Expectation, ManifestEntry, PathOrigin, Plan, Script, Span,
-    Step, Task, TextRef,
+    Action, ActionKind, ExitExpect, Expectation, ManifestEntry, ManifestPath, PathOrigin, Plan,
+    Script, Span, Step, Task, TextRef,
 };
 use serde::Serialize;
 
@@ -310,12 +310,12 @@ fn entry(entry: &ManifestEntry) -> String {
         .lines
         .map(|l| format!(":{}-{}", l.start, l.end))
         .unwrap_or_default();
-    let sibling = if entry.origin.is_written() {
-        ""
-    } else {
-        " (in the directory of the path before)"
+    let note = match (&entry.path, entry.origin) {
+        (ManifestPath::Pattern(_), _) => " (a pattern: never a write target)",
+        (_, PathOrigin::Written) => "",
+        _ => " (in the directory of the path before)",
     };
-    format!("{:?} {}{lines}{sibling}", entry.change, entry.path)
+    format!("{:?} {}{lines}{note}", entry.change, entry.path)
 }
 
 /// How much of each action `show` prints.

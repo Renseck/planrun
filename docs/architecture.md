@@ -219,8 +219,9 @@ A state machine over Task → Step → Action. Per action: `Pending → Previewe
 Done | Failed | Skipped`. Per task, the lifecycle of your §6.1 proposal:
 
 1. Show the task, its manifest and its actions (with `Note`/`Manual` in place).
-2. **Preflight**: manifest Create targets absent, Modify targets present, the first patch's
-   preimage blob matches the file on disk, `git status --porcelain` empty when the plan says so.
+2. **Preflight**: manifest Create targets absent, Modify targets present (pattern entries are
+   skipped: they name no single file, D41), the first patch's preimage blob matches the file on
+   disk, `git status --porcelain` empty when the plan says so.
 3. Execute steps in order; each step's file actions as one transaction (§6.2), scripts in sessions
    (§6.3), stopping per policy (§6.5).
 4. Commit only through the plan's own commit script, and only when the task's gate/verify passed

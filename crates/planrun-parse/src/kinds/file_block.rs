@@ -174,7 +174,7 @@ fn mode_from(manifest: &Manifest, path: &RepoPath) -> WriteMode {
     let change = manifest
         .entries
         .iter()
-        .find(|e| &e.path == path)
+        .find(|e| e.path.file() == Some(path))
         .map(|e| e.change);
     match change {
         Some(ChangeKind::Create) => WriteMode::Create,

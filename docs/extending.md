@@ -40,7 +40,10 @@ item = '^(?P<change>Create|Modify|Delete) `(?P<paths>[^`]+)`$'   # `change` unle
 changes = { Create = "create", Modify = "modify", Delete = "delete" }
 # → create | modify | rewrite | delete | test | generated (D27)
 path_list = ', '                                         # optional: split `paths` into several;
-# a `:3-10` piece adds lines to the path before it (D32)
+# a `:3-10` piece adds lines to the path before it (D32). Built in, before the split, in every
+# format: `a`–`b` (an en dash between code spans) is one range entry, so `path_list` must not
+# list the en dash; a piece with `*`, `?` or `{` is a glob entry (D41). Pattern entries declare
+# the files they match and are never a write target.
 required = true                                          # optional, default true: false lets a
                                                          # task have no manifest (D27)
 siblings = false                                         # optional, default false: a bare file

@@ -3,8 +3,8 @@
 //! format may too.
 
 use planrun_model::{
-    ChangeKind, LineRange, Manifest, ManifestEntry, PathOrigin, PlanMeta, RepoPath, Span, TaskId,
-    TextRef,
+    ChangeKind, LineRange, Manifest, ManifestEntry, ManifestPath, PathOrigin, PathPattern,
+    PlanMeta, RepoPath, Span, TaskId, TextRef,
 };
 use regex::{Captures, Regex};
 
@@ -403,66 +403,121 @@ fn manifest_item(
         ));
         return;
     };
-    let pieces: Vec<&str> = match &spec.path_list {
-        Some(split) => split.split(paths.as_str()).collect(),
-        None => vec![paths.as_str()],
-    };
     let paths_span = Span::new(base + offset(paths.start()), base + offset(paths.end()));
     let mut previous: Option<(RepoPath, PathOrigin)> = None;
-    for piece in pieces.iter().map(|p| p.trim()) {
-        let Some((path, origin, lines)) = token(spec, piece, previous.as_ref()) else {
-            errors.push(Diagnostic::error(
-                "bad-path",
-                Some(paths_span),
-                format!("`{piece}` is not a path"),
-            ));
-            continue;
-        };
-        match path {
-            Ok(path) => {
-                previous = Some((path.clone(), origin));
-                entries.push(ManifestEntry {
-                    path,
-                    change,
-                    lines,
-                    span: located.span,
-                    origin,
-                });
+    for piece in pieces(spec, paths.as_str()) {
+        let (path, origin, lines) = match token(spec, piece, previous.as_ref()) {
+            Ok(token) => token,
+            Err((code, message)) => {
+                errors.push(Diagnostic::error(code, Some(paths_span), message));
+                continue;
             }
-            Err(e) => errors.push(Diagnostic::error(
-                "bad-path",
-                Some(paths_span),
-                e.to_string(),
-            )),
-        }
+        };
+        previous = path.file().map(|file| (file.clone(), origin));
+        entries.push(ManifestEntry {
+            path,
+            change,
+            lines,
+            span: located.span,
+            origin,
+        });
     }
 }
 
-/// A path as spelled.
-type Spelled = Result<RepoPath, planrun_model::RepoPathError>;
+/// A piece of an item's paths: one token, or a range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Piece<'a> {
+    /// A path, a pattern or a `:lines` token.
+    Token(&'a str),
+    /// `` `a`–`b` ``: an en dash between two code spans (decision D41).
+    Range(&'a str, &'a str),
+}
 
-/// One token of a manifest item, after the token `previous` (decision D32): `:3-10` is more lines
-/// of the previous path; with `siblings`, a bare file name after a path with a directory is in
-/// that directory. `None` for a `:lines` token with no path before it.
+/// The pieces of `paths`. Ranges are found first, in every format, so a spec's `path_list` never
+/// sees their en dash; the text around them is split by `path_list` (D41).
+fn pieces<'a>(spec: &ManifestRules, paths: &'a str) -> Vec<Piece<'a>> {
+    const DASH: &str = "`–`";
+    let mut out = Vec::new();
+    let mut rest = paths;
+    let mut after_range = false;
+    while let Some(at) = rest.find(DASH) {
+        let (before, after) = (&rest[..at], &rest[at + DASH.len()..]);
+        let start_at = before.rfind('`').map_or(0, |i| i + 1);
+        let end_len = after.find('`').unwrap_or(after.len());
+        out.extend(split(spec, &before[..start_at], after_range, true));
+        out.push(Piece::Range(&before[start_at..], &after[..end_len]));
+        rest = &after[end_len..];
+        after_range = true;
+    }
+    out.extend(split(spec, rest, after_range, false));
+    out
+}
+
+/// `text` split by `path_list`. Next to a range, the empty piece on its side is what is left of
+/// the separator, not an empty path: `after_range` drops a leading one, `before_range` a
+/// trailing one.
+fn split<'a>(
+    spec: &ManifestRules,
+    text: &'a str,
+    after_range: bool,
+    before_range: bool,
+) -> Vec<Piece<'a>> {
+    let next_to_range = after_range || before_range;
+    if next_to_range && text.trim().is_empty() {
+        return Vec::new();
+    }
+    let mut parts: Vec<&str> = match &spec.path_list {
+        Some(split) => split.split(text).collect(),
+        None => vec![text],
+    };
+    if before_range && parts.last().is_some_and(|p| p.trim().is_empty()) {
+        parts.pop();
+    }
+    if after_range && parts.first().is_some_and(|p| p.trim().is_empty()) {
+        parts.remove(0);
+    }
+    parts.into_iter().map(|p| Piece::Token(p.trim())).collect()
+}
+
+/// A diagnostic code and message.
+type Refusal = (&'static str, String);
+
+/// One piece of a manifest item, after the file `previous` (decisions D32, D41): `:3-10` is more
+/// lines of the previous path; with `siblings`, a bare file name after a path with a directory
+/// is in that directory; a token with `*`, `?` or `{`, and a range, are patterns.
 fn token(
     spec: &ManifestRules,
-    piece: &str,
+    piece: Piece<'_>,
     previous: Option<&(RepoPath, PathOrigin)>,
-) -> Option<(Spelled, PathOrigin, Option<LineRange>)> {
+) -> Result<(ManifestPath, PathOrigin, Option<LineRange>), Refusal> {
+    let piece = match piece {
+        Piece::Range(start, end) => {
+            let pattern =
+                PathPattern::range(start, end).map_err(|e| ("manifest-item", e.to_string()))?;
+            return Ok((ManifestPath::Pattern(pattern), PathOrigin::Written, None));
+        }
+        Piece::Token(piece) => piece,
+    };
     if let Some(range) = piece.strip_prefix(':') {
-        let (path, origin) = previous?;
-        return Some((Ok(path.clone()), *origin, line_range(range)));
+        let Some((path, origin)) = previous else {
+            return Err(("bad-path", format!("`{piece}` is not a path")));
+        };
+        return Ok((ManifestPath::File(path.clone()), *origin, line_range(range)));
+    }
+    if PathPattern::is_glob(piece) {
+        let pattern = PathPattern::glob(piece).map_err(|e| ("manifest-item", e.to_string()))?;
+        return Ok((ManifestPath::Pattern(pattern), PathOrigin::Written, None));
     }
     let (path, lines) = split_lines(piece);
     let dir = previous.and_then(|(p, _)| p.dir());
-    match dir {
-        Some(dir) if spec.siblings && !path.contains('/') => Some((
-            RepoPath::new(&format!("{dir}/{path}")),
-            PathOrigin::Sibling,
-            lines,
-        )),
-        _ => Some((RepoPath::new(path), PathOrigin::Written, lines)),
-    }
+    let (spelled, origin) = match dir {
+        Some(dir) if spec.siblings && !path.contains('/') => {
+            (RepoPath::new(&format!("{dir}/{path}")), PathOrigin::Sibling)
+        }
+        _ => (RepoPath::new(path), PathOrigin::Written),
+    };
+    let path = spelled.map_err(|e| ("bad-path", e.to_string()))?;
+    Ok((ManifestPath::File(path), origin, lines))
 }
 
 /// `src/a.rs:3-10` → (`src/a.rs`, 3–10); `src/a.rs:7` → (`src/a.rs`, 7–7).

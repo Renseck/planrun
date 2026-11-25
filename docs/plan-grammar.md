@@ -127,7 +127,7 @@ Hand-written; mostly automatable. Spec: `formats/before-after.toml`. Example:
 |---|---|
 | Task | `## Task 1: title` (**level 2**); a level-2 heading that is no task ends the tasks (D37) |
 | File map | a table before the tasks: shown, never parsed into actions |
-| Manifest | `**Files:**` + `Create:`, `Modify:` (with `:lines`), `Rewrite:`, `Test:`; several paths per item, separated by `, `, ` and ` or `–`; a bare file name after a path is in that path's directory and a `:lines` token adds lines to the path before it (D32); a trailing `(note)`. Optional: a task may have none |
+| Manifest | `**Files:**` + `Create:`, `Modify:` (with `:lines`), `Rewrite:`, `Test:`; several paths per item, separated by `, ` or ` and `; `` `dir/0001`–`0007_*.sql` `` is one range entry (D41); a bare file name after a path is in that path's directory and a `:lines` token adds lines to the path before it (D32); a trailing `(note)`. Optional: a task may have none |
 | Step | list item `- [ ] **Step 1: title**` |
 | Create | `` `p`: `` / ``Create `p` (…):`` + fence → `WriteFile(Create)` |
 | Overwrite | `` `p` — replace the whole file: `` / ``Replace `p`:`` + fence → `WriteFile(Overwrite)` |
@@ -145,7 +145,7 @@ Step marks (D30): "…verify they fail" marks expected failures; a title ending 
 starting with "Hand off" turns the step's prose into `Manual(HumanCheck)`.
 
 Checks (D31): `manifest-untouched` is off (scripts and prose edits change declared files),
-`manifest-undeclared` is a warning (items name ranges such as `0001`–`0007_*.sql`).
+`manifest-undeclared` is a warning.
 
 ## 6. Recognizing a new format
 

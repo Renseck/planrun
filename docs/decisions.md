@@ -276,3 +276,40 @@ superpowers format: its run lines share no variables with its bash commit fences
 They are written for an agent (probes, conditional branches, "record"). The target is zero errors
 and honest Manual coverage, not automation. P2 is split: P2a builds the schema, the kinds and the
 superpowers and before-after formats; P2b the devready format on the same schema.
+
+Decisions D41 onwards were agreed on 2026-11-25 at the start of P2b, from the review of the
+devready format against its two real plans.
+
+## D41 Pattern manifest entries
+
+A Files item may name a set of files instead of one: a glob (a token with `*`, `?` or `{`) or
+a range (an en dash between two code spans, `` `dir/0001`–`0007_*.sql` ``). Each is one manifest
+entry whose target is a `PathPattern`, not a `RepoPath`: `ManifestEntry.path` is a
+`ManifestPath`, either a file or a pattern.
+
+- Ranges are found in the item text before `path_list` splits it, in every format, like the
+  `:lines` tokens. A spec's `path_list` therefore never lists the en dash.
+- Globs: `*` matches any run of characters except `/`, `?` one character except `/`,
+  `{a,b}` either alternative. `**`, nested or unbalanced braces are `manifest-item`.
+- A range `dir/A`–`B` names the files of `dir` whose name `f` has `A <= f` and, when `B` has
+  no wildcard, `f <= B`. When it has one, with `B0` the part of `B` before its first wildcard:
+  `f` has at least `|B0|` characters, its first `|B0|` characters are `<= B0`, and the rest of
+  `f` matches the rest of `B` as a glob. Comparisons are by character. `B` may repeat `dir`;
+  a `B` in another directory, or a wildcard in `A`, is `manifest-item`.
+- A pattern is repository-relative as written and never resolved: a pattern relative to a
+  subdirectory, or one with prose in it, matches nothing (at worst a `manifest-undeclared`
+  warning).
+- `manifest-undeclared` accepts a path a pattern entry matches; `manifest-untouched` counts a
+  pattern entry as touched when any action path matches it. The write-mode check uses the
+  entry's change as for a file.
+- A pattern is never a candidate for `file_name_from_manifest` or `infer_path`, and never a
+  write target (D42). D33 counts it as non-literal.
+- P3 preflight skips the existence checks for pattern entries (architecture.md §6.1).
+
+Handover P2a→P2b open item 1 proposed a `PathOrigin` for patterns; a target type of its own
+was chosen instead, so "no write targets a wildcard" is a property of the types.
+
+## D42 RepoPath refuses wildcards
+
+Amends D7: a `RepoPath` also refuses `*` and `?`. Both are invalid in Windows file names
+(D19), and a path with one is a pattern (D41). A lead that names such a path is `bad-path`.

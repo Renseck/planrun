@@ -11,6 +11,7 @@ mod action;
 mod expect;
 mod ids;
 mod path;
+mod pattern;
 mod plan;
 mod source;
 mod span;
@@ -19,6 +20,7 @@ pub use action::{Action, ActionKind, ManualReason, Script, ScriptIntent, Shell, 
 pub use expect::{ExitExpect, Expectation};
 pub use ids::{AbbrevBlobId, BlobIdError, FormatId, RecognizerId, TaskId};
 pub use path::{PathOrigin, RepoPath, RepoPathError};
+pub use pattern::{ManifestPath, PathPattern, PatternError};
 pub use plan::{ChangeKind, LineRange, Manifest, ManifestEntry, Plan, PlanMeta, Step, Task};
 pub use source::PlanSource;
 pub use span::{LineCol, Span, TextRef};
