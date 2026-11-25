@@ -1,6 +1,6 @@
 //! Executes a typed plan against a git repository (docs/architecture.md §6). Phases 3–5.
 //!
-//! Modules (docs/roadmap.md; P3 built the first six):
+//! Modules (docs/roadmap.md; P3 built the first eight):
 //!
 //! - [`workspace`]: the repository root, [`RepoPath`](planrun_model::RepoPath) resolution with
 //!   the link and case check, and the one writer (temp file, second check, rename; D52).
@@ -12,6 +12,7 @@
 //! - [`handler`]: one [`ActionHandler`] per action kind, which simulates it on a virtual tree;
 //!   the [`HandlerSet`] is the execution-side plugin point.
 //! - [`transaction`]: a step's file actions as prepare, then commit, with rollback (D53).
+//! - [`preflight`]: task preflight and the dry run over one virtual tree (D50, D55).
 //! - [`finding`]: what preflight, a simulation and the dry run report.
 //! - `shell`: persistent pwsh and bash sessions behind [`ShellSession`].
 //! - `expect`: exit-code and summary-line matching.
@@ -23,6 +24,7 @@ pub mod eol;
 pub mod finding;
 pub mod git;
 pub mod handler;
+pub mod preflight;
 pub mod transaction;
 pub mod tree;
 pub mod workspace;
