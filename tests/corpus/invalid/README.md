@@ -16,6 +16,3 @@ but does not break this test).
 Adding a check rule means adding a file here. Adding a file here never needs a code change.
 A file is named after its code (`bad-path.md`); a second case of the same code adds a word
 after a dot (`bad-path.git-hooks.md`).
-````
-
-File `tests/corpus/invalid/bad-path.git-hooks.md` (full contents):

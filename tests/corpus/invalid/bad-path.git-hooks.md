@@ -20,3 +20,4 @@ File `.git/hooks/pre-commit` (full contents):
 ```sh
 exit 0
 ```
+
