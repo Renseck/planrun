@@ -54,7 +54,7 @@ Acceptance:
   the P3c-1 plan's prose-heavy preamble as Notes.
 - Every diagnostic shows file:line:col and the source line.
 
-## P2 — The other three formats
+## P2 — The other three formats (done)
 
 The decisions are D26–D40. Split in two plans on one schema (D40):
 
@@ -65,14 +65,14 @@ The decisions are D26–D40. Split in two plans on one schema (D40):
   `formats/superpowers.toml` and `before-after.toml` with IR snapshots of their synthetic plans.
   The superpowers and before-after local plans parse with zero errors. Plan:
   `docs/plans/2026-11-24-p2a-hand-written-formats.md`.
-- **P2b.** First, pattern manifest entries: a range or glob item is one entry whose target is a
-  `PathPattern` (D41, D42). Then the schema for hand-written DevReady plans: inline Files clauses
-  (D43), a change per path (D44), Bare file names (D45), kept step labels (D46), `Expected:` with
-  a list (D47), comment expectations that a sentence extends (D35, D48), numbered edit series
-  (D49). Then `formats/devready.toml` with the `**Commit:**` Manual (D33), detection that
-  outscores superpowers on both devready plans, the IR snapshot of its synthetic plan, and the
-  Apply invariant in plan-grammar §5. All six local plans parse with zero errors. Plan:
-  `docs/plans/2026-11-25-p2b-devready-format.md`.
+- **P2b (done).** First, pattern manifest entries: a range or glob item is one entry whose
+  target is a `PathPattern` (D41, D42). Then the schema for hand-written DevReady plans: inline
+  Files clauses (D43), a change per path (D44), Bare file names (D45), kept step labels (D46),
+  `Expected:` with a list (D47), comment expectations that a sentence extends (D35, D48),
+  numbered edit series (D49). Then `formats/devready.toml` with the `**Commit:**` Manual (D33),
+  detection that outscores superpowers on both devready plans, the IR snapshot of its synthetic
+  plan, and the Apply invariant in plan-grammar §5. All six local plans parse with zero errors.
+  Plan: `docs/plans/2026-11-25-p2b-devready-format.md`.
 
 Each plan lists the imperative Notes that remain in the real plans (D36). `expected-failure-step`
 became step marks (D30); `preview-apply` became script intents by lead (D29).
