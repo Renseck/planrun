@@ -1,0 +1,25 @@
+---
+source: crates/planrun-cli/tests/dry_run.rs
+expression: out
+---
+dry run of ../outside/assay-style.md (assay, 2 tasks): nothing is written, no script runs
+after the first script, commit or Manual step, each result assumes it changed no files
+
+P1-T1  the greet module
+  L35    write     src/greet.rs             create: ok
+  L54    patch     src/lib.rs               aa80cf1 → 97bd92a: ok
+  L83    script                             not run
+  L95    script                             not run
+  L110   commit                             not run
+
+P1-T2  re-export greeting, remove the legacy module
+  L130   generated docs/modules.txt         not checked (its script did not run)
+  L134   patch     src/lib.rs               97bd92a → 6b269fc: ok
+  L159   delete    src/old.rs               delete: ok
+  L161   generated docs/modules.txt         not checked (its script did not run)
+  L167   script                             not run
+  L181   script                             not run
+  L196   commit                             not run
+
+summary: 4 ok, 0 would ask, 0 failed, 0 depend on a step that did not run; 6 scripts and commits not run, 2 generated files not checked, 0 manual
+planrun: ../outside/assay-style.md: dry run ok
