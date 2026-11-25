@@ -115,6 +115,9 @@ pub enum ManualReason {
     HumanCheck,
     /// Text that matched the format's `manual_markers` ("Rens runs it by hand").
     Marked,
+    /// A write the plan creates at a manifest path whose directory it never wrote (a `Bare`
+    /// entry, decision D45): the location is ambiguous.
+    AmbiguousPath,
 }
 
 /// A script and what is expected of it.

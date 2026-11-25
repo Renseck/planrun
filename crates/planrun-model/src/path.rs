@@ -93,6 +93,10 @@ pub enum PathOrigin {
     FileName,
     /// A lead that names no path: the task's one editable manifest entry.
     OnlyEntry,
+    /// A manifest token without a directory after a token with one, in a format without
+    /// siblings (decision D45): spelled as written, its location unknown. Never resolved to,
+    /// and a Create onto it is `Manual(AmbiguousPath)`.
+    Bare,
 }
 
 impl PathOrigin {

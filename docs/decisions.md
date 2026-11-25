@@ -313,3 +313,48 @@ was chosen instead, so "no write targets a wildcard" is a property of the types.
 
 Amends D7: a `RepoPath` also refuses `*` and `?`. Both are invalid in Windows file names
 (D19), and a path with one is a pattern (D41). A lead that names such a path is `bad-path`.
+
+## D43 Inline Files clauses
+
+A manifest may be written inside its marker paragraph: ``**Files:** create `a`; modify `b`.``
+
+- The marker regex captures `items`. When that capture takes part, the paragraph holds the
+  manifest and no list items are taken after it; a list at the marker's depth right after it is
+  `manifest-item`. When the marker matches without `items`, list items are taken as before.
+- `clause_list` splits `items` into clauses; each clause is matched by the same `item` regex as
+  a list item. A clause with a code span that does not match is `manifest-item`.
+- Text that declares nothing (a clause without a code span, such as "regenerate the README
+  examples", and the text after the `items` capture) is not dropped: it is shown in place at the
+  start of the task's intro step, as a `Note`, or as `Manual(Marked)` when it matches a manual
+  marker. Coverage counts the marker paragraph once, as manifest. Each phase plan lists these
+  leftovers with its imperative Notes (D36).
+
+## D44 A change per path
+
+`[outline.manifest] path_change` is a regex over the text right after a path token (the
+separator up to the next token, or the rest of the item after the last one). Its `change`
+capture, mapped through `changes`, overrides the change of that one path. The values are
+therefore `ChangeKind`s and D26 stays strict: a wrong mapping is a loud `manifest-write-mode`,
+or a preflight error in P3. Precedence: path > item > marker. A note binds to the path directly
+before it; in the real plans no multi-path item has a note meant for the whole item.
+
+Handover P2a→P2b open item 2 proposed mapping the "(full replacement)" note at item level. In
+the real plan that note follows the first of six paths in one item; at item level the five new
+files would become Rewrite entries and their create leads `manifest-write-mode` errors. The
+item-level mapping was dropped for this rule.
+
+## D45 Bare file names without siblings
+
+Amends D32. With `siblings` off, a token without `/` that follows a token with a directory in
+the same item (or clause) gets `PathOrigin::Bare`: its path stays as written, and its location
+is unknown.
+
+- `file_name_from_manifest` and `infer_path` never resolve to a Bare entry. For `infer_path`, a
+  Bare entry still counts as one of the task's editable entries: dropping it would turn an
+  ambiguous task into a confident guess.
+- A Create-mode write (op `create`, or `write` resolved to Create) whose path equals a Bare
+  entry is `Manual(AmbiguousPath)`, not a write. A Modify or Rewrite on a Bare entry stays an
+  action: P3 preflight catches a wrong target.
+- D33: a Bare entry is not literal, so the commit suggestion shows the message only.
+- `show` marks Bare entries. `AmbiguousPath` is produced only by this rule; it is not a
+  `manual-prose` reason.

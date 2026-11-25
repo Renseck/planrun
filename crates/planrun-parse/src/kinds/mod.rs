@@ -107,21 +107,28 @@ fn resolved_lead_path(
 }
 
 /// The task's one manifest entry an edit with no path can mean (decision D32): not Test,
-/// Generated or Delete, and never a pattern (D41). `None` with none or several.
+/// Generated or Delete, and never a pattern (D41). `None` with none or several. A `Bare` entry
+/// counts as one of several but is never the answer (D45).
 fn only_entry(cx: &StepContext<'_>) -> Option<RepoPath> {
-    let mut editable = cx
-        .manifest
+    let mut editable = cx.manifest.entries.iter().filter(|e| {
+        let editable = !matches!(
+            e.change,
+            ChangeKind::Test | ChangeKind::Generated | ChangeKind::Delete
+        );
+        editable && e.path.file().is_some()
+    });
+    let first = editable.next()?;
+    let path = first.path.file()?;
+    let one = editable.all(|e| e.path.file() == Some(path) && e.origin != PathOrigin::Bare);
+    (one && first.origin != PathOrigin::Bare).then(|| path.clone())
+}
+
+/// True when `path` is declared only as a `Bare` entry (decision D45).
+fn is_bare(cx: &StepContext<'_>, path: &RepoPath) -> bool {
+    cx.manifest
         .entries
         .iter()
-        .filter(|e| {
-            !matches!(
-                e.change,
-                ChangeKind::Test | ChangeKind::Generated | ChangeKind::Delete
-            )
-        })
-        .filter_map(|e| e.path.file());
-    let first = editable.next()?;
-    editable.all(|p| p == first).then(|| first.clone())
+        .any(|e| e.path.file() == Some(path) && e.origin == PathOrigin::Bare)
 }
 
 /// The script of the action an expectation amends: the last action, when it is a script.

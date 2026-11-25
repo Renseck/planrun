@@ -54,6 +54,9 @@ pub struct OutlineTask {
     /// The manifest's blocks (marker and items): consumed by the outline, in no step. Recognition
     /// skips them where they fall inside a step's range.
     pub manifest_blocks: Option<BlockRange>,
+    /// Text of an inline manifest that declares nothing (decision D43): shown at the start of
+    /// the intro step as a Note, or `Manual(Marked)` when it matches a manual marker.
+    pub manifest_notes: Vec<TextRef>,
     /// Steps: number, title, blocks.
     pub steps: Vec<OutlineStep>,
 }

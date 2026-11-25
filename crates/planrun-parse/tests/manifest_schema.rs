@@ -111,7 +111,7 @@ fn siblings_and_line_tokens_follow_the_path_before_them() {
 }
 
 #[test]
-fn without_siblings_a_bare_name_is_at_the_root() {
+fn without_siblings_a_bare_name_is_bare() {
     let spec = SPEC.replace("siblings = true", "siblings = false");
     let text = "### Task 1: a\n\n**Files:**\n- Modify: `src/x/a.rs`, `Cargo.toml`\n";
     let parsed = parse_plan(&registry(&spec), "t.md", text.as_bytes(), Some("t"))
@@ -120,9 +120,9 @@ fn without_siblings_a_bare_name_is_at_the_root() {
         .manifest
         .entries
         .iter()
-        .map(|e| e.path.to_string())
+        .map(|e| format!("{} {:?}", e.path, e.origin))
         .collect();
-    assert_eq!(paths, ["src/x/a.rs", "Cargo.toml"]);
+    assert_eq!(paths, ["src/x/a.rs Written", "Cargo.toml Bare"]);
 }
 
 #[test]

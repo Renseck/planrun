@@ -36,6 +36,8 @@ tasks_end_level = 2                                      # optional
 # The marker and its items are consumed by the outline: they fall in no step. The items end at
 # the first block that is no list item at the marker's depth, or that is a step boundary (D37).
 marker = '^\*\*Files\*\*$'                                # may capture `change` (`**Files:** create`)
+# and `items`: then the marker paragraph holds the manifest, split by `clause_list`, each
+# clause matched by `item`; text that declares nothing is shown as a Note (D43)
 item = '^(?P<change>Create|Modify|Delete) `(?P<paths>[^`]+)`$'   # `change` unless the marker has it
 changes = { Create = "create", Modify = "modify", Delete = "delete" }
 # → create | modify | rewrite | delete | test | generated (D27)
@@ -47,7 +49,12 @@ path_list = ', '                                         # optional: split `path
 required = true                                          # optional, default true: false lets a
                                                          # task have no manifest (D27)
 siblings = false                                         # optional, default false: a bare file
-                                                         # name after `a/b.rs` is `a/<name>` (D32)
+                                                         # name after `a/b.rs` is `a/<name>` (D32);
+                                                         # without siblings it is Bare (D45)
+clause_list = '; '                                       # optional: needs an `items` capture (D43)
+path_change = '^` \((?P<change>full replacement)\)'     # optional (D44): over the text right
+# after a path token; `change` goes through `changes` and wins over the item's change, which
+# wins over the marker's
 
 [[outline.steps]]                                        # zero or more; none = one implicit step
 block = "paragraph"                                      # paragraph | list-item | heading
@@ -108,9 +115,10 @@ Notes on the kinds:
   `patch` a patch whose paths differ from the lead's `Malformed(patch-path)`.
 - Paths from the manifest (D32): `file_name_from_manifest = true` resolves a lead path without
   `/` that is not an entry itself to the one entry with that file name, when that entry was
-  written in full (not a sibling); otherwise the path stays as written. `before-after` with
-  `infer_path = true` takes the task's one entry that is not Test, Generated or Delete; with none
-  or several, the lead and both fences become one `Manual(ProseEdit)`. `infer_path` is never
+  written in full (not a sibling, not Bare); otherwise the path stays as written. `before-after`
+  with `infer_path = true` takes the task's one entry that is not Test, Generated or Delete; with
+  none or several (a Bare entry counts, but is never taken, D45), the lead and both fences
+  become one `Manual(ProseEdit)`. Pattern entries are never candidates (D41). `infer_path` is never
   available for writes. Each resolved action carries its `PathOrigin`; `show` marks it.
 - `run-line`: the command is the `cmd` capture, run as one line in `shell` (D39). The `expected`
   capture, when the lead has one and it matched, becomes a prose expectation through the `exit`

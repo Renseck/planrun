@@ -144,7 +144,10 @@ outline: they fall in no step, and coverage counts them as "manifest"; its items
 step boundary (D37). A format with a manifest pattern requires one per task (`manifest-missing`)
 unless it sets `required = false` (D27); an item that does not match is `manifest-item`. Paths in
 items may be completed from the item itself (`:lines` tokens, and sibling file names where the
-format opts in, D32). Blocks between a task heading and its first step form an unnumbered **intro
+format opts in, D32; bare file names otherwise, D45) and give one path its own change (D44).
+A manifest may also be written inline in its marker paragraph (D43); what such a paragraph
+declares nothing with is shown as a Note at the start of the intro step. Ranges and globs are
+pattern entries (D41). Blocks between a task heading and its first step form an unnumbered **intro
 step** (it can hold a `Generated` notice or `Manual` text). A heading at the task level inside the
 tasks that is not a task is `bad-task-heading`. A task with no step boundaries is one implicit
 step. A step title can carry a **mark** (`[[step_marks]]`, D30): expected failure or human check.

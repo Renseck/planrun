@@ -101,6 +101,13 @@ fn step(
 ) -> Step {
     let mut cursor = Cursor::with_skip(doc, outline.blocks, task.manifest_blocks);
     let mut actions: Vec<Action> = Vec::new();
+    if !outline.written {
+        actions.extend(
+            task.manifest_notes
+                .iter()
+                .map(|text| manifest_note(format, doc, text)),
+        );
+    }
     while let Some(at) = cursor.peek(0).map(|b| b.span) {
         let before = cursor.consumed();
         let cx = StepContext {
@@ -140,9 +147,10 @@ fn step(
                 let manual = new
                     .iter()
                     .all(|a| matches!(a.kind, ActionKind::Manual { .. }));
-                match manual {
-                    true => cov.manual += consumed,
-                    false => cov.actions += consumed,
+                if manual {
+                    cov.manual += consumed;
+                } else {
+                    cov.actions += consumed;
                 }
                 actions.extend(new);
             }
@@ -196,6 +204,28 @@ fn expect_failure(action: &mut Action) -> Option<Diagnostic> {
             "the step's title says this fails, and its expectation says it succeeds",
         )),
         ExitExpect::Failure | ExitExpect::Code(_) => None,
+    }
+}
+
+/// The recognizer id of text an inline manifest declares nothing with (decision D43).
+pub const MANIFEST: &str = "manifest";
+
+/// A leftover of an inline manifest: a Note, or `Manual(Marked)` when it matches a manual
+/// marker. Its block is the manifest's, so coverage counts it there, once.
+fn manifest_note(format: &dyn Format, doc: &Document, text: &TextRef) -> Action {
+    let kind = if format.settings().is_marked(doc.text(text)) {
+        ActionKind::Manual {
+            reason: ManualReason::Marked,
+            text: text.clone(),
+        }
+    } else {
+        ActionKind::Note { text: text.clone() }
+    };
+    Action {
+        kind,
+        span: text.span(),
+        origin: RecognizerId(MANIFEST.into()),
+        path_origin: Default::default(),
     }
 }
 

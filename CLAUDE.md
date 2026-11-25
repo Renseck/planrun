@@ -15,10 +15,11 @@ reads; don't optimize I/O speculatively (cargo/npm dominate wall time).
 
 ```
 crates/planrun-model   the IR: Plan, Task, Step, Action, Span/TextRef, RepoPath, PathOrigin,
+                       ManifestPath/PathPattern,
                        AbbrevBlobId
 crates/planrun-parse   Markdown → IR: source, document, format, spec, registry, outline,
-                       recognizer, recognize, kinds/ (one file per recognizer kind), patch, check,
-                       diagnostic
+                       manifest, recognizer, recognize, kinds/ (one file per recognizer kind),
+                       patch, check, diagnostic
 crates/planrun-exec    IR → effects: workspace, git, shells, expect, policy, journal, runner
 crates/planrun-cli     the `planrun` binary: check, show (view, render)
 formats/*.toml         built-in plan formats (embedded): assay, superpowers, before-after; the

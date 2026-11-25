@@ -2,15 +2,13 @@
 //! tasks, each task's manifest and its steps. [`crate::spec::SpecFormat`] uses it; a hand-written
 //! format may too.
 
-use planrun_model::{
-    ChangeKind, LineRange, Manifest, ManifestEntry, ManifestPath, PathOrigin, PathPattern,
-    PlanMeta, RepoPath, Span, TaskId, TextRef,
-};
+use planrun_model::{PlanMeta, Span, TaskId, TextRef};
 use regex::{Captures, Regex};
 
 use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::document::{Block, BlockRange, Document};
 use crate::format::{FormatSettings, Outline, OutlineStep, OutlineTask, StepMark};
+use crate::manifest::{self, Found, ManifestRules};
 
 /// The compiled `[outline]` of a spec.
 pub struct OutlineRules {
@@ -34,22 +32,6 @@ pub struct HeadingRule {
     pub level: u8,
     /// Over the heading text.
     pub regex: Regex,
-}
-
-/// A manifest: a marker paragraph and the list items after it.
-pub struct ManifestRules {
-    /// Over the marker paragraph; may capture `change` for items that are bare paths.
-    pub marker: Regex,
-    /// Over each item; captures `paths`, and `change` unless the marker does.
-    pub item: Regex,
-    /// The captured change word and what it means.
-    pub changes: Vec<(String, ChangeKind)>,
-    /// Splits `paths` into several, when set.
-    pub path_list: Option<Regex>,
-    /// When false, a task may have no manifest (decision D27).
-    pub required: bool,
-    /// A bare file name after a path with a directory is in that directory (decision D32).
-    pub siblings: bool,
 }
 
 /// A block that starts a step.
@@ -275,8 +257,15 @@ fn task(
         start: head + 1,
         end: next,
     };
-    let (manifest, manifest_blocks) = manifest(rules, doc, head, body, errors);
-    let steps = steps(rules, doc, body, manifest_blocks, errors);
+    let found = match &rules.manifest {
+        Some(spec) => {
+            let boundary = |i| boundary(rules, doc, i).is_some();
+            manifest::manifest(spec, doc, head, body, boundary, errors)
+        }
+        None => Found::default(),
+    };
+    let has_notes = !found.leftovers.is_empty();
+    let steps = steps(rules, doc, body, (found.blocks, has_notes), errors);
     let span = Span::new(
         located.span.start,
         range_end(doc, body).unwrap_or(located.span.end),
@@ -288,8 +277,9 @@ fn task(
         },
         title: capture("title").unwrap_or(heading),
         span,
-        manifest,
-        manifest_blocks,
+        manifest: found.manifest,
+        manifest_blocks: found.blocks,
+        manifest_notes: found.leftovers,
         steps,
     };
     (task, phase)
@@ -301,243 +291,6 @@ fn capture_ref(caps: Option<&Captures<'_>>, name: &str, base: u32) -> Option<Tex
         base + offset(m.start()),
         base + offset(m.end()),
     )))
-}
-
-/// The manifest: the first block before any step boundary that matches the marker, and the list
-/// items right after it, up to the first step boundary (a list-item step right after the items
-/// is in the same CommonMark list, decision D37).
-fn manifest(
-    rules: &OutlineRules,
-    doc: &Document,
-    head: usize,
-    body: BlockRange,
-    errors: &mut Vec<Diagnostic>,
-) -> (Manifest, Option<BlockRange>) {
-    let Some(spec) = &rules.manifest else {
-        return (Manifest::default(), None);
-    };
-    let marker = (body.start..body.end)
-        .take_while(|&i| boundary(rules, doc, i).is_none())
-        .find(|&i| matches!(&doc.blocks[i].block, Block::Paragraph { text } if spec.marker.is_match(doc.text(text))));
-    let Some(marker) = marker else {
-        if spec.required {
-            errors.push(Diagnostic::error(
-                "manifest-missing",
-                Some(doc.blocks[head].span),
-                format!("the task has no manifest (`{}`)", spec.marker.as_str()),
-            ));
-        }
-        return (Manifest::default(), None);
-    };
-    let marker_change = match &doc.blocks[marker].block {
-        Block::Paragraph { text } => spec
-            .marker
-            .captures(doc.text(text))
-            .and_then(|c| c.name("change"))
-            .map(|m| m.as_str()),
-        _ => None,
-    };
-    let depth = doc.blocks[marker].depth;
-    let items_end = (marker + 1..body.end)
-        .find(|&i| {
-            let b = &doc.blocks[i];
-            !matches!(b.block, Block::ListItem { .. })
-                || b.depth != depth
-                || boundary(rules, doc, i).is_some()
-        })
-        .unwrap_or(body.end);
-    if items_end == marker + 1 {
-        errors.push(Diagnostic::error(
-            "manifest-item",
-            Some(doc.blocks[marker].span),
-            "the manifest has no items",
-        ));
-    }
-    let mut entries = Vec::new();
-    for i in marker + 1..items_end {
-        manifest_item(spec, doc, i, marker_change, &mut entries, errors);
-    }
-    let range = BlockRange {
-        start: marker,
-        end: items_end,
-    };
-    let span = Span::new(
-        doc.blocks[marker].span.start,
-        range_end(doc, range).unwrap_or(doc.blocks[marker].span.end),
-    );
-    let manifest = Manifest {
-        entries,
-        span: Some(span),
-    };
-    (manifest, Some(range))
-}
-
-/// One manifest item: its change (captured by the item, or else by the marker) and its paths.
-fn manifest_item(
-    spec: &ManifestRules,
-    doc: &Document,
-    index: usize,
-    marker_change: Option<&str>,
-    entries: &mut Vec<ManifestEntry>,
-    errors: &mut Vec<Diagnostic>,
-) {
-    let located = &doc.blocks[index];
-    let Block::ListItem { text, .. } = &located.block else {
-        return;
-    };
-    let base = text.span().start;
-    let item = doc.text(text);
-    let parsed = spec.item.captures(item).and_then(|caps| {
-        let change = caps.name("change").map(|m| m.as_str()).or(marker_change)?;
-        let kind = spec.changes.iter().find(|(w, _)| w == change)?.1;
-        Some((kind, caps.name("paths")?))
-    });
-    let Some((change, paths)) = parsed else {
-        errors.push(Diagnostic::error(
-            "manifest-item",
-            Some(located.span),
-            format!(
-                "a manifest item that does not match `{}`",
-                spec.item.as_str()
-            ),
-        ));
-        return;
-    };
-    let paths_span = Span::new(base + offset(paths.start()), base + offset(paths.end()));
-    let mut previous: Option<(RepoPath, PathOrigin)> = None;
-    for piece in pieces(spec, paths.as_str()) {
-        let (path, origin, lines) = match token(spec, piece, previous.as_ref()) {
-            Ok(token) => token,
-            Err((code, message)) => {
-                errors.push(Diagnostic::error(code, Some(paths_span), message));
-                continue;
-            }
-        };
-        previous = path.file().map(|file| (file.clone(), origin));
-        entries.push(ManifestEntry {
-            path,
-            change,
-            lines,
-            span: located.span,
-            origin,
-        });
-    }
-}
-
-/// A piece of an item's paths: one token, or a range.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Piece<'a> {
-    /// A path, a pattern or a `:lines` token.
-    Token(&'a str),
-    /// `` `a`–`b` ``: an en dash between two code spans (decision D41).
-    Range(&'a str, &'a str),
-}
-
-/// The pieces of `paths`. Ranges are found first, in every format, so a spec's `path_list` never
-/// sees their en dash; the text around them is split by `path_list` (D41).
-fn pieces<'a>(spec: &ManifestRules, paths: &'a str) -> Vec<Piece<'a>> {
-    const DASH: &str = "`–`";
-    let mut out = Vec::new();
-    let mut rest = paths;
-    let mut after_range = false;
-    while let Some(at) = rest.find(DASH) {
-        let (before, after) = (&rest[..at], &rest[at + DASH.len()..]);
-        let start_at = before.rfind('`').map_or(0, |i| i + 1);
-        let end_len = after.find('`').unwrap_or(after.len());
-        out.extend(split(spec, &before[..start_at], after_range, true));
-        out.push(Piece::Range(&before[start_at..], &after[..end_len]));
-        rest = &after[end_len..];
-        after_range = true;
-    }
-    out.extend(split(spec, rest, after_range, false));
-    out
-}
-
-/// `text` split by `path_list`. Next to a range, the empty piece on its side is what is left of
-/// the separator, not an empty path: `after_range` drops a leading one, `before_range` a
-/// trailing one.
-fn split<'a>(
-    spec: &ManifestRules,
-    text: &'a str,
-    after_range: bool,
-    before_range: bool,
-) -> Vec<Piece<'a>> {
-    let next_to_range = after_range || before_range;
-    if next_to_range && text.trim().is_empty() {
-        return Vec::new();
-    }
-    let mut parts: Vec<&str> = match &spec.path_list {
-        Some(split) => split.split(text).collect(),
-        None => vec![text],
-    };
-    if before_range && parts.last().is_some_and(|p| p.trim().is_empty()) {
-        parts.pop();
-    }
-    if after_range && parts.first().is_some_and(|p| p.trim().is_empty()) {
-        parts.remove(0);
-    }
-    parts.into_iter().map(|p| Piece::Token(p.trim())).collect()
-}
-
-/// A diagnostic code and message.
-type Refusal = (&'static str, String);
-
-/// One piece of a manifest item, after the file `previous` (decisions D32, D41): `:3-10` is more
-/// lines of the previous path; with `siblings`, a bare file name after a path with a directory
-/// is in that directory; a token with `*`, `?` or `{`, and a range, are patterns.
-fn token(
-    spec: &ManifestRules,
-    piece: Piece<'_>,
-    previous: Option<&(RepoPath, PathOrigin)>,
-) -> Result<(ManifestPath, PathOrigin, Option<LineRange>), Refusal> {
-    let piece = match piece {
-        Piece::Range(start, end) => {
-            let pattern =
-                PathPattern::range(start, end).map_err(|e| ("manifest-item", e.to_string()))?;
-            return Ok((ManifestPath::Pattern(pattern), PathOrigin::Written, None));
-        }
-        Piece::Token(piece) => piece,
-    };
-    if let Some(range) = piece.strip_prefix(':') {
-        let Some((path, origin)) = previous else {
-            return Err(("bad-path", format!("`{piece}` is not a path")));
-        };
-        return Ok((ManifestPath::File(path.clone()), *origin, line_range(range)));
-    }
-    if PathPattern::is_glob(piece) {
-        let pattern = PathPattern::glob(piece).map_err(|e| ("manifest-item", e.to_string()))?;
-        return Ok((ManifestPath::Pattern(pattern), PathOrigin::Written, None));
-    }
-    let (path, lines) = split_lines(piece);
-    let dir = previous.and_then(|(p, _)| p.dir());
-    let (spelled, origin) = match dir {
-        Some(dir) if spec.siblings && !path.contains('/') => {
-            (RepoPath::new(&format!("{dir}/{path}")), PathOrigin::Sibling)
-        }
-        _ => (RepoPath::new(path), PathOrigin::Written),
-    };
-    let path = spelled.map_err(|e| ("bad-path", e.to_string()))?;
-    Ok((ManifestPath::File(path), origin, lines))
-}
-
-/// `src/a.rs:3-10` → (`src/a.rs`, 3–10); `src/a.rs:7` → (`src/a.rs`, 7–7).
-fn split_lines(path: &str) -> (&str, Option<LineRange>) {
-    let Some((file, range)) = path.rsplit_once(':') else {
-        return (path, None);
-    };
-    match line_range(range) {
-        Some(lines) => (file, Some(lines)),
-        None => (path, None),
-    }
-}
-
-/// `3-10` or `7`.
-fn line_range(range: &str) -> Option<LineRange> {
-    let (start, end) = range.split_once('-').unwrap_or((range, range));
-    Some(LineRange {
-        start: start.parse().ok()?,
-        end: end.parse().ok()?,
-    })
 }
 
 /// A step boundary's `n` capture.
@@ -580,7 +333,7 @@ fn steps(
     rules: &OutlineRules,
     doc: &Document,
     body: BlockRange,
-    manifest: Option<BlockRange>,
+    (manifest, has_notes): (Option<BlockRange>, bool),
     errors: &mut Vec<Diagnostic>,
 ) -> Vec<OutlineStep> {
     let outside = |i: &usize| !manifest.is_some_and(|m| m.contains(*i));
@@ -594,11 +347,14 @@ fn steps(
         start: body.start,
         end: intro_end,
     };
-    if (intro.start..intro.end).any(|i| outside(&i)) {
+    if has_notes || (intro.start..intro.end).any(|i| outside(&i)) {
+        let marker = manifest.map(|m| doc.blocks[m.start].span);
         steps.push(OutlineStep {
             number: None,
             title: None,
-            span: range_span(doc, intro, manifest).unwrap_or(Span::new(0, 0)),
+            span: range_span(doc, intro, manifest)
+                .or(marker)
+                .unwrap_or(Span::new(0, 0)),
             blocks: intro,
             written: false,
             mark: None,

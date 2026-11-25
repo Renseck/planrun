@@ -3,11 +3,14 @@
 
 use std::sync::Arc;
 
-use planrun_model::{Action, ActionKind, ChangeKind, Manifest, RecognizerId, RepoPath, WriteMode};
+use planrun_model::{
+    Action, ActionKind, ChangeKind, Manifest, ManualReason, RecognizerId, RepoPath, Span, TextRef,
+    WriteMode,
+};
 use regex::Regex;
 
 use super::params::Params;
-use super::{paragraph, resolved_lead_path};
+use super::{is_bare, paragraph, resolved_lead_path};
 use crate::diagnostic::Diagnostic;
 use crate::document::Block;
 use crate::patch;
@@ -141,6 +144,7 @@ impl Recognizer for FileBlock {
         let Block::Fence { body, .. } = &fence.block else {
             return Recognized::No;
         };
+        let span = lead.span.join(fence.span);
         let kind = match op {
             Op::Patch => match patch_action(cx, path, body, lead.span, fence.span) {
                 Ok(kind) => kind,
@@ -150,13 +154,31 @@ impl Recognizer for FileBlock {
             Op::Create => write(path, body, WriteMode::Create),
             Op::Overwrite => write(path, body, WriteMode::Overwrite),
         };
+        let kind = ambiguous_create(cx, kind, span);
         cursor.advance(2);
         Recognized::Yes(vec![Action {
             kind,
-            span: lead.span.join(fence.span),
+            span,
             origin: self.id.clone(),
             path_origin,
         }])
+    }
+}
+
+/// A Create whose path is declared only as a `Bare` entry: its directory is unknown, so it is
+/// `Manual(AmbiguousPath)` instead of a write (decision D45). Modify and Rewrite stay actions:
+/// preflight catches a wrong target.
+fn ambiguous_create(cx: &StepContext<'_>, kind: ActionKind, span: Span) -> ActionKind {
+    let create = matches!(
+        &kind,
+        ActionKind::WriteFile { path, mode: WriteMode::Create, .. } if is_bare(cx, path)
+    );
+    if !create {
+        return kind;
+    }
+    ActionKind::Manual {
+        reason: ManualReason::AmbiguousPath,
+        text: TextRef::Span(span),
     }
 }
 

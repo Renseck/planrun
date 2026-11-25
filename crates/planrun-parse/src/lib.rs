@@ -18,6 +18,7 @@ pub mod diagnostic;
 pub mod document;
 pub mod format;
 mod kinds;
+pub mod manifest;
 pub mod outline;
 pub mod patch;
 pub mod recognize;

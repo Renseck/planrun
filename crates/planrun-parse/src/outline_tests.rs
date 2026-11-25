@@ -212,20 +212,6 @@ fn a_task_without_step_boundaries_is_one_implicit_step() {
 }
 
 #[test]
-fn line_ranges_are_split_from_paths() {
-    assert_eq!(
-        split_lines("src/a.rs:3-10"),
-        ("src/a.rs", Some(LineRange { start: 3, end: 10 }))
-    );
-    assert_eq!(
-        split_lines("src/a.rs:7"),
-        ("src/a.rs", Some(LineRange { start: 7, end: 7 }))
-    );
-    assert_eq!(split_lines("src/a.rs"), ("src/a.rs", None));
-    assert_eq!(split_lines("a:b"), ("a:b", None));
-}
-
-#[test]
 fn a_task_heading_after_the_end_of_the_tasks_is_an_error() {
     let text = "## Tasks\n\n### P1-T1: a\n\n**Files**\n\n- Create `a`\n\n## Green\n\nx\n\n\
                 ### P1-T2: b\n\ny\n";

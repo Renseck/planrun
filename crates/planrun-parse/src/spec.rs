@@ -13,7 +13,8 @@ use serde::Deserialize;
 use crate::diagnostic::Diagnostics;
 use crate::document::Document;
 use crate::format::{CheckLevel, DOWNGRADABLE, Format, FormatSettings, Outline, StepMark};
-use crate::outline::{self, HeadingRule, ManifestRules, OutlineRules, StepBlock, StepRule};
+use crate::manifest::ManifestRules;
+use crate::outline::{self, HeadingRule, OutlineRules, StepBlock, StepRule};
 use crate::recognizer::{Recognizer, RecognizerFactory};
 
 /// A format spec as read from TOML. The schema is documented in docs/extending.md §2; keep the
@@ -110,6 +111,12 @@ pub struct ManifestSpec {
     /// A bare file name after a path with a directory is in that directory; default false
     /// (decision D32).
     pub siblings: Option<bool>,
+    /// Splits the marker's `items` capture into clauses (decision D43); needs a marker that
+    /// captures `items`.
+    pub clause_list: Option<String>,
+    /// Over the text right after each path token; its `change` capture, mapped through
+    /// `changes`, overrides the change of that one path (decision D44).
+    pub path_change: Option<String>,
 }
 
 /// A `[[step_marks]]` row.
@@ -293,6 +300,10 @@ fn compile_manifest(spec: &ManifestSpec) -> Result<ManifestRules, String> {
         .collect::<Result<_, String>>()?;
     let marker = compile_regex("outline.manifest.marker", &spec.marker, &[])?;
     let marker_change = marker.capture_names().flatten().any(|n| n == "change");
+    let marker_items = marker.capture_names().flatten().any(|n| n == "items");
+    if spec.clause_list.is_some() && !marker_items {
+        return Err("outline.manifest.clause_list: the marker has no `items` capture".to_owned());
+    }
     let item_needs: &[&str] = if marker_change {
         &["paths"]
     } else {
@@ -306,6 +317,16 @@ fn compile_manifest(spec: &ManifestSpec) -> Result<ManifestRules, String> {
             .path_list
             .as_deref()
             .map(|p| compile_regex("outline.manifest.path_list", p, &[]))
+            .transpose()?,
+        clause_list: spec
+            .clause_list
+            .as_deref()
+            .map(|p| compile_regex("outline.manifest.clause_list", p, &[]))
+            .transpose()?,
+        path_change: spec
+            .path_change
+            .as_deref()
+            .map(|p| compile_regex("outline.manifest.path_change", p, &["change"]))
             .transpose()?,
         required: spec.required.unwrap_or(true),
         siblings: spec.siblings.unwrap_or(false),

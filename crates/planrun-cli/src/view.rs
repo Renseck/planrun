@@ -301,6 +301,7 @@ fn path_from(origin: PathOrigin) -> Option<String> {
         PathOrigin::Sibling => "the directory of the manifest path before it",
         PathOrigin::FileName => "the manifest entry with this file name",
         PathOrigin::OnlyEntry => "the task's only editable manifest entry",
+        PathOrigin::Bare => "a bare file name in the manifest, its directory unknown",
     };
     Some(format!("resolved from manifest: {how}"))
 }
@@ -313,6 +314,7 @@ fn entry(entry: &ManifestEntry) -> String {
     let note = match (&entry.path, entry.origin) {
         (ManifestPath::Pattern(_), _) => " (a pattern: never a write target)",
         (_, PathOrigin::Written) => "",
+        (_, PathOrigin::Bare) => " (a bare file name: its directory is unknown)",
         _ => " (in the directory of the path before)",
     };
     format!("{:?} {}{lines}{note}", entry.change, entry.path)
