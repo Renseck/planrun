@@ -77,7 +77,7 @@ The decisions are D26–D40. Split in two plans on one schema (D40):
 Each plan lists the imperative Notes that remain in the real plans (D36). `expected-failure-step`
 became step marks (D30); `preview-apply` became script intents by lead (D29).
 
-## P3 — Workspace, git and dry-run
+## P3 — Workspace, git and dry-run (done)
 
 `RepoPath` resolution with the symlink check; the per-task file cache; step transactions (D23);
 line-ending policy (D10); pre-images in the git object database; the `git` wrapper (`apply
