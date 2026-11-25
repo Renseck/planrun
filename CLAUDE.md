@@ -20,14 +20,18 @@ crates/planrun-model   the IR: Plan, Task, Step, Action, Span/TextRef, RepoPath,
 crates/planrun-parse   Markdown → IR: source, document, format, spec, registry, outline,
                        manifest, recognizer, recognize, kinds/ (one file per recognizer kind),
                        patch, check, diagnostic
-crates/planrun-exec    IR → effects: workspace, git, shells, expect, policy, journal, runner
-crates/planrun-cli     the `planrun` binary: check, show (view, render)
+crates/planrun-exec    IR → effects: git, workspace, eol, tree, handler, transaction,
+                       preflight, finding (P3); shells, expect, policy, journal, runner
+                       (P4–P5)
+crates/planrun-cli     the `planrun` binary: check, show (view, render), run --dry-run
 formats/*.toml         built-in plan formats (embedded): assay, superpowers, before-after; the
                        file name is the format id
 docs/                  architecture, plan-grammar, extending, decisions, roadmap, plans/,
                        handovers/ (one per finished phase)
 tests/corpus/          synthetic/ (one plan per format), invalid/ (one error each), local/ (private)
 tests/fixtures/greeter the repo the synthetic assay plan applies to
+tests/support          fixture.rs: a temporary git copy of the greeter fixture, included
+                       with #[path] by the exec and cli tests
 ```
 
 ## Hard rules
@@ -84,7 +88,10 @@ The gate for every task is all three of fmt, clippy (warnings are errors) and te
 - Adding a check rule adds a file to `tests/corpus/invalid/`. Adding a format adds a plan to
   `tests/corpus/synthetic/` with its snapshot.
 - Execution tests run on a temporary copy of `tests/fixtures/greeter` (`git init` in the copy),
-  never on this repository.
+  never on this repository: `tests/support/fixture.rs` makes one under the OS temp directory,
+  with an environment that keeps the user's git configuration out. Exec tests build the IR by
+  hand (`crates/planrun-exec/tests/support/ir.rs`, D2); tests that need a parsed plan live in
+  planrun-cli.
 
 ## Docs stay in step
 

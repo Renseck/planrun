@@ -168,7 +168,8 @@ fence → `Note`; table, heading, rule → `Note`; HTML comment → dropped.
 Rare (D4). The checklist, all in one change:
 
 1. The variant in `planrun-model::ActionKind`, with docs.
-2. Its handler in planrun-exec, its `DoneState` logic for resume, its dry-run behaviour.
+2. Its handler in planrun-exec: `simulate` on the virtual tree (its dry-run behaviour and
+   its part of a step transaction, D53), and its `DoneState` logic for resume (P5).
 3. Its policy class.
 4. Its journal record.
 5. Its `show` rendering and coverage label.
@@ -221,7 +222,7 @@ the outline should be new. Every block of every task must fall in exactly one st
 
 | Trait | Registry | For |
 |---|---|---|
-| `ActionHandler` | `HandlerSet` | how an action kind executes, previews, and reports `DoneState` |
+| `ActionHandler` | `HandlerSet` | how an action kind is simulated on the virtual tree (D52, D53); the transaction writes the result. `DoneState` follows in P5 |
 | `ShellSession` | one per `Shell` | another shell (`cmd`, `zsh`): a new `Shell` variant + session |
 | `CommandClassifier` | the runner's | different policy classification |
 | `Ui` | the CLI | a TUI (ratatui) later, a non-interactive batch UI |

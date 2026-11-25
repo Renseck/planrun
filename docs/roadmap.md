@@ -87,6 +87,13 @@ copy of `tests/fixtures/greeter`: the dry run of `assay-style.md` passes; a fixt
 `src/lib.rs` edited fails preflight with the blob mismatch; a Create onto an existing file fails
 before anything is written.
 
+The decisions are D50–D59. Plan: `docs/plans/2026-11-25-p3-workspace-dry-run.md`. First the P2b
+review items (series stems D59, `run-from`, negated failures, `write-mode-unknown` D58) and the
+`RepoPath` hardening (D51); then the git wrapper, the workspace and its one writer, line endings
+(D54), the virtual tree (D52), step transactions as prepare and commit (D53), preflight with
+scope (D50) and the dry run (D55). The per-task file cache is the virtual tree: a task's paths are
+read once, on first use.
+
 ## P4 — Shells, expectations, policy
 
 Persistent pwsh and bash sessions (D24) with the sentinel protocol: variables persist across

@@ -64,8 +64,11 @@ composition roots. Nothing is a deep type hierarchy.
 ```
 Plan { source: PlanSource, format: FormatId, meta: PlanMeta, tasks: Vec<Task> }
 Task { id: TaskId { raw, ordinal }, title, span, manifest: Manifest, steps: Vec<Step> }
+Manifest { entries: Vec<ManifestEntry>, span }
+ManifestEntry { path: ManifestPath (File(RepoPath) | Pattern(PathPattern)), change, lines, span, origin: PathOrigin }
 Step { number: Option<u32>, title: Option<TextRef>, span, actions: Vec<Action> }
-Action { kind: ActionKind, span, origin: RecognizerId }
+Action { kind: ActionKind, span, origin: RecognizerId, path_origin: PathOrigin }
+PathOrigin = Written | Sibling | FileName | OnlyEntry | Bare | PreviousEdit
 
 ActionKind =
   | WriteFile    { path, body, mode: Create | Overwrite | FromManifest }
@@ -79,7 +82,7 @@ ActionKind =
   | Manual       { reason, text }
 
 Script { shell: Pwsh | Bash, body, expect: Option<Expectation>, intent: Verify|Gate|Preview|Apply|Other }
-Expectation { exit: Success | Failure | Code(n) | Unknown, lines: Option<TextRef>, prose: Option<TextRef> }
+Expectation { exit: Success | Failure | Code(n) | Unknown, lines, prose, comments: Option<TextRef> }
 ```
 
 - **Text is never copied.** `TextRef::Span` points into the normalized plan text owned by
@@ -100,8 +103,10 @@ Expectation { exit: Success | Failure | Code(n) | Unknown, lines: Option<TextRef
   commit. A path a task names as generated more than once (an intro notice and a step notice)
   is one check.
 - **`RepoPath`** (D7) is the only path type in actions: relative, forward slashes, no `..`, no
-  `.`, no empty segments, no drive letters. Symlink escapes are refused by the workspace at write
-  time.
+  `.`, no empty segments, no drive letters, no wildcards (D42), no spelling Windows reserves or
+  git refuses (`:`, `.git` in any form, device names, D51). Symlink escapes are refused by the
+  workspace at write time (D52). `Manifest::scopes` and `Manifest::is_bare_target` decide D50's
+  scope for parse and exec alike.
 
 ## 4. Parsing (planrun-parse)
 
@@ -222,9 +227,12 @@ A state machine over Task → Step → Action. Per action: `Pending → Previewe
 Done | Failed | Skipped`. Per task, the lifecycle of your §6.1 proposal:
 
 1. Show the task, its manifest and its actions (with `Note`/`Manual` in place).
-2. **Preflight**: manifest Create targets absent, Modify targets present (pattern entries are
-   skipped: they name no single file, D41), the first patch's preimage blob matches the file on
-   disk, `git status --porcelain` empty when the plan says so.
+2. **Preflight** (`preflight::preflight`): no touched path has uncommitted changes
+   (`path-dirty`; other dirt is a warning, D55); manifest Create entries absent, Modify, Rewrite
+   and Delete entries present (patterns and Bare entries are skipped: they name no single known
+   file, D41, D45); then the task's file actions up to its first script or Manual, simulated on
+   a fresh virtual tree: every preimage blob, every patch, every `before`. A Bare-targeted
+   Overwrite or Delete is `path-ambiguous`; an unscoped file action is confirmed (D50).
 3. Execute steps in order; each step's file actions as one transaction (§6.2), scripts in sessions
    (§6.3), stopping per policy (§6.5).
 4. Commit only through the plan's own commit script, and only when the task's gate/verify passed
@@ -233,23 +241,42 @@ Done | Failed | Skipped`. Per task, the lifecycle of your §6.1 proposal:
 
 ### 6.2 Workspace and files
 
-- **Step transactions** (D23): all file actions of a step, up to the next non-file action, are
-  validated against an in-memory copy first (create targets absent, overwrite targets present,
-  every patch applies with `git apply --check`, every `before` occurs exactly once). Only then are
-  they written. One failure writes nothing.
+- **The virtual tree** (D52): a temporary index and object directory under the OS temp
+  directory, with the repository's objects as alternates, passed to git per call
+  (`GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`). Paths are seeded
+  from the working tree on first use. Each `ActionHandler` simulates its action on it: create
+  targets absent, overwrite targets present, every patch with `git apply --cached` after
+  `--check`, every `before` exactly once. With `core.ignorecase`, two spellings of one path are
+  `path-collision`.
+- **Step transactions** (D23, D53): `transaction::prepare` simulates the file actions of a step,
+  up to the next non-file action, on a virtual tree seeded from the disk, stores the pre-images,
+  and builds every post-image there: a patched file's bytes are `git cat-file --filters`, the
+  conversion `git apply` would make; the others are D54 bytes. `transaction::commit` hands the
+  `PreparedStep` to a write-ahead recorder (P5: the journal), then writes it. One failure in
+  prepare writes nothing; one in commit is rolled back from the pre-images, and what could not
+  be restored is reported. A `Delete` with `via_git` updates the index last, in one call.
 - **Pre-images** of every file about to change are stored in git's object database
-  (`git hash-object -w`) and their ids journaled: rollback is `git cat-file`, untracked files
-  included, no extra storage.
-- **Writes are atomic**: write a temp file in the same directory, then rename.
-- **Line endings** (D10): created files are written as in the plan (LF). Overwrites and
-  `ReplaceExact` keep the target's existing convention unless `.gitattributes` says `eol=lf`;
-  `before` is matched in LF space. Patches go through `git apply` unchanged.
+  (`git hash-object -w --no-filters`: the exact bytes) and their ids journaled: rollback is
+  `git cat-file`, untracked files included, no extra storage. They are unreachable objects;
+  pruning is a P5 decision (D57).
+- **One writer** (D52): the path is resolved first (no link, junction, short name or case
+  mismatch in its existing part); directories are created one segment at a time, each checked;
+  the contents go to `.planrun-<random>.tmp` in the target's directory (`create_new`); the parent
+  is checked again; the rename replaces the target. A parent swapped between that check and the
+  rename is not caught.
+- **Line endings** (D10, D54): created files are written as in the plan (LF). For Overwrites and
+  `ReplaceExact`, an `eol` attribute decides, `-text` keeps bytes; otherwise the file's own
+  convention; a file without line endings takes git's checkout convention; a mixed file is
+  overwritten by the checkout convention and refused for an exact edit (`eol-mixed`). `before` is
+  matched in LF space. Patches go through git.
 - **Patches** go through `git apply --whitespace=nowarn -` with the patch on stdin (D20): git's
   exact semantics, no temp file, no fuzz. The `index` line's blob ids are checked before (preimage)
-  and after (postimage). Blob ids are computed with `git hash-object --path=<p>` so clean filters
-  and `autocrlf` match git's view; an in-process SHA-1 is only a fast path when no filter applies.
+  and after (postimage). Blob ids are computed by `git hash-object --path=<p>`, so clean filters
+  and `autocrlf` match git's view; planrun-exec computes none in-process (D56).
 - **The working tree stays clean of planrun**: nothing is written there except what the plan
-  writes. State and scratch go under `.git/planrun/` and the OS temp directory.
+  writes, and a writer's temp file until its rename. State and scratch go under `.git/planrun/`,
+  pre-images into the object database, the virtual tree into the OS temp directory. Status calls
+  run with `--no-optional-locks`, so they do not refresh `.git/index`.
 - The absorbed **patch ceremony** (`save the block as $env:TEMP\…`, `git apply`, `Remove-Item`)
   is never run (D17).
 
@@ -313,9 +340,13 @@ planrun resume <plan>
 planrun status <plan>
 ```
 
-`--dry-run`: parse, check, preflight against the real repository, then run every file action
-against a **virtual tree** in memory (patches with `git apply --check` in sequence). Runs no script,
-writes nothing.
+`--dry-run` (D55): parse, check, check real dirt once for the paths of every task, then preflight
+every task against **one virtual tree** carried across the tasks (D52), so a task sees what the
+tasks before it wrote, and simulate every file action. Commits are assumed. Runs no script and
+writes nothing: not the working tree, not `.git`. Once a script, commit or Manual has gone by
+without running, a failing file action is a warning ("depends on a step that did not run") and
+its path is unknown from then on; every ok after that point assumes those steps change no files.
+Exit 0 when nothing fails, 1 when something does, 2 when git or the repository cannot be used.
 
 The interactive screen (line prompts first, D15):
 
