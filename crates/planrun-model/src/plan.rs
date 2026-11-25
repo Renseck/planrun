@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::action::Action;
 use crate::ids::{FormatId, TaskId};
-use crate::path::PathOrigin;
+use crate::path::{PathOrigin, RepoPath};
 use crate::pattern::ManifestPath;
 use crate::source::PlanSource;
 use crate::span::{Span, TextRef};
@@ -82,6 +82,26 @@ pub struct Manifest {
     pub span: Option<Span>,
 }
 
+impl Manifest {
+    /// Whether a file action at `path` is in the task's declared scope (decision D50): a file
+    /// entry equal to it whose origin is not `Bare`, or a pattern entry that matches it. Always
+    /// false for a task without a manifest.
+    pub fn scopes(&self, path: &RepoPath) -> bool {
+        self.entries.iter().any(|e| match &e.path {
+            ManifestPath::File(file) => file == path && e.origin != PathOrigin::Bare,
+            ManifestPath::Pattern(pattern) => pattern.matches(path),
+        })
+    }
+
+    /// Whether some `Bare` file entry names `path` (decisions D45, D50): the plan wrote a file
+    /// name whose directory it never said, so `path` may not be the file it means.
+    pub fn is_bare_target(&self, path: &RepoPath) -> bool {
+        self.entries
+            .iter()
+            .any(|e| e.origin == PathOrigin::Bare && e.path.file() == Some(path))
+    }
+}
+
 /// One declared file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManifestEntry {
@@ -121,4 +141,76 @@ pub struct LineRange {
     pub start: u32,
     /// Last line.
     pub end: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pattern::PathPattern;
+
+    fn path(p: &str) -> RepoPath {
+        RepoPath::new(p).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    fn entry(path: ManifestPath, origin: PathOrigin) -> ManifestEntry {
+        ManifestEntry {
+            path,
+            change: ChangeKind::Modify,
+            lines: None,
+            span: Span::new(0, 0),
+            origin,
+        }
+    }
+
+    fn manifest(entries: Vec<ManifestEntry>) -> Manifest {
+        Manifest {
+            entries,
+            span: Some(Span::new(0, 0)),
+        }
+    }
+
+    #[test]
+    fn written_and_sibling_entries_and_patterns_scope_a_path() {
+        let glob = PathPattern::glob("db/*.sql").unwrap_or_else(|e| panic!("{e}"));
+        let m = manifest(vec![
+            entry(ManifestPath::File(path("src/a.rs")), PathOrigin::Written),
+            entry(ManifestPath::File(path("src/b.rs")), PathOrigin::Sibling),
+            entry(ManifestPath::Pattern(glob), PathOrigin::Written),
+        ]);
+        for scoped in ["src/a.rs", "src/b.rs", "db/1.sql"] {
+            assert!(m.scopes(&path(scoped)), "{scoped}");
+        }
+        for unscoped in ["src/c.rs", "db/x/1.sql", "a.rs"] {
+            assert!(!m.scopes(&path(unscoped)), "{unscoped}");
+        }
+        assert!(!m.is_bare_target(&path("src/a.rs")));
+    }
+
+    #[test]
+    fn a_bare_entry_targets_but_never_scopes() {
+        let m = manifest(vec![
+            entry(ManifestPath::File(path("src/a.rs")), PathOrigin::Written),
+            entry(ManifestPath::File(path("b.ps1")), PathOrigin::Bare),
+        ]);
+        assert!(!m.scopes(&path("b.ps1")));
+        assert!(m.is_bare_target(&path("b.ps1")));
+        assert!(!m.is_bare_target(&path("src/b.ps1")));
+    }
+
+    #[test]
+    fn a_path_with_a_written_and_a_bare_entry_is_both() {
+        let m = manifest(vec![
+            entry(ManifestPath::File(path("b.ps1")), PathOrigin::Written),
+            entry(ManifestPath::File(path("b.ps1")), PathOrigin::Bare),
+        ]);
+        assert!(m.scopes(&path("b.ps1")));
+        assert!(m.is_bare_target(&path("b.ps1")));
+    }
+
+    #[test]
+    fn no_manifest_scopes_nothing() {
+        let m = Manifest::default();
+        assert!(!m.scopes(&path("a.rs")));
+        assert!(!m.is_bare_target(&path("a.rs")));
+    }
 }

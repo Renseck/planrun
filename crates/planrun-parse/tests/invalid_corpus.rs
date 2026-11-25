@@ -51,11 +51,13 @@ fn every_invalid_plan_yields_exactly_its_code() {
     assert!(wrong.is_empty(), "\n{}", wrong.join("\n"));
 }
 
+/// `<code>.md`, or `<code>.<case>.md` for a second case of one code (`bad-path.git-hooks.md`).
 #[test]
 fn the_file_name_is_the_code() {
     for path in invalid_plans() {
         let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{e}"));
         let stem = path.file_stem().and_then(|s| s.to_str());
-        assert_eq!(expected_code(&text), stem, "{}", path.display());
+        let code = stem.map(|s| s.split_once('.').map_or(s, |(code, _)| code));
+        assert_eq!(expected_code(&text), code, "{}", path.display());
     }
 }

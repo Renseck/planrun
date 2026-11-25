@@ -123,12 +123,9 @@ fn only_entry(cx: &StepContext<'_>) -> Option<RepoPath> {
     (one && first.origin != PathOrigin::Bare).then(|| path.clone())
 }
 
-/// True when `path` is declared only as a `Bare` entry (decision D45).
+/// True when a `Bare` entry names `path` (decision D45; the model's test, shared with exec, D50).
 fn is_bare(cx: &StepContext<'_>, path: &RepoPath) -> bool {
-    cx.manifest
-        .entries
-        .iter()
-        .any(|e| e.path.file() == Some(path) && e.origin == PathOrigin::Bare)
+    cx.manifest.is_bare_target(path)
 }
 
 /// The script of the action an expectation amends: the last action, when it is a script.

@@ -2,6 +2,15 @@
 source: crates/planrun-cli/tests/cli.rs
 expression: all
 ---
+==== bad-path.git-hooks.md
+error[bad-path]: `.git/hooks/pre-commit` names a git directory; a plan never writes into one
+  --> tests/corpus/invalid/bad-path.git-hooks.md:14:11
+   |
+14 | - Create `.git/hooks/pre-commit`
+   |           ^^^^^^^^^^^^^^^^^^^^^
+
+planrun: tests/corpus/invalid/bad-path.git-hooks.md: 1 error
+
 ==== bad-path.md
 error[bad-path]: `../outside.rs` has a `.`, `..` or empty segment
   --> tests/corpus/invalid/bad-path.md:14:11

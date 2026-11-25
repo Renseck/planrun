@@ -35,7 +35,9 @@ messages.
 
 Paths in plans are repository-relative with forward slashes. `` `src/a.rs:3-10` `` in a Files list
 is a path with an informational line range. Anything absolute, with `..`, or with a backslash is
-`bad-path`.
+`bad-path`, and so is a spelling Windows reserves or git refuses (D51): `:`, `<`, `>`, `"`, `|`
+or a control character; a `.git` segment in any spelling (`.GIT`, `.git.`, `git~1`); a device
+name (`con`, `nul.txt`, `com1`); a segment ending in a dot or a space.
 
 ### 1.5 What is never executed
 
