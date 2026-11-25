@@ -17,7 +17,8 @@
 //! - [`shell`]: persistent pwsh and bash sessions behind [`ShellSession`] (D60–D65).
 //! - [`expect`]: a run against its expectation: exit codes, summary lines with `…`, what asks
 //!   for confirmation (D11, D66).
-//! - `policy`: command classes and the [`CommandClassifier`].
+//! - [`policy`]: command classes and the [`CommandClassifier`]: a built-in allowlist over a
+//!   splitter per shell (D13, D68).
 //! - `journal`: JSONL under `.git/planrun/`.
 //! - `runner`: the state machine Task → Step → Action, talking to a [`Ui`].
 
@@ -26,6 +27,7 @@ pub mod expect;
 pub mod finding;
 pub mod git;
 pub mod handler;
+pub mod policy;
 pub mod preflight;
 pub mod shell;
 pub mod transaction;
@@ -33,6 +35,7 @@ pub mod tree;
 pub mod workspace;
 
 pub use handler::{ActionHandler, HandlerSet};
+pub use policy::{CommandClassifier, PolicyClass};
 pub use shell::{ScriptRun, ShellSession};
 
 #[cfg(test)]
@@ -41,26 +44,6 @@ mod fixture;
 #[cfg(test)]
 #[path = "../tests/support/ir.rs"]
 mod ir;
-
-/// The command classes of decision D13, least to most dangerous.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum PolicyClass {
-    /// Reads only (`git status`, `rg`).
-    Read,
-    /// Builds or tests (`cargo test`, `dotnet build`, `npm ci`).
-    Build,
-    /// Changes the repository (`git add`, `git commit`, `replace … -All`, file actions).
-    Modify,
-    /// Destroys or reaches outside (`Remove-Item -Recurse`, `git reset --hard`, `git push`,
-    /// anything unclassified).
-    Destructive,
-}
-
-/// Classifies a script: the most dangerous class of any command in it.
-pub trait CommandClassifier: Send + Sync {
-    /// The class of `script` run by `shell`.
-    fn classify(&self, shell: planrun_model::Shell, script: &str) -> PolicyClass;
-}
 
 /// The state of an action's effects on disk, for resuming (decision D14).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
