@@ -11,6 +11,7 @@
 //! - [`tree`]: the virtual tree, a temporary index and object directory (D52).
 //! - [`handler`]: one [`ActionHandler`] per action kind, which simulates it on a virtual tree;
 //!   the [`HandlerSet`] is the execution-side plugin point.
+//! - [`transaction`]: a step's file actions as prepare, then commit, with rollback (D53).
 //! - [`finding`]: what preflight, a simulation and the dry run report.
 //! - `shell`: persistent pwsh and bash sessions behind [`ShellSession`].
 //! - `expect`: exit-code and summary-line matching.
@@ -22,6 +23,7 @@ pub mod eol;
 pub mod finding;
 pub mod git;
 pub mod handler;
+pub mod transaction;
 pub mod tree;
 pub mod workspace;
 
@@ -30,6 +32,9 @@ pub use handler::{ActionHandler, HandlerSet};
 #[cfg(test)]
 #[path = "../../../tests/support/fixture.rs"]
 mod fixture;
+#[cfg(test)]
+#[path = "../tests/support/ir.rs"]
+mod ir;
 
 /// The command classes of decision D13, least to most dangerous.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
