@@ -71,7 +71,9 @@ Each dependency is justified here; add none without a line.
 | `sha2` (Phase 1) | the plan fingerprint (SHA-256) |
 
 Rejected: `rusqlite` (D18), `ratatui` for now (D15), `tracing` for now (the journal is the record),
-`similar` as a patch engine (D20).
+`similar` as a patch engine (D20), `windows-sys` and `libc` for the process tree (D64).
+
+Amended by D56 (no `sha1_smol` in planrun-exec) and D64 (the hand-declared process-tree calls).
 
 ## D10 Line endings of written files
 
@@ -86,16 +88,22 @@ Amended by D54 (attributes, files without or with mixed line endings).
 `Expected: all pass` is mapped to an exit expectation, checked, and then shown for confirmation.
 Only fenced summary lines and exit codes pass automatically.
 
+Amended by D66 (the matching rules, what else asks).
+
 ## D12 Expected failures are skipped by default
 
 A verification expected to fail (TDD "verify it fails", `Expected: build error`) is recorded in
 the IR and skipped; `--run-expected-failures` runs it. Rens sees these failures in the IDE.
+
+Amended by D67 (Verify scripts only).
 
 ## D13 Policy classes
 
 Read < Build < Modify < Destructive; a script takes the highest class of its commands; unknown
 commands are Destructive. Defaults: file actions automatic; Build/Modify ask; Destructive needs a
 typed `yes`; Manual always waits.
+
+Amended by D68 (the classifier, a built-in allowlist) and D69 (`--auto`, Read asks too).
 
 ## D14 Resume checks the disk, never the journal alone
 
@@ -153,6 +161,8 @@ Amended by D52 (the virtual tree, the writer) and D53 (prepare, then commit).
 ## D24 One persistent session per shell kind per run
 
 Variables and the working directory persist across blocks (`$gate`, `$P2`), as in Rens' terminal.
+
+Amended by D60 (the protocol, and how a session differs from the terminal).
 
 ## D25 Maintainability/extensibility ranks second
 
@@ -594,3 +604,267 @@ Amends D49. A `before-after` lead without a path may capture the word before "ed
 that file-name stem, the file name without its last extension (`README` of `README.md`),
 compared exactly; otherwise the series does not continue, and with no other agreeing path the
 edit is `Manual(ProseEdit)`. The spec load refuses `stem` on a lead that captures `path`.
+
+Decisions D60 onwards were agreed on 2026-11-25 at the start of P4, from the review of the
+shell, expectation and policy design against the IR and the six local plans.
+
+## D60 Shell sessions and their protocol
+
+Amends D24; corrects architecture.md §6.3.
+
+- **One process per session**, started at the repository root with `-NoProfile`
+  (`--noprofile --norc`), detached from planrun's terminal (D64). Each block is written to
+  `b<n>.tmp` with `create_new` in a run directory and renamed to `b<n>.ps1` or `b<n>.sh`, so
+  nothing reads half a block. The run directory is `planrun-shell-<random>` in the OS temp
+  directory, created with create-dir semantics (it must not exist), mode 0700 on Unix, and
+  removed when the session is dropped. Its path reaches the session in the environment
+  variable `PLANRUN_SESSION_DIR`, which the prologue copies and removes: no path ever travels
+  over a pipe, so a non-ASCII temp directory works. Block bodies are written unchanged (D48).
+- **Blocks get no stdin.** A native command started by pwsh inherits pwsh's own stdin: with
+  the protocol on stdin, `git hash-object --stdin` in a block read the protocol and hung. So
+  pwsh gets a null stdin, and its `-Command` script is the prologue and a loop at the top level
+  that waits for the next block file (a `FileSystemWatcher`, re-checked every 250 ms) and
+  dot-sources it inside `do { try { … } catch { … } } while ($false)`; the `do` keeps a block's
+  `break` or `continue` inside it. bash keeps its blocks on stdin, one top-level line each:
+  `source "<dir>/b<n>.sh" </dev/null`, so a `cat` in a block reads nothing. No function wraps
+  `source`: inside a function a block's `declare` would make locals, `$1` would be the temp
+  path, and `local` would succeed where the terminal refuses it.
+- **The sentinel.** A 128-bit secret per session plus the block's number:
+  `__planrun_<secret>_<n>__`, printed on stdout with four fields (`ok`|`threw`|`exit`, the
+  status, `errored` as 0 or 1, the working directory as hex of its UTF-8 bytes) and alone on
+  stderr. A block ends when both have arrived, so late stderr never leaks into the next block.
+  Text before the sentinel on its line is the block's last output line, marked as having no
+  final newline. A sentinel for another block, or anything after the defined fields, is
+  `Broken`: the session is dead. Block 0 is the prologue's own sentinel; a prologue that prints
+  anything or ends otherwise fails the start.
+- **Wrapper names** are `$global:__planrun_*` in pwsh, reset before every block, and
+  `__planrun_*` in bash; a plan's `$t`, `$s` or `n` is never touched.
+- **Output** is kept per line with its stream and a final-newline flag. Order within a stream
+  is exact; order across the two streams is arrival order, best effort.
+- **The working directory** after each block comes with the sentinel (pwsh
+  `$PWD.ProviderPath`; bash `$PWD`, on Windows `pwd -W`, because there `$PWD` is an MSYS path
+  and `/tmp` is a mount). P5 can warn when it leaves the repository; the deferred candidate
+  (D70) needs it too.
+- **pwsh prologue:** `$PSStyle.OutputRendering = 'PlainText'`, `$ProgressPreference =
+  'SilentlyContinue'`, `$ErrorActionPreference = 'Continue'`,
+  `$PSNativeCommandUseErrorActionPreference = $false`, UTF-8 without BOM for
+  `[Console]::OutputEncoding` and `$OutputEncoding`; on Windows `-ExecutionPolicy Bypass` for
+  the session process, because a dot-sourced file is a script to the execution policy where a
+  line typed in the terminal is not. A block that changes any of these changes later blocks,
+  as in the terminal.
+
+Stated differences from Rens' terminal: `$LASTEXITCODE` is reset to 0 before each block (in
+the terminal it carries over between commands); a terminating error ends the block (`try`); in
+pwsh `$PSScriptRoot` and `$MyInvocation` name the block's temp file; pwsh `exit n` ends only the
+block (D61); `GIT_TERMINAL_PROMPT=0` (D62).
+
+## D61 How a block ends
+
+`RunStatus` is `Exited(code)`, `Threw` (pwsh), `SessionEnded(Option<code>)`, `TimedOut` or
+`Broken(reason)`.
+
+- **pwsh:** `Threw` when a terminating error reached the wrapper's `catch` (a parse error of the
+  block included); otherwise `$LASTEXITCODE`, which is 0 when no native command ran. `exit n`
+  in a dot-sourced file ends only the block: `Exited(n)`, and the session's variables survive.
+- **bash:** `$?` of the `source`. A syntax error in a block ends the block with `Exited(2)`; the
+  session survives. `exit n` ends the session: the EXIT trap reports `SessionEnded(Some(n))`, and
+  so does `set -e` followed by a failing command. EOF on both streams without a sentinel (a
+  block replaced the trap, or `exec`ed) is `SessionEnded(None)`. Nothing restarts a session
+  silently; a dead session refuses the next block, and P5 stops.
+- **`errored`** (pwsh only; always false in bash): `$Error[0]` is not the same object before
+  and after the block (`[object]::ReferenceEquals`). A `$Error.Count` delta stays at 256 once
+  `$Error` is full. It never changes the status. Measured in pwsh 7.6:
+
+  | Construct | `errored` |
+  |---|---|
+  | `-ErrorAction SilentlyContinue` | true |
+  | `Write-Error`, a cmdlet error | true |
+  | `-ErrorAction Ignore` | false |
+  | native `2>$null`, native `2>&1` | false |
+  | native stderr, not redirected | false |
+
+  In the six local plans at most 6 of 222 pwsh fences use a silencing probe, all
+  `SilentlyContinue`: accepted as noise.
+
+## D62 The session environment
+
+A session gets planrun's own process environment minus `BASH_ENV` and `ENV` (bash reads
+`BASH_ENV` even with `--norc`) and minus `GIT_LITERAL_PATHSPECS`, `GIT_INDEX_FILE`,
+`GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES`: the git wrapper's and the virtual
+tree's variables never reach a plan's commands (a literal pathspec would change what `git add
+*.rs` means). It gets `GIT_TERMINAL_PROMPT=0`, so git fails instead of prompting: a stated
+difference from the terminal. The tests add the fixture's git isolation (`Fixture::env()`), and
+a block's `git config --show-origin --list` shows only the copy's own `.git/config`.
+
+## D63 Which shells run
+
+- **pwsh** is `pwsh` from `PATH`, accepted when a probe reports
+  `$PSVersionTable.PSVersion.Major` of 7 or more. Windows PowerShell 5.1 (`powershell.exe`) is
+  never used.
+- **bash on Windows** is Git for Windows' own: `<root>\usr\bin\bash.exe`, where `<root>` is the
+  first of `git --exec-path` and its parents, at most four levels up, that has one (no layout
+  below the root is assumed: `mingw64`, `clangarm64`). A probe runs `PATH=/usr/bin:$PATH
+  uname -s`, which must report `MINGW…` or `MSYS…`. bash is never taken from `PATH`, where
+  WSL's `System32\bash.exe` can come first, and a failed probe never falls back to it.
+  `bin\bash.exe` (the launcher) is not used: it costs a process and sets its own environment.
+- **`/usr/bin` is prepended** to the session's `PATH` on Windows, as `/etc/profile` would: a
+  `--noprofile` Git Bash without Git's `usr\bin` on the Windows `PATH` (the default install)
+  finds no `uname`, `cat`, `ls` or `grep`. Only `/usr/bin`, not `/mingw64/bin`: that directory
+  depends on the install's layout, and without it `git` in a bash block resolves through the
+  Windows `PATH`, the same git planrun itself uses.
+- **bash elsewhere** is `bash` from `PATH`, checked with `$BASH_VERSION`.
+- **Tests** need both shells when `PLANRUN_REQUIRE_SHELLS` is set; otherwise a missing shell
+  skips its tests with a message on stderr (a skipped test counts as passed).
+
+## D64 The process tree, and planrun's only unsafe code
+
+Amends D9 (no crate).
+
+- **Windows:** a job object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, read back with
+  `QueryInformationJobObject` and refused when the flag did not stick. The session is assigned
+  right after its spawn and before planrun writes anything to it; a shell starts no child before
+  it has a block, so no descendant escapes between the two. When assignment fails (planrun runs
+  inside a job that refuses nesting), the session fails to start: there is no session without
+  the tree kill. `TerminateJobObject` kills the tree on timeout, and closing the job on drop
+  kills what is left, also when planrun crashes. The session is spawned with
+  `CREATE_NO_WINDOW`, so it has a console of its own and its `OutputEncoding` cannot change
+  the code page of Rens' terminal (tested with `chcp`). Not `taskkill`: it misses descendants
+  whose parent has exited, does nothing when planrun crashes, and is found through `PATH`.
+- **Unix:** `setsid` in `pre_exec`, so a block that reads `/dev/tty` fails instead of stopping
+  a background process group forever; `kill(-pgid, SIGKILL)`, and only while the session
+  process has not been waited on, so the group id cannot have been reused.
+- **Drop** kills the tree and never waits for the reader threads: a build server (MSBuild
+  nodes, VBCSCompiler) inherits the pipes and keeps them open.
+- **`unsafe`.** The workspace lint is `unsafe_code = "deny"`; planrun-model, planrun-parse and
+  planrun-cli say `#![forbid(unsafe_code)]` at their roots, so the relaxation reaches
+  planrun-exec only, and there only `crates/planrun-exec/src/shell/kill.rs` says
+  `#![allow(unsafe_code)]`. That module declares the five kernel32 functions and `setsid`/`kill`
+  by hand, owns every `unsafe` call, and exposes safe operations (`Tree::spawn`, `Tree::kill`,
+  `Tree::wait`, `detach`). `clippy::undocumented_unsafe_blocks` is denied: every unsafe block
+  has a SAFETY comment. The hand-written `JOBOBJECT_EXTENDED_LIMIT_INFORMATION` is tested to be
+  144 bytes on 64-bit targets, and the read-back flag is tested, so a wrong layout fails a test.
+  `windows-sys` would bring hundreds of generated declarations for five functions.
+
+## D65 No default timeout yet
+
+A block may run as long as it runs: cargo, dotnet and npm runs are long, and Rens' terminal has
+no timeout. `SessionConfig::timeout` exists; the tests use 60 seconds (5 for the timeout test,
+which checks that a grandchild dies with the tree, on both platforms). Whether the runner has a
+default is a P5 decision.
+
+## D66 Matching a run against its expectation
+
+Amends D11; corrects architecture.md §6.4.
+
+- **Exit:** `Success` is `Exited(0)`; `Failure` is a non-zero `Exited` or `Threw`; `Code(n)` is
+  exactly `Exited(n)`; `Unknown` is not checked. `SessionEnded`, `TimedOut` and `Broken` are a
+  mismatch whatever was expected, also for a script with no expectation.
+- **Summary lines:** each non-blank expected line must match an output line (either stream)
+  after the one the line before it matched; the earliest match is taken, which finds a
+  subsequence whenever one exists. Only `…` is a wildcard (ASCII `...` is three dots; none of
+  the 26 expected text fences of the local plans has one): it matches any run of characters,
+  the empty one included; the first literal segment is anchored at the start of the line and
+  the last at its end. Normalization, and nothing else: output is split on LF; trailing
+  whitespace is stripped from expected and output lines (which removes a CR); ANSI CSI and OSC
+  sequences are stripped from output lines. Leading whitespace counts.
+- **What asks:** prose (D11) and comment expectations (D35, D48) always ask, labelled apart; an
+  exit the plan does not state (no expectation, or `Unknown`) asks when it is not 0 or the block
+  threw; `errored` asks when nothing but an exit `Success` or `Unknown` was expected (a
+  `Copy-Item` that failed without terminating exits 0). Every confirmation shows `errored`.
+  Otherwise the run passes.
+- The verdict is `Pass`, `Mismatch` (the exit, and each unmatched line with its line number) or
+  `Confirm` (the reasons and `errored`). Skipping is not a verdict: it is decided before the run
+  (D67).
+
+## D67 Only Verify scripts are skipped as expected failures
+
+Amends D12. A `RunScript` whose intent is Verify and whose exit expectation is `Failure` is
+skipped unless `--run-expected-failures` is given. A Gate, Preview or Apply that expects failure
+runs (a skipped Gate would leave `$gate` unset for the commit); a Commit is never skipped;
+`Code(n)` is never an expected failure. A skip counts as "skipped by policy" for D22.
+
+## D68 The command classifier is a built-in allowlist
+
+Amends D13; corrects architecture.md §6.5. In the spirit of D31: the classes are built in, no
+format spec, `[checks]` entry or flag changes a class, and a runner has one classifier, not one
+per format. The tables are Rust constants in `crates/planrun-exec/src/policy/heads.rs`; no
+`toml` in planrun-exec.
+
+- **The splitter** (one per shell) walks a script once: statements (newline, `;`, `&&`, `||`),
+  pipeline elements (`|`), comments (`#`, pwsh `<# #>`), line continuations; it recurses into
+  `( … )`, `$( … )`, `@( … )`, `@{ … }` (hashtable values), script blocks, `$( … )` inside
+  double quotes and `@" … "@`, bash backticks, `<( … )`/`>( … )` and unquoted heredoc bodies.
+  Single quotes, `@' … '@` and quoted heredoc bodies are data; the heredoc's own command is
+  still classified. Keywords are not commands (pwsh `if`, `foreach`, `function`, … at the start
+  of a statement; bash `if`, `then`, `do`, `!`, `{`, … before a command); an expression
+  statement (`"…"`, `$x`, a number) is Read; an assignment classifies its right side; a function
+  body is classified where it is defined, and calling the function by name is unknown.
+- **What it cannot take apart with confidence makes the whole script Destructive:** an
+  unterminated quote, here-string or heredoc, an unmatched bracket, pwsh `<`, bash `case` and
+  `;;`, a command inside `${…}`.
+- **pwsh lexing:** `–`, `—` and `―` are parameter dashes; `‘ ’ ‚ ‛` single and `“ ” „` double
+  quotes; names, aliases and parameters are case-insensitive, aliases (`rm`, `ri`, `del`, `cp`,
+  `mv`, `cat`, `ls`, `cd`, `iex`, `saps`, `iwr`, `irm`, `%`, `?`, …) map to their cmdlet first;
+  a `.exe` or `.cmd` suffix is dropped; a path- or module-qualified command is Destructive.
+  Parameters match by prefix as pwsh does (`-r`, `-Rec`, `-Recurse:$true`), and splatting
+  (`@args`) on a command with a dangerous switch is Destructive. `& name` is classified as
+  `name` when `name` is a literal bare command name; `&` with anything else, and dot-sourcing a
+  file, are Destructive. A static .NET call is Destructive except on `[IO.Path]`, `[Math]`,
+  `[string]` and `[regex]`; an instance call except `Trim`, `Split`, `Replace`, `Substring`,
+  `ToString`, `Contains`, `StartsWith`, `EndsWith`, `ToLower`, `ToUpper`. `Add-Type` and
+  `New-Object` are unknown.
+- **Redirections:** `$null`, `/dev/null` and `NUL` are nothing; a literal relative path without
+  `..` is Modify; anything else (absolute, `~`, a variable, a subexpression) is Destructive.
+  Operators: pwsh `> >> 2> *> n>` (and the merges `n>&1`), bash `> >> >| &> <> >&file`;
+  `Tee-Object -FilePath` is Modify.
+- **Nested shells:** `pwsh -File`, `pwsh -c`, `bash <file>`, `bash -c`, `cmd /c`, `source`,
+  `eval`, `exec` are unknown, so Destructive; a nested shell's string is never parsed. An
+  environment prefix on a bash command (`FOO=1 git status`) is Destructive.
+- **git:** options before the subcommand are parsed: `-C <dir>` keeps the subcommand's class;
+  `--git-dir`, `--work-tree`, `--exec-path` and any other unknown option are Destructive; `-c
+  k=v` is allowed only for `color.*`, `core.quotepath`, `user.name`, `user.email` and
+  `advice.*` (aliases, `core.pager`, `core.fsmonitor`, `diff.external`, `core.sshCommand` run
+  programs). Unknown subcommands, aliases included, are Destructive. `checkout -b/-B/--orphan`
+  and `switch` without `-f`/`--discard-changes` are Modify; `checkout <name>` without `-b` is
+  Destructive (the name can be a path), and so are `checkout --`, `-f`, `switch -f`,
+  `--discard-changes`, `restore`, `reset --hard/--merge/--keep`, `clean`, `push`, `fetch`,
+  `pull`, `stash drop/clear`, `branch -D/-f`, `config --global/--system/--file`. `diff`, `log`
+  and `show` with `--output` are Modify, with `--ext-diff` Destructive.
+- **cargo, npm, dotnet, go:** options before the subcommand are parsed (`cargo +nightly`,
+  `--manifest-path x`); `cargo --config` is Destructive. Build may fetch dependencies into
+  caches and ignored directories, so `npm ci` and `dotnet restore` are Build; Modify changes
+  tracked files, manifests or lockfiles (`cargo fmt` without `--check`, `fix`, `clippy --fix`,
+  `add`, `update`, `remove`, `npm install`/`uninstall`/`update`, `dotnet add`, `dotnet format`
+  without `--verify-no-changes`, `go mod tidy`, `go get`); `cargo install`/`publish`/`run`, `go
+  install`/`run`, `dotnet run` and `npx` are Destructive. A cargo alias (`cargo xtask`) is an
+  unknown subcommand.
+- **DevReady** (pwsh table only; the list is from DevReady 1.19.1, `DEVREADY_VERSION`):
+  functions whose agent mode is `safe` are Read; `brief { … }` is classified by its block;
+  `replace -DryRun` is Read, `replace -All` Modify, `replace` with neither Destructive (it stops
+  to ask); `test` and `testfailed` are Build (they run the tests); `killport` is Destructive
+  although DevReady calls it safe (it kills a process); `dry-run-only` and `interactive`
+  functions are Destructive.
+- The local plans' scripts are classified by an ignored test in planrun-cli
+  (`local_classes`), whose output stays in the terminal (D16).
+
+## D69 `--auto`, and what P4 decides for P5
+
+Amends D13. `--auto` takes `read`, `build` and `modify`; `destructive` is a usage error. Without
+`--auto` every script asks, Read ones included. A Destructive script always needs a typed `yes`,
+a Manual always waits, a file action outside the manifest's scope always asks (D50), and an
+Apply script always asks (it follows its preview), whatever `--auto` says; file actions within
+scope run automatically. P4 computes the decision (`Policy::decide`: `Auto`, `Ask(class)`,
+`AskUnscoped`, `TypedYes`, `Wait`, `Show`, `Skip`); P5's runner prompts. The dry run shows each
+script's class and decision under the default policy ("would ask (Build)", "typed yes
+(Destructive)", "skipped: expected failure").
+
+## D70 A script working directory from a run lead is deferred
+
+The P2b candidate (``(run from `$REPO`):`` gives a script its directory) is not built in P4.
+The name in the lead is a session value that planrun cannot resolve statically; evaluating it
+would run prose as code; and the directory can be outside the repository. (A
+`Push-Location`/`Pop-Location` around the block would keep D24 intact, so D24 is no reason.)
+Such fences stay `Manual(HumanCheck)` (`manual-prose#run-from`). What it would take later:
+`Script.workdir` with `skip_serializing_if`, so no IR snapshot changes; the run-from lead
+becoming a script lead; and the directory resolved from the session (D60 reports the working
+directory after every block) and checked against the repository root before the block runs.

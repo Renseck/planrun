@@ -13,6 +13,8 @@
 //! 2. a new [`recognizer::RecognizerFactory`] for a new idiom;
 //! 3. a hand-written [`format::Format`] when the outline is not heading-shaped.
 
+#![forbid(unsafe_code)]
+
 pub mod check;
 pub mod diagnostic;
 pub mod document;

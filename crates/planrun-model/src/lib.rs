@@ -7,6 +7,8 @@
 //! The action set ([`ActionKind`]) is closed on purpose (decision D4): plan formats vary,
 //! actions don't. A new format maps its own wording onto these actions.
 
+#![forbid(unsafe_code)]
+
 mod action;
 mod expect;
 mod ids;

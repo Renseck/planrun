@@ -1,5 +1,7 @@
 //! The `planrun` binary (docs/architecture.md §7).
 
+#![forbid(unsafe_code)]
+
 mod dry_run;
 mod render;
 mod view;
