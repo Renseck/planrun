@@ -6,9 +6,11 @@
 //! and a runner has one classifier, not one per format.
 
 mod bash;
+mod decide;
 mod heads;
 mod pwsh;
 
+pub use decide::{Decision, Policy, PolicyError, Skip};
 pub use heads::DEVREADY_VERSION;
 
 use planrun_model::Shell;
