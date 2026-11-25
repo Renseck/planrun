@@ -6,8 +6,9 @@
 //!   symlink check, per-task file cache, step transactions (validate every file action of a step
 //!   in memory, then write), atomic writes, line-ending policy (D10), pre-images stored with
 //!   `git hash-object -w`.
-//! - `git`: a thin wrapper over the `git` binary: `apply --check` / `apply` with the patch on
-//!   stdin, `hash-object`, `status --porcelain`, `rev-parse`, `cat-file`.
+//! - [`git`]: a thin wrapper over the `git` binary: `apply` with the patch on stdin,
+//!   `hash-object`, `status --porcelain` without optional locks, `rev-parse`, `cat-file`,
+//!   `check-attr`, `update-index`, `ls-files`; [`BlobId`](git::BlobId).
 //! - `handler`: one [`ActionHandler`] per action kind; the [`HandlerSet`] is the execution-side
 //!   plugin point.
 //! - `shell`: persistent pwsh and bash sessions behind [`ShellSession`].
@@ -17,6 +18,12 @@
 //! - `runner`: the state machine Task → Step → Action, talking to a [`Ui`].
 
 use planrun_model::Action;
+
+pub mod git;
+
+#[cfg(test)]
+#[path = "../../../tests/support/fixture.rs"]
+mod fixture;
 
 /// The command classes of decision D13, least to most dangerous.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

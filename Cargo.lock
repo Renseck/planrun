@@ -352,7 +352,6 @@ dependencies = [
  "planrun-model",
  "serde",
  "serde_json",
- "sha1_smol",
  "similar 3.2.1",
  "thiserror",
 ]
