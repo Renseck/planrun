@@ -1,0 +1,234 @@
+# The devready format: DevReady plans written for an agent (docs/plan-grammar.md §4). Hand-written,
+# partly automatable (D40): file writes, exact old/new edits, deletes, and the scripts behind an
+# allowlisted run lead run; probes, conditional branches, prose edits and checks by eye are Manual
+# or Notes. Every regex is matched against raw block text (inline markup kept), anchored per block.
+
+id = "devready"
+name = "DevReady plan"
+
+[detect]
+patterns = [
+  { regex = '^### Task \d+: ', weight = 30 },
+  { regex = '^\*\*Repo / branch:\*\* ', weight = 20 },
+  { regex = '^\*\*\d+[a-z]\.', weight = 30 },
+  { regex = '^\*\*Verify:\*\*', weight = 20 },
+  { regex = '^## Manual steps\b', weight = 20 },
+]
+
+[outline]
+task = { level = 3, regex = '^(?P<id>Task (?P<ord>\d+)): (?P<title>.+)$' }
+# `## Acceptance …` and `## Manual steps …` end the tasks.
+tasks_end_level = 2
+
+[outline.manifest]
+# **Files:** create + a list of bare paths; **Files:** + a list of `Change: paths` items; or the
+# manifest inline: **Files:** create `a`; modify `b`. It generates … (D43)
+marker = '^\*\*Files:\*\*(?: (?P<change>create)$| (?P<items>(?:[^`.\n]|`[^`]*`)+)|$)'
+# - `p`   - Modify (note): `a`, `b`   - Create (Write tool): `a` (full replacement), `b`   - Delete: `p` (`git rm`)
+# inline clauses: create `a`, `b`   modify `a` and `b`   Modify `a` (note) and `b`
+item = '^(?:(?P<change>[Cc]reate|[Mm]odify|[Dd]elete|Generated)(?: \([^)]*\))?:? )?`(?P<paths>[^`]+(?:`(?: \([^)]*\))?(?:, | and )`[^`]+)*)`(?: \(.+\))?$'
+changes = { create = "create", Create = "create", modify = "modify", Modify = "modify", delete = "delete", Delete = "delete", Generated = "generated", "full replacement" = "rewrite" }
+path_list = '`(?: \([^)]*\))?(?:, | and )`'
+clause_list = '; '
+# `a` (full replacement), `b`: only `a` exists (D44).
+path_change = '^` \((?P<change>full replacement)\)'
+required = false
+# `README.md` after `src/x/a.rs` is a root file in these plans as often as a sibling: Bare (D45).
+siblings = false
+
+# Sub-labels split a task into steps and stay in them, so their leads reach the recognizers (D46).
+[[outline.steps]]
+block = "paragraph"
+# **2a.**   **1a. title** (Bash tool):   **1a–1d. title**   **4l. Generate and verify.**
+regex = '^\*\*(?P<title>\d+[a-z](?:–\d+[a-z])?\.[^*]*)\*\*'
+keep = true
+
+[[outline.steps]]
+block = "paragraph"
+# **Verify:**   **Verify** (…):   **Run + verify:**   **Commit:** `msg`
+regex = '^\*\*(?P<title>Verify|Run \+ verify|Commit)(?::\*\*|\*\*)'
+keep = true
+
+[[outline.steps]]
+block = "paragraph"
+# Commit:   Commit: `git add …; git commit -m "…"`
+regex = '^(?P<title>Commit):(?: |$)'
+keep = true
+
+[settings]
+manual_markers = [
+  '(?i)\bby hand\b',
+  '(?i)\bRens runs\b',
+  '(?i)\bmanual step\b',
+  '\bVERIFY\b',
+  # Record: …   Record the timings   …, record which form works   (not "the record's message")
+  '(?i)(?:^|[.;:,] |\*\* )record\b',
+  '(?i)\bstop and report\b',
+  '(?i)^check by eye\b',
+  '(?i)^negative check\b',
+  "(?i)\\bdon't\\b",
+]
+
+# Prose edits and scripts change declared files (D31).
+[checks]
+manifest-untouched = "off"
+manifest-undeclared = "warning"
+
+# --- Recognizers, tried in this order at each position of a step -------------------------------
+
+[[recognizer]]
+kind = "file-block"
+id = "file-block#devready"
+# `p`:   **4b.** `p` (note):   **2f.** Create `p` (note):   **4a.** `p` (replaces the whole file):
+lead = '^(?:\*\*\d+[a-z]\.\*\* )?(?:Create )?`(?P<path>[^`]+)`(?: \((?P<op>replaces the whole file)\)| \([^)]*\))?:$'
+ops = { "replaces the whole file" = "overwrite" }
+default_op = "create"
+
+[[recognizer]]
+kind = "before-after"
+id = "before-after#old-new"
+# `p`, edit 1 (old → new):   NOTES.md edit 1 (old → new):   **2c.** `p` edit (old → new; note):
+lead = '^(?:\*\*\d+[a-z]\.\*\* )?`?(?P<path>[\w./-]*\w\.\w+)`?,? edit(?: (?P<n>\d+))? \(old → new(?:; [^)]*)?\):$'
+file_name_from_manifest = true
+
+[[recognizer]]
+kind = "before-after"
+id = "before-after#series"
+# Edit 2 (old → new): after `p`, edit 1 (D49); else the task's one editable entry (D32).
+lead = '^(?:\w+ )?[Ee]dit (?P<n>\d+) \(old → new(?:; [^)]*)?\):$'
+series = '(?i)\bedit (?P<n>\d+) \(old → new'
+infer_path = true
+
+[[recognizer]]
+kind = "before-after"
+id = "before-after#old-path"
+# **2c.** `p`. Old:   `p`, three edits. Old:   README.md. Old:   **2d.** `p`: insert … Old (end of file):  + fence + New: + fence
+lead = '^(?:\*\*\d+[a-z]\.\*\* )?`?(?P<path>[\w./-]*\w\.\w+)`?(?:[ .:,][^\n]*)?\bOld(?: \([^)]*\))?:$'
+separator = '^New:$'
+file_name_from_manifest = true
+
+[[recognizer]]
+kind = "before-after"
+id = "before-after#old"
+# Old:   (2) Old:   In `Member`. Old:   (3) In the `$x` hashtable. Old:  — the task's one editable entry
+lead = '^(?:[^\n]*[.)] )?Old(?: \([^)]*\))?:$'
+separator = '^New:$'
+infer_path = true
+
+[[recognizer]]
+kind = "delete"
+id = "delete#git-rm"
+# `git rm p`   **4g.** `git rm p`
+lead = '^(?:\*\*\d+[a-z]\.\*\* )?`git rm (?P<path>[^`\s]+)`$'
+via_git = true
+
+[[recognizer]]
+kind = "manual-prose"
+id = "manual-prose#apply-in-prose"
+# Then the same command with `-All` instead of `-DryRun`. Verify:  + its fence: the apply is
+# described, not written, and the fence relies on the preview's variables.
+lead = '^Then the same command with\b[^\n]*:$'
+reason = "human-check"
+takes_fence = true
+
+[[recognizer]]
+kind = "manual-prose"
+id = "manual-prose#run-from"
+# … (run from `$REPO`):  + its fence: a script has no working directory of its own (D24).
+lead = '\(run from `[^`]+`\):$'
+reason = "human-check"
+takes_fence = true
+
+[[recognizer]]
+kind = "manual-prose"
+id = "manual-prose#inline-edit"
+# Old: `a`  /  New: `b`   Edit: `a` → `b`   Old (end of …): `x` … New: insert after `x`:  (D34)
+lead = '(?m)(?:\bOld(?: \([^)]*\))?: `|^Edit: `[^`]+` → `)'
+reason = "prose-edit"
+takes_fence = true
+
+[[recognizer]]
+kind = "manual-prose"
+id = "manual-prose#new"
+# New:  + fence, after an inline Old: `…`
+lead = '^New:$'
+reason = "prose-edit"
+takes_fence = true
+
+[[recognizer]]
+kind = "manual-prose"
+id = "manual-prose#insert"
+# append after the closing `}` of `X`:   Insert directly before `function X {`:   And insert before …:
+lead = '(?i)\b(?:insert|append)\b[^\n]*:$'
+reason = "prose-edit"
+takes_fence = true
+
+[[recognizer]]
+kind = "manual-prose"
+id = "manual-prose#verify-several"
+# **Verify:** `a` → x; `b` → y  (two commands: checked by you)
+lead = '^\*\*Verify:\*\* `[^`]+` →[^\n]*`[^`]+` →'
+reason = "human-check"
+
+[[recognizer]]
+kind = "manual-prose"
+id = "manual-prose#commit-message"
+# **Commit:** `message`  (D33: planrun synthesizes no commit)
+lead = '^\*\*Commit:\*\* `[^`]+`$'
+reason = "human-check"
+
+[[recognizer]]
+kind = "run-line"
+id = "run-line#verify"
+# **Verify:** `cmd` → all pass (…)
+lead = '^\*\*Verify:\*\* `(?P<cmd>[^`]+)` → (?P<expected>[^→]+)$'
+shell = "pwsh"
+exit = [
+  { text = '(?i)\b(?:all pass|0 failed|exit 0)\b', exit = "success" },
+]
+
+[[recognizer]]
+kind = "run-line"
+id = "run-line#commit"
+# Commit: `git add a; git commit -m "…"`  (D22 gates it)
+lead = '^Commit: `(?P<cmd>[^`]+)`$'
+shell = "pwsh"
+intents = [{ intent = "commit", body = '\bgit commit\b' }]
+
+[[recognizer]]
+kind = "script"
+id = "script#devready"
+# Only behind an allowlisted run lead (D28, D46): never behind a bare sub-label.
+leads = [
+  '^\*\*Verify(?::\*\*|\*\* \([^)]*\):)$',
+  '^\*\*Run \+ verify:\*\*$',
+  '^(?:\*\*Commit:\*\*|Commit:)$',
+  '^\*\*\d+[a-z]\. Generate and verify\.\*\*$',
+  '\(Bash tool\):$',
+]
+# `git branch --show-current   # feature/x`: a comment expectation, always confirmed (D35, D48).
+line_expect = '\s#\s(?P<expect>\S.*)$'
+intents = [
+  { intent = "commit", body = '(?m)\bgit commit\b' },
+  { intent = "preview", body = '\s-DryRun\b' },
+  { intent = "apply", body = '\s-All\b' },
+]
+
+[[recognizer]]
+kind = "expected-prose"
+id = "expected-prose#devready"
+lead = '^Expected: (?P<text>.+)$'
+exit = [
+  { text = '(?i)\b(?:fails?|build errors?)\b', exit = "failure" },
+  { text = '(?i)\b(?:all pass(?:es)?|0 failed|exit 0)\b', exit = "success" },
+]
+
+[[recognizer]]
+kind = "expected-prose"
+id = "expected-prose#devready-list"
+# Expected:  + a list (D47). `Expected and recorded:` is no list lead.
+lead = '^Expected(?: \([^)]*\))?:$'
+list = true
+exit = [
+  { text = '(?i)\b(?:fails?|build errors?)\b', exit = "failure" },
+]

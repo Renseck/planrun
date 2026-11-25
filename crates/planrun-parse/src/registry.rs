@@ -82,6 +82,7 @@ impl Registry {
             "before-after",
             include_str!("../../../formats/before-after.toml"),
         )?;
+        registry.add_spec("devready", include_str!("../../../formats/devready.toml"))?;
         Ok(registry)
     }
 

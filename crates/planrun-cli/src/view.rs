@@ -506,6 +506,13 @@ mod tests {
     }
 
     #[test]
+    fn the_ir_of_the_synthetic_devready_plan() {
+        let plan = synthetic_plan("devready-style.md");
+        assert_eq!(&*plan.format.0, "devready");
+        insta::assert_yaml_snapshot!("devready_style_ir", Viewer::new(&plan).plan());
+    }
+
+    #[test]
     fn show_prints_one_line_per_action() {
         let plan = synthetic();
         let mut out = String::new();

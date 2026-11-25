@@ -107,6 +107,81 @@ Check by eye: the README example renders as one code block.
 
 ---
 
+### Task 3: Names from a library
+
+**Files:**
+- Create (Write tool): `tools/greet.ps1` (full replacement), `tools/lib/names.ps1`
+- Modify: `tools/lib/format.ps1`
+
+**3a.** `tools/greet.ps1` (replaces the whole file):
+```powershell
+. (Join-Path $PSScriptRoot 'lib/names.ps1')
+foreach ($name in (Get-GreetNames)) { "Hello, $name!" }
+```
+
+**3b.** `tools/lib/names.ps1`:
+```powershell
+function Get-GreetNames { @('Ada', 'Linus') }
+```
+
+**3c.** `tools/lib/format.ps1`. Old:
+```powershell
+'{0}!'
+```
+New:
+```powershell
+'{0}.'
+```
+
+**Verify** (Bash tool, the shell CI uses):
+```bash
+pwsh -NoProfile -File tools/greet.ps1 | head -1   # Hello, Ada!
+```
+Expected:
+- two greetings, one per name;
+
+  the order follows `Get-GreetNames`.
+- nothing on stderr:
+
+  ```bash
+  pwsh -NoProfile -File tools/greet.ps1 2>&1 >/dev/null | wc -l
+  ```
+
+Commit: `git add tools/greet.ps1 tools/lib/names.ps1 tools/lib/format.ps1; git commit -m "Greet: names from a library"`
+
+---
+
+### Task 4: Punctuation as a parameter
+
+**Files:** modify `tools/greet.ps1`; regenerate the README examples by hand.
+
+`greet.ps1`, edit 1 (old → new):
+```powershell
+. (Join-Path $PSScriptRoot 'lib/names.ps1')
+```
+```powershell
+param([string]$Punctuation = '!')
+. (Join-Path $PSScriptRoot 'lib/names.ps1')
+```
+
+Edit 2 (old → new):
+```powershell
+"Hello, $name!"
+```
+```powershell
+"Hello, $name$Punctuation"
+```
+
+**Verify:** `pwsh -NoProfile -File tools/greet.ps1 -Punctuation ?` → all pass (one line per name).
+
+Commit:
+```powershell
+git add tools/greet.ps1
+git commit -m "Greet: punctuation as a parameter"
+```
+
+---
+
 ## Manual steps for Rens
 
 ### M1 Before execution

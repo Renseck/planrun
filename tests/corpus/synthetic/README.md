@@ -9,10 +9,10 @@ real blob ids and the P1-T1 → P1-T2 blob chain (`aa80cf1 → 97bd92a → 6b269
 |---|---|---|
 | `assay-style.md` | `assay` | `## Tasks`, `### P1-T1:`, `**Files**`, `**Step n — …**`, full contents, exact diff + absorbed ceremony, `Delete`, generated file, `Expected (…):` blocks, gate + gated commit, text after the tasks |
 | `superpowers-style.md` | `superpowers` | `### Task n:`, `**Files:**` with `Create:`/`Modify: …:3-4`/`Test:`, `- [ ] **Step n: …**`, expected failure, `Run:`/`Expected:` prose, prose edits (Manual), check by eye, bash commit |
-| `devready-style.md` | `devready` | `Task 0`, prose Files line, `` `path`: `` + block creates, `**Verify:**` with `# expected` comments, `**Commit:** \`msg\``, `**2a.**` labels, `edit 1 (old → new)`, four-backtick fences, `git rm`, bash + powershell in one task, conventions with a manual marker |
+| `devready-style.md` | `devready` | `Task 0`, inline Files clauses (a leftover, a bare name), a Files list with a per-path `(full replacement)`, `` `path`: `` + block creates, `(replaces the whole file)`, `**Verify:**` with `# expected` comments, `Expected:` + a list (nested prose, a nested shell fence that ends it), `**Commit:** \`msg\``, `Commit:` + a run line or a fence, kept `**2a.**` labels, `edit 1 (old → new)` and its series, `Old:`/`New:`, four-backtick fences, `git rm`, bash + powershell in one task, conventions with a manual marker |
 | `before-after-style.md` | `before-after` | `## Task n:`, file map table, `Rewrite:`, `` `path`: `` create, `— replace the whole file:`, `before:`/`After:`, expected failure (prose), prose insertion (Manual), `no matches`, preview/apply pair, output-dependent edit, `sql` block |
 
 Golden snapshots of the parsed IR live next to the tests that produce them (`insta`, in
 `crates/planrun-cli/src/snapshots/`): P1 for `assay-style.md`, P2a for `superpowers-style.md`
-and `before-after-style.md`, P2b for `devready-style.md`. A snapshot change is a review item, never a re-pin by
-reflex.
+and `before-after-style.md`, P2b for `devready-style.md`. A snapshot change is a review item,
+never a re-pin by reflex.

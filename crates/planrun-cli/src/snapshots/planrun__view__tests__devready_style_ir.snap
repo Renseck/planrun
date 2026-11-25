@@ -1,0 +1,299 @@
+---
+source: crates/planrun-cli/src/view.rs
+expression: "Viewer::new(&plan).plan()"
+---
+plan: tests/corpus/synthetic/devready-style.md
+format: devready
+title: P2 — Greeter tooling Implementation Plan
+phase: ~
+preamble:
+  - "**Don't push from this session.** Pushing is a manual step (M2)."
+tasks:
+  - id: Task 0
+    title: Branch
+    at: L25
+    files: []
+    steps:
+      - step: intro
+        at: L27
+        actions:
+          - at: L27
+            by: fallback
+            manual:
+              reason: Unrecognized
+              text: "```powershell\ngit switch main\ngit status --short            # empty\ngit switch -c feature/p2-tooling\n```"
+      - step: Verify
+        at: L33
+        actions:
+          - at: L33
+            by: fallback
+            note:
+              text: "**Verify:**"
+          - at: L34
+            by: "script#devready"
+            run:
+              shell: pwsh
+              intent: verify
+              body: "git branch --show-current     # feature/p2-tooling\n"
+              expect:
+                exit: not checked
+                lines: ~
+                prose: ~
+                comments: "git branch --show-current     # feature/p2-tooling"
+          - at: L38
+            by: fallback
+            note:
+              text: "---"
+  - id: Task 1
+    title: The helper and its config
+    at: L40
+    files:
+      - Create tools/greet.ps1
+      - Create tools/greet.json
+    steps:
+      - step: intro
+        at: L46
+        actions:
+          - at: L46
+            by: "file-block#devready"
+            write-file:
+              path: tools/greet.json
+              mode: Create
+              body: "{\n  \"punctuation\": \"!\",\n  \"names\": [\"Rens\"]\n}\n"
+          - at: L54
+            by: "file-block#devready"
+            write-file:
+              path: tools/greet.ps1
+              mode: Create
+              body: "# Greets every name in greet.json (P2 D1: a script, not a module).\n$config = Get-Content (Join-Path $PSScriptRoot 'greet.json') -Raw | ConvertFrom-Json\nforeach ($name in $config.names) { \"Hello, $name$($config.punctuation)\" }\n"
+      - step: Verify
+        at: L61
+        actions:
+          - at: L61
+            by: fallback
+            note:
+              text: "**Verify:**"
+          - at: L62
+            by: "script#devready"
+            run:
+              shell: pwsh
+              intent: verify
+              body: "pwsh -NoProfile -File tools/greet.ps1   # Hello, Rens!\nGet-Content tools/greet.json -Raw | ConvertFrom-Json | Out-Null; 'json ok'\n"
+              expect:
+                exit: not checked
+                lines: ~
+                prose: ~
+                comments: "pwsh -NoProfile -File tools/greet.ps1   # Hello, Rens!"
+      - step: Commit
+        at: L67
+        actions:
+          - at: L67
+            by: "manual-prose#commit-message"
+            manual:
+              reason: HumanCheck
+              text: "**Commit:** `Greet helper and config`"
+          - at: L69
+            by: fallback
+            note:
+              text: "---"
+  - id: Task 2
+    title: "Punctuation from the crate, drop the duplicate"
+    at: L71
+    files:
+      - Modify tools/greet.ps1
+      - "Modify README.md (a bare file name: its directory is unknown)"
+      - Delete tools/greet.json
+    steps:
+      - step: 2a.
+        at: L75
+        actions:
+          - at: L75
+            by: "before-after#old-new"
+            replace-exact:
+              path: tools/greet.ps1
+              before: "$config = Get-Content (Join-Path $PSScriptRoot 'greet.json') -Raw | ConvertFrom-Json\nforeach ($name in $config.names) { \"Hello, $name$($config.punctuation)\" }\n"
+              after: "param([string[]]$Names = @('Rens'))\nforeach ($name in $Names) { \"Hello, $name!\" }\n"
+      - step: 2b.
+        at: L85
+        actions:
+          - at: L85
+            by: "delete#git-rm"
+            delete:
+              path: tools/greet.json
+              via_git: true
+      - step: 2c.
+        at: L87
+        actions:
+          - at: L87
+            by: "before-after#old-new"
+            replace-exact:
+              path: README.md
+              before: "cargo test\n```\n"
+              after: "cargo test\npwsh -NoProfile -File tools/greet.ps1 -Names Ada,Linus\n```\n"
+      - step: Verify
+        at: L98
+        actions:
+          - at: L98
+            by: fallback
+            note:
+              text: "**Verify:**"
+          - at: L99
+            by: "script#devready"
+            run:
+              shell: bash
+              intent: verify
+              body: "pwsh -NoProfile -File tools/greet.ps1 -Names Ada | tail -1   # Hello, Ada!\ntest ! -e tools/greet.json && echo gone\n"
+              expect:
+                exit: not checked
+                lines: ~
+                prose: ~
+                comments: "pwsh -NoProfile -File tools/greet.ps1 -Names Ada | tail -1   # Hello, Ada!"
+          - at: L104
+            by: fallback
+            manual:
+              reason: Marked
+              text: "Check by eye: the README example renders as one code block."
+      - step: Commit
+        at: L106
+        actions:
+          - at: L106
+            by: "manual-prose#commit-message"
+            manual:
+              reason: HumanCheck
+              text: "**Commit:** `Greet helper: names as parameters`"
+          - at: L108
+            by: fallback
+            note:
+              text: "---"
+  - id: Task 3
+    title: Names from a library
+    at: L110
+    files:
+      - Rewrite tools/greet.ps1
+      - Create tools/lib/names.ps1
+      - Modify tools/lib/format.ps1
+    steps:
+      - step: 3a.
+        at: L116
+        actions:
+          - at: L116
+            by: "file-block#devready"
+            write-file:
+              path: tools/greet.ps1
+              mode: Overwrite
+              body: ". (Join-Path $PSScriptRoot 'lib/names.ps1')\nforeach ($name in (Get-GreetNames)) { \"Hello, $name!\" }\n"
+      - step: 3b.
+        at: L122
+        actions:
+          - at: L122
+            by: "file-block#devready"
+            write-file:
+              path: tools/lib/names.ps1
+              mode: Create
+              body: "function Get-GreetNames { @('Ada', 'Linus') }\n"
+      - step: 3c.
+        at: L127
+        actions:
+          - at: L127
+            by: "before-after#old-path"
+            replace-exact:
+              path: tools/lib/format.ps1
+              before: "'{0}!'\n"
+              after: "'{0}.'\n"
+      - step: Verify
+        at: L136
+        actions:
+          - at: L136
+            by: fallback
+            note:
+              text: "**Verify** (Bash tool, the shell CI uses):"
+          - at: L137
+            by: "script#devready"
+            run:
+              shell: bash
+              intent: verify
+              body: "pwsh -NoProfile -File tools/greet.ps1 | head -1   # Hello, Ada!\n"
+              expect:
+                exit: not checked
+                lines: ~
+                prose: "Expected:\n- two greetings, one per name;\n\n  the order follows `Get-GreetNames`.\n- nothing on stderr:"
+                comments: "pwsh -NoProfile -File tools/greet.ps1 | head -1   # Hello, Ada!"
+          - at: L146
+            by: fallback
+            manual:
+              reason: Unrecognized
+              text: "```bash\n  pwsh -NoProfile -File tools/greet.ps1 2>&1 >/dev/null | wc -l\n  ```"
+      - step: Commit
+        at: L150
+        actions:
+          - at: L150
+            by: "run-line#commit"
+            commit:
+              shell: pwsh
+              intent: other
+              body: "git add tools/greet.ps1 tools/lib/names.ps1 tools/lib/format.ps1; git commit -m \"Greet: names from a library\""
+              expect: ~
+          - at: L152
+            by: fallback
+            note:
+              text: "---"
+  - id: Task 4
+    title: Punctuation as a parameter
+    at: L154
+    files:
+      - Modify tools/greet.ps1
+    steps:
+      - step: intro
+        at: L158
+        actions:
+          - at: L156
+            by: manifest
+            manual:
+              reason: Marked
+              text: regenerate the README examples by hand
+          - at: L158
+            by: "before-after#old-new"
+            path_from: "resolved from manifest: the manifest entry with this file name"
+            replace-exact:
+              path: tools/greet.ps1
+              before: ". (Join-Path $PSScriptRoot 'lib/names.ps1')\n"
+              after: "param([string]$Punctuation = '!')\n. (Join-Path $PSScriptRoot 'lib/names.ps1')\n"
+          - at: L167
+            by: "before-after#series"
+            path_from: "resolved from manifest: the edit before it in the same numbered series"
+            replace-exact:
+              path: tools/greet.ps1
+              before: "\"Hello, $name!\"\n"
+              after: "\"Hello, $name$Punctuation\"\n"
+      - step: Verify
+        at: L175
+        actions:
+          - at: L175
+            by: "run-line#verify"
+            run:
+              shell: pwsh
+              intent: verify
+              body: pwsh -NoProfile -File tools/greet.ps1 -Punctuation ?
+              expect:
+                exit: exit 0
+                lines: ~
+                prose: all pass (one line per name).
+      - step: Commit
+        at: L177
+        actions:
+          - at: L177
+            by: fallback
+            note:
+              text: "Commit:"
+          - at: L178
+            by: "script#devready"
+            commit:
+              shell: pwsh
+              intent: other
+              body: "git add tools/greet.ps1\ngit commit -m \"Greet: punctuation as a parameter\"\n"
+              expect: ~
+          - at: L183
+            by: fallback
+            note:
+              text: "---"
+after_tasks: L185
