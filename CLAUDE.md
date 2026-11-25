@@ -102,6 +102,10 @@ The gate for every task is all three of fmt, clippy (warnings are errors) and te
 - Direct, technically precise; no flattery. Put review text and anything meant to be pasted in
   code blocks.
 - Rens works on Windows with PowerShell 7. Commands in plans are PowerShell 7.
+- Rulings relayed from a review seat (another Claude session with less context) are checked
+  against the code and the plans before acting. Where one rests on a wrong premise, keep the
+  correct position and state the evidence (file, task, what the plan says) in the plan's
+  stated decisions or the reply, so a further review can settle it.
 - One commit per task, message `P<N>-T<n>: <title>`. Don't push.
 - When a phase is done, write a handover for the next session:
   `docs/handovers/YYYY-MM-DD-p<N>-to-p<N+1>.md` (state, what the phase built, open items, notes

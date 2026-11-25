@@ -65,12 +65,14 @@ The decisions are D26–D40. Split in two plans on one schema (D40):
   `formats/superpowers.toml` and `before-after.toml` with IR snapshots of their synthetic plans.
   The superpowers and before-after local plans parse with zero errors. Plan:
   `docs/plans/2026-11-24-p2a-hand-written-formats.md`.
-- **P2b.** First, pattern manifest entries: a range or glob item is one entry with a pattern
-  `PathOrigin` (D41). Then `formats/devready.toml`: steps whose boundary block stays in the step
-  (`keep = true`), inline Files clauses, a full-replacement item note that maps to `rewrite`,
-  `line_expect` (D35), the `**Commit:**` Manual (D33), detection that outscores superpowers on
-  both devready plans, the IR snapshot of its synthetic plan, and the Apply invariant in
-  plan-grammar §5. All six local plans parse with zero errors.
+- **P2b.** First, pattern manifest entries: a range or glob item is one entry whose target is a
+  `PathPattern` (D41, D42). Then the schema for hand-written DevReady plans: inline Files clauses
+  (D43), a change per path (D44), Bare file names (D45), kept step labels (D46), `Expected:` with
+  a list (D47), comment expectations that a sentence extends (D35, D48), numbered edit series
+  (D49). Then `formats/devready.toml` with the `**Commit:**` Manual (D33), detection that
+  outscores superpowers on both devready plans, the IR snapshot of its synthetic plan, and the
+  Apply invariant in plan-grammar §5. All six local plans parse with zero errors. Plan:
+  `docs/plans/2026-11-25-p2b-devready-format.md`.
 
 Each plan lists the imperative Notes that remain in the real plans (D36). `expected-failure-step`
 became step marks (D30); `preview-apply` became script intents by lead (D29).
@@ -92,6 +94,9 @@ blocks, a `throw` ends the block and not the session, output streams. The expect
 (summary-line subsequence with `…`, exit expectations, prose → confirmation, D11). The command
 classifier (D13). Expected failures skipped by default (D12). Tests for each, with pwsh and bash
 when present (skipped with a message when not).
+
+Candidate (from P2b): a script working directory taken from a run lead (``(run from `$REPO`):``).
+`Script` has no cwd today, so such fences are Manual in the devready format.
 
 ## P5 — Runner, journal, resume, interactive CLI
 

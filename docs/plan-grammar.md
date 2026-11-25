@@ -104,19 +104,32 @@ Checks (D31): `manifest-untouched` is off (prose edits change declared files),
 
 ## 4. `devready` — DevReady plans
 
-Hand-written; partly automatable. Example: `devready-style.md`.
+Hand-written for an agent; partly automatable (D40): the target is zero errors and honest
+Manual coverage, not automation. Spec: `formats/devready.toml`. Example: `devready-style.md`.
 
 | Element | Form |
 |---|---|
-| Task | `### Task 0: title` (Task 0 is allowed; ordinals strictly increase from it) |
-| Manifest | `**Files:** create` / `modify` / `delete` + paths in prose or a list |
-| Steps | none written; sub-labels `**4a.**`, `**Verify:**`, `**Commit:**` split the task into steps |
-| Create | `` `p`: `` + fence |
-| Edit | "edit 1 (old → new):" / "Edit (old → new):" + two fences → `ReplaceExact` |
-| Delete | `` `git rm p` `` → `Delete { via_git: true }` |
-| Verify | `**Verify:**` + fences; trailing `# expected` comments on command lines become prose expectations (never auto-pass) |
-| Commit | `**Commit:** \`message\`` → `Manual` that shows a suggested `git add -- <manifest paths>; git commit -m "<message>"` (the plan does not say which files; open question for Phase 2) |
-| Manual markers | "Don't …", "manual step", "Rens runs" |
+| Task | `### Task 0: title` (Task 0 is allowed; ordinals strictly increase from it); `## Acceptance …` / `## Manual steps …` end the tasks |
+| Manifest, list | `**Files:** create` + bare items `` - `p` `` (the change is in the marker); `**Files:**` + `- Modify: \`p\``, `- Modify (note): \`a\`, \`b\``, `- Delete: \`p\` (\`git rm\`)`, `- Generated: …`. Optional: Tasks 0 and 1 have none (D27) |
+| Manifest, inline | ``**Files:** create `a`; modify `b` and `c`. It generates …`` (D43): clauses split on `; `, the manifest ends at the first period outside a code span. Text that declares nothing ("regenerate the README examples", the sentence after the period) is a Note at the start of the task |
+| Paths | `` `a` (full replacement), `b` ``: only `a` is Rewrite (D44). No siblings: `` `src/x/a.rs` and `README.md` `` declares a Bare `README.md` whose directory is unknown (D45). `` `functions/{a,b*}.ps1` `` is a pattern entry (D41) |
+| Steps | the sub-labels `**2a.**`, `**1a. title** (…)`, `**1a–1d. title**`, `**Verify:**`, `**Verify** (…):`, `**Run + verify:**`, `**Commit:**` and a plain `Commit:` split a task into steps and stay in them (D46); the label's `1a` is no step number |
+| Create | `` `p`: ``, ``**4b.** `p` (note):``, ``**2f.** Create `p` (note):`` + fence → `WriteFile(Create)`; ``(replaces the whole file):`` → `WriteFile(Overwrite)`. A Create onto a Bare entry is `Manual(AmbiguousPath)` (D45). File contents with no lead (right after an inline `**Files:** create`) stay `Manual(Unrecognized)` |
+| Edit, two fences | ``\`p\`, edit 1 (old → new):``, ``NOTES.md edit 1 (old → new):`` + two fences → `ReplaceExact`; a basename resolves through the manifest (D32) |
+| Edit series | `Edit 2 (old → new):` directly after the ReplaceExact of edit 1 edits the same path (D49); otherwise the task's one editable entry, else `Manual(ProseEdit)` |
+| Edit, Old/New | ``**2c.** `p`. Old:``, ``README.md. Old:``, ``**2d.** `p`: insert … Old (end of file):`` + fence + `New:` + fence → `ReplaceExact`; `Old:`, `(2) Old:`, ``In `Member`. Old:`` take the task's one editable entry, else `Manual(ProseEdit)` |
+| Prose edits | inline `` Old: `a` `` / `` New: `b` ``, `` Edit: `a` → `b` `` (D34), `New:` + fence after an inline Old, "append …:", "Insert directly before …:" + fence → `Manual(ProseEdit)` |
+| Delete | `` `git rm p` ``, ``**4g.** `git rm p` `` → `Delete { via_git: true }` |
+| Scripts | a shell fence runs only behind an allowlisted lead: a Verify label, `**Run + verify:**`, `**Commit:**` / `Commit:`, `**4l. Generate and verify.**`, a trailing `(Bash tool):`. Never behind a bare sub-label (D28, D46); any other shell fence is `Manual(Unrecognized)`. `-DryRun` / `-All` bodies are Preview / Apply |
+| Not run | ``… (run from `$REPO`):`` + fence and "Then the same command with `-All` instead of `-DryRun`. Verify:" + fence → `Manual(HumanCheck)`: a script has no working directory of its own, and the second fence uses the first one's variables |
+| Comment expectations | trailing `# expected` comments on a claimed fence's command lines → a comment expectation, exit not checked, always confirmed (D35); an `Expected:` sentence or list after it extends it (D48) |
+| Verify line | ``**Verify:** `cmd` → result`` → `RunScript` in pwsh with that expectation; with two commands (`` `a` → x; `b` → y ``) → `Manual(HumanCheck)` |
+| Expected | `Expected: …` → prose expectation; `Expected:` + a list → one prose expectation over the list and what is nested in it (D47); after a Manual it joins the Manual (D38). `Expected and recorded:` is no expectation |
+| Commit | `**Commit:** \`msg\`` → `Manual(HumanCheck)` carrying the message; P5 suggests `git add -- <paths>; git commit -m "<msg>"` only when every manifest path of the task is literal (no pattern, sibling, Bare or unresolved name, D33). ``Commit: `git add …; git commit -m "…"` `` → a pwsh run line with the commit intent; `Commit:` + fence → the commit script |
+| Manual markers | `VERIFY`, "record" as an instruction, "stop and report", "Check by eye", "Negative check", "don't …", "by hand", "manual step", "Rens runs" |
+
+Checks (D31): `manifest-untouched` is off (prose edits and scripts change declared files),
+`manifest-undeclared` is a warning.
 
 ## 5. `before-after` — "before:/After:" plans
 
@@ -136,7 +149,7 @@ Hand-written; mostly automatable. Spec: `formats/before-after.toml`. Example:
 | Partial edits | ``"`p`, replace the class (keep …):"``, ``"`p`, add these members to the class:"``, `Add … :` → `Manual(ProseEdit)` |
 | Scripts | `powershell` fences that are the first block of a step or follow a run lead (`Run:`, `Preview…:`, `Apply:`, `Verify…:`, `… Then:`); any other shell fence is `Manual(Unrecognized)` (D28) |
 | Expected | prose `Expected: …`, including `build error` (expected failure) and `no matches` (`rg` exits 1); after a Manual (an `sql` block) it joins the Manual (D38) |
-| Preview/apply | a `Preview…:` / `Apply:` lead, or a `-DryRun` / `-All` body: intent Preview then Apply (D29); planrun always stops between them and shows the count next to the plan's expected count |
+| Preview/apply | a `Preview…:` / `Apply:` lead, or a `-DryRun` / `-All` body: intent Preview then Apply (D29); planrun always stops between them and shows the count next to the plan's expected count. **The Apply invariant:** planrun always stops before an Apply-intent script, whether or not a Preview ran before it; the stop never depends on a Preview action directly before it, because the preview may be Manual (D28). P5 enforces it |
 | Output-dependent | "Replace … with the `Actual` values" → `Manual(OutputDependent)` |
 | Other languages | `sql` fences → `Manual(ForeignLanguage("sql"))` |
 | Prose checks | `Verify: <sentence>` → `Manual(HumanCheck)` |
