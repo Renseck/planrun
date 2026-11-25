@@ -59,6 +59,8 @@ path_change = '^` \((?P<change>full replacement)\)'     # optional (D44): over t
 [[outline.steps]]                                        # zero or more; none = one implicit step
 block = "paragraph"                                      # paragraph | list-item | heading
 regex = '^\*\*Step (?P<n>\d+) — (?P<title>[^*]+)\*\*$'   # n and title optional
+keep = false                                             # optional: true keeps the boundary
+                                                         # block in its step (D46)
 
 [settings]
 manual_markers = ['(?i)\bby hand\b']                     # paragraph → Manual(Marked)
@@ -97,14 +99,14 @@ Parameters in *italics* are optional.
 | Kind | Matches | Produces | Parameters |
 |---|---|---|---|
 | `file-block` | a lead paragraph naming a path (and op), then one fence | `WriteFile` / `ApplyPatch` | `lead` (captures `path`, *`op`*), `ops` (op prefix → `write` \| `create` \| `overwrite` \| `patch`), *`default_op`*, *`file_name_from_manifest`* |
-| `before-after` | lead (naming a path), fence, *separator paragraph*, fence | `ReplaceExact`, or `Manual(ProseEdit)` when `infer_path` finds no single entry | `lead` (captures `path`, or none with `infer_path = true`), *`separator`* (e.g. `^After:$`; absent = two fences back to back), *`file_name_from_manifest`* |
+| `before-after` | lead (naming a path), fence, *separator paragraph*, fence | `ReplaceExact`, or `Manual(ProseEdit)` when `infer_path` finds no single entry | `lead` (captures `path`, or none with `infer_path = true`), *`separator`* (e.g. `^After:$`; absent = two fences back to back), *`file_name_from_manifest`*, *`series`* (a regex capturing `n`; the lead then captures `n` too, D49) |
 | `delete` | a sentence or inline `git rm` | `Delete` | `lead` (captures `path`), *`via_git`*, *`file_name_from_manifest`* |
 | `generated` | a "generated, not by hand" sentence | `Generated` | `lead` (captures `path`) |
 | `ceremony` | a fence directly after a given action whose body matches | nothing (absorbed) | `after` (`patch`), `body` |
-| `script` | a fence in a shell language | `RunScript` / `Commit` | *`intents`* (`[{ intent, body?, lead? }]`: `commit` \| `gate` \| `preview` \| `apply` \| `verify` \| `other`), *`leads`* (regexes), *`first_block`* |
+| `script` | a fence in a shell language | `RunScript` / `Commit` | *`intents`* (`[{ intent, body?, lead? }]`: `commit` \| `gate` \| `preview` \| `apply` \| `verify` \| `other`), *`leads`* (regexes), *`first_block`*, *`line_expect`* (a regex capturing `expect`, D35, D48) |
 | `run-line` | `` Run: `cmd` `` in a paragraph, with an optional expectation in the same paragraph | `RunScript` / `Commit` (one line) | `lead` (captures `cmd`, *`expected`*), `shell` (`pwsh` \| `bash`), *`exit`* table over `expected` (field `text`), *`intents`* (`[{ intent, body }]`) |
 | `expected-block` | `Expected (…):` paragraph + `text` fence after a script | amends the script | `lead` (captures `spec`), `exit` table, `lines = "summary"` |
-| `expected-prose` | `Expected: …` sentence after a script | amends the script | `lead` (captures `text`), `exit` table (`success` \| `failure` \| `any` \| `code:N`) |
+| `expected-prose` | `Expected: …` sentence after a script; with `list`, an `Expected:` paragraph and its list | amends the script | `lead` (captures `text`, unless `list`), `exit` table (`success` \| `failure` \| `any` \| `code:N`), *`list`* (D47) |
 | `manual-prose` | a paragraph (+ the fence after it, with `takes_fence`) that describes what planrun cannot do exactly | `Manual(reason)` | `lead`, `reason` (`prose-edit` \| `output-dependent` \| `human-check`), *`takes_fence`* |
 
 Notes on the kinds:
@@ -129,11 +131,20 @@ Notes on the kinds:
   script carries `ScriptIntent::Other`. The other intents set the `ScriptIntent`; no match is
   `verify`. A row matches the fence body (`body`), the paragraph directly before the fence
   (`lead`), or both; at least one is required (D29). Preview/apply pairs are rows like these.
+- `script` `line_expect` (D35, D48): every line of a claimed fence that is not a whole-line
+  comment and matches gives the script a comment expectation, exit not checked; an
+  `expected-prose` right after it extends it instead of being `expected-twice`.
+- `before-after` `series` (D49): a lead without a path continues the numbered edit directly
+  before it in the step (`PathOrigin::PreviousEdit`), before `infer_path` is tried.
+- `expected-prose` `list` (D47): the list items at the lead's depth and the paragraphs, list
+  items and `text` fences nested in them belong to the expectation; no list is
+  `missing-block`.
 - `script` guard (D28): with `leads` set, the kind claims a fence only when the paragraph
   directly before it matches one of `leads`, or, with `first_block = true`, when the fence is the
   first block of a written step (never the implicit first step, so never right after the
-  manifest). A body intent never qualifies a fence on its own. Any other shell fence falls to the
-  fallback, `Manual(Unrecognized)`. Without `leads` (the assay spec) every shell fence is a script.
+  manifest, and never in a step with a kept label, D46). A body intent never qualifies a fence
+  on its own. Any other shell fence falls to the fallback, `Manual(Unrecognized)`. Without
+  `leads` (the assay spec) every shell fence is a script.
 - `expected-block` and `expected-prose` amend the script directly before them. Anything else there
   is `Malformed(expected-without-script)`; a second expectation on one script is
   `Malformed(expected-twice)`. `expected-block` needs a `text` fence (`missing-block`). An

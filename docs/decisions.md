@@ -185,6 +185,10 @@ can create a script file whose contents contain git commands. Reason: hand-writt
 file contents and code to insert in shell fences behind prose that no recognizer can reliably
 name; unguarded, `script` would execute them. The assay spec sets no `leads` and is unchanged.
 
+In a step whose boundary is kept (D46), the boundary label is the step's first block, so
+`first_block` never matches there: a fence directly after a kept label runs only when the
+label itself matches one of `leads`.
+
 ## D29 Script intents by lead; no `preview-apply` kind
 
 An `intents` row of `script` matches the body, the lead paragraph, or both (`body`, `lead`).
@@ -245,6 +249,9 @@ otherwise it shows the message alone.
 A `script` parameter `line_expect` (a regex over each line) turns trailing comments such as
 `# feature/p2-tooling` into one prose expectation per fence: exit `Unknown`, confirmed (D11).
 DevReady only. A fence that also has an `Expected:` after it is `expected-twice`.
+
+Superseded in part by D48: an `Expected:` sentence or list after such a fence extends its
+expectation instead of being `expected-twice`.
 
 ## D36 Imperative prose
 
@@ -358,3 +365,48 @@ is unknown.
 - D33: a Bare entry is not literal, so the commit suggestion shows the message only.
 - `show` marks Bare entries. `AmbiguousPath` is produced only by this rule; it is not a
   `manual-prose` reason.
+
+  ## D46 Step labels that stay in their step
+
+`[[outline.steps]] keep = true`: the boundary block is the first block of its step instead of
+being consumed by the outline. Hand-written plans put the step's lead in its label
+(``**2a.** `p`, edit 1 (old → new):``, ``**Verify:** `cmd` → …``, ``**Commit:** `msg` ``), and
+recognizers see it only when it stays. A kept label no recognizer takes is a `Note`. With
+`keep`, `first_block` cannot match in that step (see D28): only `leads` decide which fence after
+a label runs.
+
+## D47 `Expected:` with a list
+
+`expected-prose` with `list = true`: a lead paragraph (``^Expected(?: \([^)]*\))?:$``) and the
+list right after it are one prose expectation (D11: always confirmed). The list is the list
+items at the lead's depth and, nested in them, paragraphs, list items and `text` fences; any
+other block (a shell fence above all) ends it and goes through recognition as usual. A step
+boundary ends it too. The exit table reads the whole text. A lead with no list after it is
+`missing-block`. After a Manual, the lead and its list join the Manual (D38). The lead
+`Expected and recorded:` is not a list lead: its items are instructions, not expectations.
+
+## D48 A sentence after comment expectations extends them
+
+Supersedes D35 in part. An `expected-prose` (plain or `list = true`) directly after a script
+whose only expectation is its comment lines (`line_expect`) extends that expectation instead of
+being `expected-twice`. The exit status comes from the sentence's exit table; the comment lines
+and the sentence stay two labelled parts (`comments`, `prose`), so the confirmation (D11) shows
+which is which. An `expected-block` there is still `expected-twice`, and so is a second
+`Expected:` after one script. The body always runs unchanged: a comment that is a remark, or a
+`#` inside a string, only adds text to what is shown for confirmation.
+
+## D49 Numbered edit series
+
+`before-after` parameter `series`: a regex with an `n` capture that reads the edit number of a
+lead paragraph. A lead without a path whose own `n` capture is at least 2 continues the series
+when the action directly before it in the same step is a ReplaceExact whose lead paragraph has
+number `n - 1`: it edits that path, with `PathOrigin::PreviousEdit`.
+
+- Any action in between (a Note included) breaks the series. A chain is fine: edit 3 continues
+  the edit 2 that got `PreviousEdit`.
+- A continuation is tried before `infer_path`, and only on leads without a path. D32's
+  `infer_path` rule is unchanged.
+- The spec load refuses `series` on a lead that does not capture `n`.
+- The previous edit's number is read from its lead paragraph by `series`, because a
+  recognizer cannot see another recognizer's captures (recognizers are pure and independent,
+  extending.md §5); the edit with the path is usually matched by another recognizer instance.

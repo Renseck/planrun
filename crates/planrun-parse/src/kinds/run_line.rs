@@ -76,6 +76,7 @@ impl Recognizer for RunLine {
             exit: first_exit(&self.exit, said.as_str()).unwrap_or(ExitExpect::Unknown),
             lines: None,
             prose: capture_ref(&caps, "expected", base),
+            comments: None,
         });
         let script = Script {
             shell: self.shell,

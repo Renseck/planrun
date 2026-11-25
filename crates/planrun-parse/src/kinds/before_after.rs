@@ -1,12 +1,16 @@
 //! `before-after`: a lead naming a file, the text to find in a fence, an optional separator
 //! paragraph (`After:`), and its replacement in a second fence → `ReplaceExact`.
 //!
-//! A lead without a path takes the task's one editable manifest entry when `infer_path` is set;
-//! with none or several, the lead and both fences are `Manual(ProseEdit)` (decision D32).
+//! A lead without a path first tries to continue a numbered edit series (`series`, decision
+//! D49): "Edit 2" directly after the ReplaceExact of "`p`, edit 1" edits `p`. Otherwise it takes
+//! the task's one editable manifest entry when `infer_path` is set; with none or several, the
+//! lead and both fences are `Manual(ProseEdit)` (decision D32).
 
 use std::sync::Arc;
 
-use planrun_model::{Action, ActionKind, ManualReason, PathOrigin, RecognizerId, Span, TextRef};
+use planrun_model::{
+    Action, ActionKind, ManualReason, PathOrigin, RecognizerId, RepoPath, Span, TextRef,
+};
 use regex::Regex;
 
 use super::params::Params;
@@ -34,13 +38,23 @@ impl RecognizerFactory for BeforeAfterFactory {
             .transpose()?;
         let infer_path = p.opt_bool("infer_path")?.unwrap_or(false);
         let by_file_name = p.opt_bool("file_name_from_manifest")?.unwrap_or(false);
+        let series = p
+            .opt_string("series")?
+            .map(|s| compile_regex("series", s, &["n"]))
+            .transpose()?;
         p.finish()?;
         let has_path = lead.capture_names().flatten().any(|n| n == "path");
-        if has_path == infer_path {
+        let pathless = infer_path || series.is_some();
+        if has_path == pathless {
             return Err(
-                "`lead` must capture `path`, or have no `path` capture and `infer_path = true`"
+                "`lead` must capture `path`, or have no `path` capture and `infer_path = true` \
+                 or a `series`"
                     .to_owned(),
             );
+        }
+        let lead_n = lead.capture_names().flatten().any(|n| n == "n");
+        if series.is_some() && !lead_n {
+            return Err("`series` needs a lead that captures the edit number `n`".to_owned());
         }
         Ok(Arc::new(BeforeAfter {
             id,
@@ -48,6 +62,7 @@ impl RecognizerFactory for BeforeAfterFactory {
             separator,
             infer_path,
             by_file_name,
+            series,
         }))
     }
 }
@@ -58,9 +73,32 @@ struct BeforeAfter {
     separator: Option<Regex>,
     infer_path: bool,
     by_file_name: bool,
+    /// Reads the edit number from a lead; set, a lead without a path continues the series of
+    /// the edit directly before it (D49).
+    series: Option<Regex>,
 }
 
 impl BeforeAfter {
+    /// The path of the edit this lead continues (D49): this lead's `n` is at least 2, and the
+    /// action directly before it in the step is a ReplaceExact whose lead paragraph has number
+    /// `n - 1` as `series` reads it.
+    fn continued(&self, cx: &StepContext<'_>, caps: &regex::Captures<'_>) -> Option<RepoPath> {
+        let series = self.series.as_ref()?;
+        let n: u32 = caps.name("n")?.as_str().parse().ok().filter(|n| *n >= 2)?;
+        let number = |text: &str| -> Option<u32> { series.captures(text)?["n"].parse().ok() };
+        let before = cx.previous.last()?;
+        let ActionKind::ReplaceExact { path, .. } = &before.kind else {
+            return None;
+        };
+        let its_lead = cx
+            .doc
+            .blocks
+            .iter()
+            .find(|b| b.span.start == before.span.start)?;
+        let (text, _) = paragraph(cx, its_lead)?;
+        (number(text)? + 1 == n).then(|| path.clone())
+    }
+
     /// The two fences after the lead, and how many blocks lead through the second fence take.
     fn fences<'a>(
         &self,
@@ -120,8 +158,13 @@ impl Recognizer for BeforeAfter {
             Err(d) => return Recognized::Malformed(d),
         };
         let span = lead.span.join(after.span);
-        let target = if self.infer_path {
+        let continued = self.continued(cx, &caps);
+        let target = if let Some(path) = continued {
+            Some((path, PathOrigin::PreviousEdit))
+        } else if self.infer_path {
             only_entry(cx).map(|path| (path, PathOrigin::OnlyEntry))
+        } else if self.series.is_some() {
+            None
         } else {
             match resolved_lead_path(cx, &caps, base, lead.span, self.by_file_name) {
                 Ok(resolved) => Some(resolved),

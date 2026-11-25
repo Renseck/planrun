@@ -137,6 +137,9 @@ pub struct StepPattern {
     pub block: String,
     /// Regex over the block text; may capture `n` and `title`.
     pub regex: String,
+    /// The boundary block stays in its step, so recognizers see it (a label such as
+    /// ``**2a.** `p`, edit 1 (old → new):``); default false (decision D46).
+    pub keep: Option<bool>,
 }
 
 /// Shells and manual markers.
@@ -269,6 +272,7 @@ fn compile_outline(spec: &OutlineSpec, marks: &[StepMarkSpec]) -> Result<Outline
             Ok(StepRule {
                 block: step_block(&s.block)?,
                 regex: compile_regex("outline.steps", &s.regex, &[])?,
+                keep: s.keep.unwrap_or(false),
             })
         })
         .collect::<Result<_, String>>()?;

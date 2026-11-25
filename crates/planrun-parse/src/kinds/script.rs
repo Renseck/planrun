@@ -2,11 +2,15 @@
 //!
 //! With `leads` set, the kind claims a fence only behind a run lead or, with `first_block`, as
 //! the first block of a written step; any other shell fence falls to the fallback, Manual
-//! (decision D28). An `intents` row matches the body, the lead paragraph, or both (D29).
+//! (decision D28). An `intents` row matches the body, the lead paragraph, or both (D29). With
+//! `line_expect`, the command lines with a trailing comment expectation become the script's
+//! comment expectation, always confirmed (D35, D48).
 
 use std::sync::Arc;
 
-use planrun_model::{Action, ActionKind, RecognizerId, Script, ScriptIntent};
+use planrun_model::{
+    Action, ActionKind, ExitExpect, Expectation, RecognizerId, Script, ScriptIntent, TextRef,
+};
 use regex::Regex;
 
 use super::params::{Params, row_string};
@@ -110,6 +114,10 @@ impl RecognizerFactory for ScriptFactory {
             })
             .transpose()?;
         let first_block = p.opt_bool("first_block")?;
+        let line_expect = p
+            .opt_string("line_expect")?
+            .map(|l| compile_regex("line_expect", l, &["expect"]))
+            .transpose()?;
         p.finish()?;
         if first_block.is_some() && leads.is_none() {
             return Err("`first_block` needs `leads`".to_owned());
@@ -119,6 +127,7 @@ impl RecognizerFactory for ScriptFactory {
             intents,
             leads,
             first_block: first_block.unwrap_or(false),
+            line_expect,
         }))
     }
 }
@@ -143,9 +152,39 @@ struct ScriptRecognizer {
     /// When set, only fences behind one of these leads (or a first block) are claimed.
     leads: Option<Vec<Regex>>,
     first_block: bool,
+    /// Over each command line; a match with an `expect` capture is a comment expectation.
+    line_expect: Option<Regex>,
 }
 
 impl ScriptRecognizer {
+    /// The comment expectation of `body` (D35): every line that is not a whole-line comment and
+    /// matches `line_expect`, one per line, exit not checked. `None` without a match.
+    fn comments(&self, body: &TextRef, text: &str) -> Option<Expectation> {
+        let regex = self.line_expect.as_ref()?;
+        let lines: Vec<&str> = text
+            .lines()
+            .filter(|l| !l.trim_start().starts_with('#'))
+            .filter(|l| {
+                regex
+                    .captures(l)
+                    .is_some_and(|c| c.name("expect").is_some())
+            })
+            .map(str::trim)
+            .collect();
+        if lines.is_empty() {
+            return None;
+        }
+        Some(Expectation {
+            exit: ExitExpect::Unknown,
+            lines: None,
+            prose: None,
+            comments: Some(TextRef::Owned {
+                text: lines.join("\n").into(),
+                from: body.span(),
+            }),
+        })
+    }
+
     /// Whether the guard (decision D28) lets the kind claim the fence at the cursor. A body
     /// intent never qualifies a fence on its own.
     fn claims(&self, cx: &StepContext<'_>, cursor: &Cursor<'_>, lead: Option<&str>) -> bool {
@@ -186,7 +225,7 @@ impl Recognizer for ScriptRecognizer {
         let script = Script {
             shell,
             body: body.clone(),
-            expect: None,
+            expect: self.comments(body, text),
             intent: ScriptIntent::Verify,
         };
         let kind = script_action(script, intent_of(&self.intents, text, lead));

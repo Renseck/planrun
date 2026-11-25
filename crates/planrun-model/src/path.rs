@@ -97,6 +97,9 @@ pub enum PathOrigin {
     /// siblings (decision D45): spelled as written, its location unknown. Never resolved to,
     /// and a Create onto it is `Manual(AmbiguousPath)`.
     Bare,
+    /// An edit with no path that continues a numbered edit series: the path of the edit
+    /// directly before it (decision D49).
+    PreviousEdit,
 }
 
 impl PathOrigin {

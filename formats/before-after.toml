@@ -147,3 +147,10 @@ exit = [
   { text = '(?i)\bno matches\b', exit = "code:1" },
   { text = '(?i)\b(pass(es)?|succeeds?)\b', exit = "success" },
 ]
+
+[[recognizer]]
+kind = "expected-prose"
+id = "expected-prose#list"
+# Expected (16):  + a list: one prose expectation over the paragraph and its list (D47).
+lead = '^Expected(?: \([^)]*\))?:$'
+list = true

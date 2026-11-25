@@ -190,6 +190,7 @@ fn expect_failure(action: &mut Action) -> Option<Diagnostic> {
             exit: ExitExpect::Failure,
             lines: None,
             prose: None,
+            comments: None,
         });
         return None;
     };

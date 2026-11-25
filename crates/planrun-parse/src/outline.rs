@@ -40,6 +40,8 @@ pub struct StepRule {
     pub block: StepBlock,
     /// Over its text; may capture `n` and `title`.
     pub regex: Regex,
+    /// The boundary block is the step's first block (decision D46).
+    pub keep: bool,
 }
 
 /// The kinds of block a step can start with.
@@ -303,6 +305,22 @@ enum StepNumber {
     Bad,
 }
 
+/// True when the boundary at `index` stays in its step (decision D46).
+fn kept(rules: &OutlineRules, doc: &Document, index: usize) -> bool {
+    let (kind, text) = match &doc.blocks[index].block {
+        Block::Paragraph { text } => (StepBlock::Paragraph, text),
+        Block::ListItem { text, .. } => (StepBlock::ListItem, text),
+        Block::Heading { text, .. } => (StepBlock::Heading, text),
+        _ => return false,
+    };
+    rules
+        .steps
+        .iter()
+        .filter(|r| r.block == kind)
+        .find(|r| r.regex.is_match(doc.text(text)))
+        .is_some_and(|r| r.keep)
+}
+
 /// The step that block `index` starts, as (number, title), when it is a step boundary.
 fn boundary(
     rules: &OutlineRules,
@@ -362,7 +380,7 @@ fn steps(
     }
     for (k, &b) in boundaries.iter().enumerate() {
         let blocks = BlockRange {
-            start: b + 1,
+            start: if kept(rules, doc, b) { b } else { b + 1 },
             end: boundaries.get(k + 1).copied().unwrap_or(body.end),
         };
         let Some((number, title)) = boundary(rules, doc, b) else {

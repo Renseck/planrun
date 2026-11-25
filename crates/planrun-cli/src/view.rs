@@ -152,6 +152,9 @@ pub struct ExpectView {
     pub lines: Option<String>,
     /// The sentence.
     pub prose: Option<String>,
+    /// The command lines with a trailing comment expectation (decision D48).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comments: Option<String>,
 }
 
 /// Builds the views of one plan.
@@ -290,6 +293,7 @@ impl<'a> Viewer<'a> {
             exit,
             lines: expect.lines.as_ref().map(|l| self.text(l)),
             prose: expect.prose.as_ref().map(|p| self.text(p)),
+            comments: expect.comments.as_ref().map(|c| self.text(c)),
         }
     }
 }
@@ -302,6 +306,7 @@ fn path_from(origin: PathOrigin) -> Option<String> {
         PathOrigin::FileName => "the manifest entry with this file name",
         PathOrigin::OnlyEntry => "the task's only editable manifest entry",
         PathOrigin::Bare => "a bare file name in the manifest, its directory unknown",
+        PathOrigin::PreviousEdit => "the edit before it in the same numbered series",
     };
     Some(format!("resolved from manifest: {how}"))
 }
@@ -371,10 +376,15 @@ fn action_text(action: &ActionView, detail: Detail, out: &mut String) {
 
 fn expect_summary(e: &ExpectView) -> String {
     let lines = e.lines.as_ref().map(|l| l.lines().count());
-    match (lines, &e.prose) {
+    let comments = e.comments.as_ref().map(|c| c.lines().count());
+    let said = match (lines, &e.prose) {
         (Some(n), _) => format!("{}; {n} summary line(s)", e.exit),
         (None, Some(p)) => format!("{}; \"{p}\" (confirmed by you)", e.exit),
         (None, None) => e.exit.clone(),
+    };
+    match comments {
+        Some(n) => format!("{said}; {n} comment expectation(s) (confirmed by you)"),
+        None => said,
     }
 }
 
