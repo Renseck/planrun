@@ -94,7 +94,7 @@ review items (series stems D59, `run-from`, negated failures, `write-mode-unknow
 scope (D50) and the dry run (D55). The per-task file cache is the virtual tree: a task's paths are
 read once, on first use.
 
-## P4 — Shells, expectations, policy
+## P4 — Shells, expectations, policy (done)
 
 Persistent pwsh and bash sessions (D24) with the sentinel protocol: variables persist across
 blocks, a `throw` ends the block and not the session, output streams. The expectation matcher
@@ -106,7 +106,8 @@ The decisions are D60–D70. Plan: `docs/plans/2026-11-25-p4-shells-expectations
 the decisions and the `unsafe` lints (D64); then the sessions (the protocol D60, how a block
 ends D61, the environment D62, which shells D63, the process tree D64); the matcher (D66); the
 classifier (D68) and the policy decisions (D67, D69); the classes in the dry run. The candidate
-(a script working directory from a run lead) is deferred (D70).
+(a script working directory from a run lead) is deferred (D70). The P4 review items P5 must fix
+first are in `docs/handovers/2026-11-25-p4-to-p5.md`.
 
 ## P5 — Runner, journal, resume, interactive CLI
 
