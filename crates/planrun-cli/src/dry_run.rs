@@ -1,9 +1,11 @@
 //! `planrun run --dry-run` (docs/architecture.md §7, decision D55): one line per action with its
-//! outcome, a summary, then every finding with its source context.
+//! outcome, a summary, then every finding with its source context. A script or commit shows its
+//! class and what the default policy would do with it (D68, D69).
 
 use planrun_exec::finding::{Finding, Severity as ExecSeverity};
+use planrun_exec::policy::{Decision, DefaultClassifier, Policy, Skip};
 use planrun_exec::preflight::{DryRun, Outcome};
-use planrun_model::{ActionKind, Plan};
+use planrun_model::{ActionKind, Plan, Task};
 use planrun_parse::{Diagnostic, Severity};
 
 use crate::render;
@@ -44,7 +46,7 @@ pub fn report(plan: &Plan, run: &DryRun, out: &mut String) {
             out.push_str(&format!("  files: {} problem(s)\n", task.manifest.len()));
         }
         for a in &task.actions {
-            if let Some(line) = action_line(plan, a, &mut counts) {
+            if let Some(line) = action_line(plan, t, a, &mut counts) {
                 out.push_str(&line);
             }
         }
@@ -70,6 +72,7 @@ pub fn report(plan: &Plan, run: &DryRun, out: &mut String) {
 /// One table line; `None` for a Note.
 fn action_line(
     plan: &Plan,
+    task: &Task,
     a: &planrun_exec::preflight::ActionReport,
     counts: &mut Counts,
 ) -> Option<String> {
@@ -94,7 +97,9 @@ fn action_line(
         }
         Outcome::NotRun => {
             counts.not_run += 1;
-            "not run".to_owned()
+            let decision =
+                Policy::default().decide(task, &a.action, &plan.source, &DefaultClassifier);
+            format!("not run; {}", decided(decision))
         }
         Outcome::NotChecked => {
             counts.not_checked += 1;
@@ -110,6 +115,16 @@ fn action_line(
         "  L{line:<5} {what:<9} {path:<24} {outcome}\n",
         path = path.unwrap_or_default()
     ))
+}
+
+/// What the default policy (no `--auto`) would do with a script or commit.
+fn decided(decision: Decision) -> String {
+    match decision {
+        Decision::Ask(class) => format!("would ask ({class:?})"),
+        Decision::TypedYes => "typed yes (Destructive)".to_owned(),
+        Decision::Skip(Skip::ExpectedFailure) => "skipped: expected failure".to_owned(),
+        other => format!("{other:?}"),
+    }
 }
 
 fn describe(kind: &ActionKind) -> (&'static str, Option<String>) {
