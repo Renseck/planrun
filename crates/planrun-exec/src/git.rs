@@ -413,10 +413,8 @@ impl Git {
         let out = text(&self.run(&args, None, &[])?).into_owned();
         let fields: Vec<&str> = out.split('\0').collect();
         let mut found = vec![Attributes::default(); paths.len()];
-        for triple in fields.chunks_exact(3) {
-            let [path, attr, value] = triple else {
-                continue;
-            };
+        let (triples, _) = fields.as_chunks::<3>();
+        for [path, attr, value] in triples {
             let Some(i) = paths.iter().position(|p| p.as_str() == *path) else {
                 continue;
             };
