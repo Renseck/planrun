@@ -9,6 +9,7 @@ mod bash;
 mod decide;
 mod heads;
 mod pwsh;
+mod sed;
 
 pub use decide::{Decision, Policy, PolicyError, Skip};
 pub use heads::DEVREADY_VERSION;

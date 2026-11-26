@@ -148,14 +148,7 @@ pub(super) fn bash(name: &str, args: &[Word]) -> Verdict {
             no("rm -r")
         }
         "rm" => ok(Modify),
-        "sed"
-            if args
-                .iter()
-                .any(|a| short(a, &['i']) || long(a, "--in-place")) =>
-        {
-            ok(Modify)
-        }
-        "sed" => ok(Read),
+        "sed" => super::sed::sed(args),
         "sort" if args.iter().any(|a| short(a, &['o']) || long(a, "--output")) => ok(Modify),
         "sort" => ok(Read),
         "find" => find(args),
