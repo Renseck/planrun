@@ -412,7 +412,16 @@ planrun run    <plan> [--from P1-T2] [--to P1-T3] [--auto read,build] [--dry-run
                [--run-expected-failures] [--restart]
 planrun resume <plan> [--auto …] [--from …] [--to …] [--run-expected-failures]
 planrun status <plan>                          what the journal says; changes nothing
+planrun update [--check]                       install the latest release over this executable
 ```
+
+`update` (D83) is the one command that is not about a plan: it compares the latest GitHub release
+with the build's version, and when it is newer downloads the build's target's archive with curl,
+unpacks it with tar under the OS temp directory, checks that the new executable prints the
+release's version, and renames it over the running one (on Windows the running one goes aside as
+`planrun.old.exe`, which the next start removes). `--check` only reports. Exit 0 when up to
+date, reported or updated, 1 when the update failed; the installed executable is then
+unchanged.
 
 `run` executes the plan in the repository of the current directory, under the lock (D77). It
 refuses a plan whose journal holds an unfinished run; `--restart` keeps that journal under

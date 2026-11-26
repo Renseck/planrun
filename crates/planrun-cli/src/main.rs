@@ -8,6 +8,7 @@ mod e2e;
 mod render;
 mod run;
 mod ui;
+mod update;
 mod view;
 
 use std::path::{Path, PathBuf};
@@ -102,6 +103,12 @@ enum Command {
         #[arg(long)]
         format: Option<String>,
     },
+    /// Install the latest GitHub release over this executable when it is newer (D83).
+    Update {
+        /// Report whether a newer release exists; change nothing.
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 /// Exit codes: 0 fine, 1 the plan has errors or the run stopped, 2 a usage or I/O problem.
@@ -110,6 +117,7 @@ const PLAN_ERRORS: u8 = 1;
 const USAGE: u8 = 2;
 
 fn main() -> ExitCode {
+    update::cleanup_beside_current_exe();
     let cli = Cli::parse();
     let mut out = String::new();
     let code = match &cli.command {
@@ -170,6 +178,7 @@ fn main() -> ExitCode {
                 run::status(plan, p, out)
             })
         }
+        Command::Update { check } => update::run(*check, &mut out),
     };
     if code == OK {
         print!("{out}");

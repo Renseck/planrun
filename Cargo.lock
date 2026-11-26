@@ -331,6 +331,7 @@ dependencies = [
  "planrun-model",
  "planrun-parse",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -25,7 +25,8 @@ crates/planrun-exec    IR → effects: git, workspace, eol, tree, handler, trans
                        code), expect, policy/ (classifier, decisions) (P4); journal, lock,
                        done, ui, runner/ (tasks, scripts, sessions, gate, resume) (P5)
 crates/planrun-cli     the `planrun` binary: check, show (view, render), run (dry_run, run,
-                       ui: line prompts), resume, status; the `e2e` test feature (e2e.rs)
+                       ui: line prompts), resume, status, update (P6a, D83); the `e2e` test
+                       feature (e2e.rs)
 formats/*.toml         built-in plan formats (embedded): assay, superpowers, before-after; the
                        file name is the format id
 docs/                  architecture, plan-grammar, extending, decisions, roadmap, plans/,
@@ -34,6 +35,8 @@ tests/corpus/          synthetic/ (one plan per format), invalid/ (one error eac
 tests/fixtures/greeter the repo the synthetic assay plan applies to
 tests/support          fixture.rs: a temporary git copy of the greeter fixture, included
                        with #[path] by the exec and cli tests
+scripts/               install.ps1, install.sh (release or --from-source, D83); unplus.ps1
+.github/workflows/     ci.yml (the gate on Windows and Linux), release.yml (on a v*.*.* tag)
 ```
 
 ## Hard rules

@@ -131,3 +131,8 @@ and the greeter ignores `Cargo.lock`.
 planrun runs its own later phase plans. Candidates, each its own decision: a ratatui UI, a
 sidecar IR from planbuild.py, `.planrun/formats/` discovery polish, a non-interactive batch mode
 for CI.
+
+- **P6a — release and update (done).** The CI gate on Windows and Linux, the release workflow on
+  a `v*.*.*` tag, `scripts/install.ps1` and `install.sh` (a release, or `--from-source`), and
+  `planrun update [--check]` (D83). Plan: `docs/plans/2026-11-26-p6a-release-update.md`; the
+  first plan planrun executes on itself. Open items: `docs/handovers/2026-11-26-p5-to-p6.md`.
