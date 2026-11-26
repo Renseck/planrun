@@ -235,6 +235,20 @@ fn preflight_stops_at_the_first_step_that_does_not_run() {
 }
 
 #[test]
+fn a_real_preflight_refuses_a_git_delete_of_an_untracked_file() {
+    let f = Fixture::greeter(false);
+    f.write("notes.txt", b"untracked\n");
+    let mut ir = Ir::default();
+    let steps = vec![vec![ir.delete("notes.txt", true)]];
+    let tasks = vec![ir.task("T1", Manifest::default(), steps)];
+    let plan = ir.plan(tasks);
+    let found = preflight(&open(&f), &plan, &plan.tasks[0]).unwrap_or_else(|e| panic!("{e}"));
+    let codes: Vec<&str> = found.iter().map(|f| f.code).collect();
+    assert!(codes.contains(&"delete-untracked"), "{codes:?}");
+    assert!(!labels(&run(&f, &plan), 0).contains(&"delete-untracked".to_owned()));
+}
+
+#[test]
 fn manifest_entries_are_checked_at_the_start_of_their_task() {
     let f = Fixture::greeter(false);
     let mut ir = Ir::default();

@@ -169,6 +169,6 @@ fn prepare_lists_the_directories_a_write_creates() {
     let mut ir = Ir::default();
     let actions = [ir.write("docs/a/b.txt", "x\n", WriteMode::Create)];
     let step = prepared(&ws, &ir, &actions).unwrap_or_else(|f| panic!("{}", f.message));
-    assert_eq!(step.writes[0].creates_dirs, ["docs", "docs/a"]);
-    assert_eq!(step.writes[0].pre, PreImage::Absent);
+    assert_eq!(step.writes[0].record.creates_dirs, ["docs", "docs/a"]);
+    assert_eq!(step.writes[0].record.pre, PreImage::Absent);
 }

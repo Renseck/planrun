@@ -98,6 +98,8 @@ struct Walk<'t, 'w> {
     tree: &'t mut VirtualTree<'w>,
     handlers: HandlerSet,
     unrun: bool,
+    /// A real run's preflight: the repository is about to be changed, not simulated (D78).
+    real: bool,
 }
 
 /// The dry run of `plan` (D55): parse and checks are done; this preflights every task against
@@ -110,6 +112,7 @@ pub fn dry_run(ws: &Workspace, plan: &Plan) -> Result<DryRun, WorkspaceError> {
         tree: &mut tree,
         handlers: HandlerSet::files(),
         unrun: false,
+        real: false,
     };
     let tasks = plan
         .tasks
@@ -142,6 +145,7 @@ pub fn preflight(ws: &Workspace, plan: &Plan, task: &Task) -> Result<Vec<Finding
         tree: &mut tree,
         handlers: HandlerSet::files(),
         unrun: false,
+        real: true,
     };
     let report = walk.task(plan, 0, task, true);
     found.extend(report.manifest);
@@ -252,6 +256,9 @@ impl Walk<'_, '_> {
         if self.tree.is_unknown(path) {
             return Outcome::Depends(depends(path, action));
         }
+        if let Some(f) = self.untracked_delete(action, path) {
+            return Outcome::Failed(f);
+        }
         let Some(handler) = self.handlers.find(action) else {
             return Outcome::Failed(Finding::error("internal", span, Some(path), "no handler"));
         };
@@ -265,6 +272,27 @@ impl Walk<'_, '_> {
             }
             Err(f) => Outcome::Failed(with_bare_hint(task, path, f)),
         }
+    }
+
+    /// A real run's `git rm` of a path git does not track: the plan's own command would fail
+    /// (D78). The dry run keeps simulating it (P3's stated decision 16).
+    fn untracked_delete(&self, action: &Action, path: &RepoPath) -> Option<Finding> {
+        let via_git = matches!(action.kind, ActionKind::Delete { via_git: true, .. });
+        if !self.real || !via_git {
+            return None;
+        }
+        let tracked = self.tree.workspace().git().index_entry(path, &[]);
+        let message = match tracked {
+            Ok(Some(_)) => return None,
+            Ok(None) => format!("`{path}` is not tracked by git, so `git rm` would refuse it"),
+            Err(e) => e.to_string(),
+        };
+        Some(Finding::error(
+            "delete-untracked",
+            Some(action.span),
+            Some(path),
+            message,
+        ))
     }
 
     /// After a script or Manual that did not run, a failure of the tree's state is a warning.

@@ -42,6 +42,20 @@ impl fmt::Display for BlobId {
     }
 }
 
+/// 40 lowercase hex digits in the journal (D76).
+impl serde::Serialize for BlobId {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for BlobId {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let hex = String::deserialize(d)?;
+        BlobId::parse(&hex).ok_or_else(|| serde::de::Error::custom(format!("not a blob id: {hex}")))
+    }
+}
+
 /// Why a git call failed.
 #[derive(Debug, thiserror::Error)]
 pub enum GitError {
@@ -220,6 +234,47 @@ impl Git {
         args.push("--stdin");
         let out = self.run(&args, Some(bytes), extra)?;
         blob_id(&args, &out)
+    }
+
+    /// The exact-bytes blob ids (`--no-filters`) of the files at `paths`, in one
+    /// `hash-object --stdin-paths` call, nothing stored. Every path must exist: git fails the
+    /// whole batch on a missing one, so callers stat first.
+    pub fn hash_paths(&self, paths: &[&RepoPath]) -> Result<Vec<BlobId>, GitError> {
+        if paths.is_empty() {
+            return Ok(Vec::new());
+        }
+        let args = ["hash-object", "--no-filters", "--stdin-paths"];
+        let input: String = paths.iter().map(|p| format!("{p}\n")).collect();
+        let out = self.run(&args, Some(input.as_bytes()), &[])?;
+        let ids: Vec<BlobId> = text(&out)
+            .lines()
+            .map(|line| BlobId::parse(line).ok_or_else(|| output_error(&args, line)))
+            .collect::<Result<_, _>>()?;
+        if ids.len() != paths.len() {
+            return Err(output_error(&args, &text(&out)));
+        }
+        Ok(ids)
+    }
+
+    /// The ids among `ids` that the object database does not have (pruned by `git gc`, D57),
+    /// from one `cat-file --batch-check` call.
+    pub fn missing_objects(&self, ids: &[BlobId]) -> Result<Vec<BlobId>, GitError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let input: String = ids.iter().map(|id| format!("{id}\n")).collect();
+        let out = self.run(
+            &["cat-file", "--batch-check=%(objectname)"],
+            Some(input.as_bytes()),
+            &[],
+        )?;
+        let out = text(&out);
+        Ok(ids
+            .iter()
+            .zip(out.lines())
+            .filter(|(_, line)| line.ends_with(" missing"))
+            .map(|(id, _)| *id)
+            .collect())
     }
 
     /// The bytes of blob `id`, unconverted.

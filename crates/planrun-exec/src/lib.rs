@@ -11,7 +11,9 @@
 //! - [`tree`]: the virtual tree, a temporary index and object directory (D52).
 //! - [`handler`]: one [`ActionHandler`] per action kind, which simulates it on a virtual tree;
 //!   the [`HandlerSet`] is the execution-side plugin point.
-//! - [`transaction`]: a step's file actions as prepare, then commit, with rollback (D53).
+//! - [`transaction`]: a step's file actions as prepare, then commit, with rollback (D53); the
+//!   disk is checked again between the two (D78).
+//! - [`done`]: a journaled step's state on the disk, for resume (D14, D77).
 //! - [`preflight`]: task preflight and the dry run over one virtual tree (D50, D55).
 //! - [`finding`]: what preflight, a simulation and the dry run report.
 //! - [`shell`]: persistent pwsh and bash sessions behind [`ShellSession`] (D60–D65).
@@ -22,6 +24,7 @@
 //! - `journal`: JSONL under `.git/planrun/`.
 //! - `runner`: the state machine Task → Step → Action, talking to a [`Ui`].
 
+pub mod done;
 pub mod eol;
 pub mod expect;
 pub mod finding;

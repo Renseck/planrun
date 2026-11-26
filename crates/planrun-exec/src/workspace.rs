@@ -88,6 +88,7 @@ pub struct Workspace {
     root: PathBuf,
     git: Git,
     ignorecase: bool,
+    filemode: bool,
     #[cfg(test)]
     pub(crate) faults: Faults,
 }
@@ -106,10 +107,12 @@ impl Workspace {
             return Err(WorkspaceError::ObjectFormat(format));
         }
         let ignorecase = git.config_bool("core.ignorecase")?.unwrap_or(false);
+        let filemode = git.config_bool("core.filemode")?.unwrap_or(cfg!(unix));
         Ok(Self {
             root,
             git,
             ignorecase,
+            filemode,
             #[cfg(test)]
             faults: Faults::default(),
         })
@@ -128,6 +131,26 @@ impl Workspace {
     /// `core.ignorecase`: path identity is case-insensitive (D52).
     pub fn ignorecase(&self) -> bool {
         self.ignorecase
+    }
+
+    /// `core.filemode` (unset: true on Unix, false elsewhere): the executable bit counts (D78).
+    /// Always false on Windows, which has no executable bit.
+    pub fn filemode(&self) -> bool {
+        self.filemode && cfg!(unix)
+    }
+
+    /// Whether the file at `full` has its executable bit set; false on Windows.
+    pub fn is_executable(full: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::metadata(full).is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = full;
+            false
+        }
     }
 
     /// Resolves `path`: every existing segment must be a real directory (the last one may be a
@@ -222,12 +245,26 @@ impl Workspace {
     /// needs one segment at a time, each checked. Returns the directories it created, deepest
     /// last. On an error nothing of this write remains: no temp file, no new directory.
     pub fn write(&self, path: &RepoPath, bytes: &[u8]) -> Result<Vec<PathBuf>, WorkspaceError> {
+        self.write_as(path, bytes, &temp_name(), None)
+    }
+
+    /// [`Workspace::write`] with the temp file's name chosen beforehand (a step transaction
+    /// journals it, D77) and, under `core.filemode`, the executable bit set or cleared on the
+    /// temp file before the rename (`Some(true)` for mode 100755, D78).
+    pub fn write_as(
+        &self,
+        path: &RepoPath,
+        bytes: &[u8],
+        temp: &str,
+        executable: Option<bool>,
+    ) -> Result<Vec<PathBuf>, WorkspaceError> {
         let resolved = self.resolve(path)?;
         if resolved.is_dir {
             return Err(unsafe_path(path, "it is a directory"));
         }
         let created = self.make_dirs(path, &resolved)?;
-        if let Err(e) = self.replace_file(path, &resolved.full, bytes) {
+        let executable = executable.filter(|_| self.filemode());
+        if let Err(e) = self.replace_file(path, &resolved.full, bytes, temp, executable) {
             remove_dirs(&created);
             return Err(e);
         }
@@ -284,10 +321,12 @@ impl Workspace {
         path: &RepoPath,
         full: &Path,
         bytes: &[u8],
+        temp: &str,
+        executable: Option<bool>,
     ) -> Result<(), WorkspaceError> {
         let parent = full.parent().unwrap_or(&self.root);
-        let temp = parent.join(format!(".planrun-{:016x}.tmp", random()));
-        if let Err(e) = write_new(&temp, bytes) {
+        let temp = parent.join(temp);
+        if let Err(e) = write_new(&temp, bytes).and_then(|()| set_executable(&temp, executable)) {
             let _ = fs::remove_file(&temp);
             return Err(io_error(path, e));
         }
@@ -351,6 +390,42 @@ impl Faults {
         }
         Ok(())
     }
+}
+
+/// A fresh name for a writer's temp file: `.planrun-<16 hex>.tmp`.
+pub fn temp_name() -> String {
+    format!(".planrun-{:016x}.tmp", random())
+}
+
+/// True for a name [`temp_name`] makes.
+pub fn is_temp_name(name: &str) -> bool {
+    name.strip_prefix(".planrun-")
+        .and_then(|r| r.strip_suffix(".tmp"))
+        .is_some_and(|hex| hex.len() == 16 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// Sets or clears the executable bits (for every class that may read the file); nothing when
+/// `executable` is `None` or on Windows.
+fn set_executable(file: &Path, executable: Option<bool>) -> std::io::Result<()> {
+    let Some(executable) = executable else {
+        return Ok(());
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(file)?.permissions();
+        let mode = permissions.mode();
+        let mode = if executable {
+            mode | ((mode & 0o444) >> 2)
+        } else {
+            mode & !0o111
+        };
+        permissions.set_mode(mode);
+        fs::set_permissions(file, permissions)?;
+    }
+    #[cfg(not(unix))]
+    let _ = (file, executable);
+    Ok(())
 }
 
 fn write_new(temp: &Path, bytes: &[u8]) -> std::io::Result<()> {
