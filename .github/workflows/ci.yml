@@ -1,0 +1,43 @@
+# The gate of every task (CLAUDE.md, D82) on Windows and Linux. The release workflow calls it
+# before it builds anything (D83).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # A missing pwsh or bash fails the shell tests instead of skipping them (D63).
+  PLANRUN_REQUIRE_SHELLS: "1"
+
+jobs:
+  gate:
+    name: gate (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: fmt
+        if: runner.os == 'Linux'
+        run: cargo fmt --check
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: clippy (e2e)
+        run: cargo clippy -p planrun-cli --all-targets --features e2e -- -D warnings
+      - name: test
+        run: cargo test
+      - name: test (e2e)
+        run: cargo test -p planrun-cli --features e2e --test run
