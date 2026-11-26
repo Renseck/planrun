@@ -43,8 +43,8 @@ Relative, forward slashes, no `..`/`.`/empty segments, no drive letter, no backs
 Symlink escapes are refused by the workspace at write time. Nothing outside the repository is
 written except under `.git/planrun/` and the OS temp directory.
 
-Amended by D42 (wildcards), D51 (Windows-reserved spellings) and D52 (pre-images in the object
-database, the writer's temp file).
+Amended by D42 (wildcards), D51 (Windows-reserved spellings), D52 (pre-images in the object
+database, the writer's temp file) and D83 (`planrun update` writes its own install directory).
 
 ## D8 Formats are data first; built-ins are specs too
 
@@ -60,7 +60,7 @@ Each dependency is justified here; add none without a line.
 | `pulldown-cmark` | CommonMark with byte offsets; correct nested-fence handling |
 | `regex` | spec patterns; linear time, no backtracking blow-ups |
 | `serde`, `toml` | format specs |
-| `serde_json` | the journal (JSONL) |
+| `serde_json` | the journal (JSONL); the release description `planrun update` reads (D83) |
 | `thiserror` | error types |
 | `sha1_smol` | git blob ids in-process: the `blob-chain` check from a created file's contents (planrun-parse only; planrun-exec asks `git hash-object`, D56) |
 | `similar` | showing diffs of overwrites and replacements. **Not** for applying patches (D20) |
@@ -72,10 +72,12 @@ Each dependency is justified here; add none without a line.
 Rejected: `rusqlite` (D18), `ratatui` for now (D15), `tracing` for now (the journal is the record),
 `similar` as a patch engine (D20), `windows-sys` and `libc` for the process tree (D64), `dialoguer`
 (D74: it refuses a stdin that is not a terminal), `ctrlc` (D73: it brings `nix` and
-`windows-sys`).
+`windows-sys`), `ureq`, `reqwest`, `self_update`, `self-replace`, `zip` and `flate2` for
+`planrun update` (D83: curl and tar do it, like git, with no TLS stack in the build).
 
 Amended by D56 (no `sha1_smol` in planrun-exec), D64 (the hand-declared process-tree calls), D73
-(`ctrlc` rejected) and D74 (`dialoguer` dropped).
+(`ctrlc` rejected), D74 (`dialoguer` dropped) and D83 (`serde_json` in planrun-cli; the update
+crates rejected).
 
 ## D10 Line endings of written files
 
@@ -143,6 +145,8 @@ Amended by D76 (one file per plan, the records, when they are synced).
 
 Every real plan is PowerShell 7 on Windows. Linux (pwsh and bash) is supported and is where CI
 can run.
+
+Amended by D83 (CI runs the gate on Windows and on Linux).
 
 ## D20 Patches are applied by `git apply`
 
@@ -1185,3 +1189,48 @@ k-th write), `commit-start` (after a Commit's `action-start`). It ends with `exi
 `abort()`: no destructor runs, as in a kill, and on Windows no Windows Error Reporting is raised
 for the test machine to answer. A kill of `git commit` itself (HEAD moved, `action-end` missing)
 is tested in planrun-exec, where the observer can make the commit before it crashes.
+
+## D83 Releases, install scripts and `planrun update`
+
+planrun is installed and kept current from GitHub releases; `Renseck/planrun` is public, so no
+step needs a token.
+
+- **CI.** `.github/workflows/ci.yml` runs the gate of every task (fmt on Linux; clippy, test, and
+  both with the `e2e` feature, D82) on `windows-latest` and `ubuntu-latest`, with
+  `PLANRUN_REQUIRE_SHELLS=1`, on pushes to `main`, pull requests, and when the release calls it.
+  The private local corpus (D16) is not there, so its ignored tests do not run.
+- **Releases.** A pushed tag `v<major>.<minor>.<patch>` whose version equals
+  `[workspace.package]`'s runs `.github/workflows/release.yml`: the CI gate, the tag check, a
+  `--release --locked` build per target, and a GitHub release with generated notes and one
+  archive per target: `planrun-<tag>-x86_64-pc-windows-msvc.zip` and
+  `planrun-<tag>-x86_64-unknown-linux-gnu.tar.gz`, the executable at the archive's root. The
+  Linux build runs on the oldest supported Ubuntu runner, so the binary needs an older glibc.
+  Other targets are built from source. No checksum file: TLS carries the download, and the
+  `--version` check below catches a wrong or broken binary.
+- **Install scripts.** `scripts/install.ps1` and `scripts/install.sh` download the latest
+  release's archive into `%LOCALAPPDATA%\Programs\planrun\bin` or `~/.local/bin`, or build the
+  clone they are in with `cargo install --locked --root` into the same directory
+  (`-FromSource`, `--from-source`). The PowerShell script adds the directory to the user `PATH`
+  (`-NoPath`: not); the shell script only warns.
+- **`planrun update [--check]`** (planrun-cli, `update.rs`). It asks
+  `api.github.com/repos/Renseck/planrun/releases/latest` with curl, compares the tag with the
+  build's `CARGO_PKG_VERSION` (`major.minor.patch`, numerically; a tag that is no version is an
+  error), and when the release is newer downloads the build's own target's archive into
+  `planrun-update-<pid>` under the OS temp directory, unpacks it with tar, runs the unpacked
+  `planrun --version`, which must print the release's version, and only then swaps it in.
+  `--check` reports and changes nothing. Exit 0 up to date, reported or updated; 1 otherwise,
+  with a code: `update-tools`, `update-fetch`, `update-unsupported`, `update-no-asset`,
+  `update-download`, `update-verify`, `update-swap`.
+- **curl and tar are external tools**, like git: no HTTP, TLS or archive crate (D9). On Windows
+  they are `%SystemRoot%\System32\curl.exe` and `tar.exe` by absolute path (Windows 10 1803 and
+  later), so Git for Windows' curl or GNU tar earlier on `PATH` never runs; GNU tar does not read
+  zip.
+- **What it writes.** D7's rule is about plan execution. `update` is not one: it writes its
+  directory under the OS temp directory, and in the directory of `current_exe()` only
+  `planrun.new[.exe]`, `planrun.old[.exe]` and the executable itself. The new binary is copied
+  in as `.new` (mode 755 on Unix) and renamed over the executable: on Unix one atomic rename; on
+  Windows, where a running executable can be renamed but not replaced or deleted, the executable
+  goes aside as `.old` first, and comes back when the second rename fails.
+- **Cleanup.** Every planrun start removes `planrun.old[.exe]` and `planrun.new[.exe]` beside its
+  executable, best effort and silently: one or two file removals, no process. On Windows the
+  `.old` of the update just made stays until the next start, because it is still running.
