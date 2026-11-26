@@ -8,6 +8,7 @@
 //! P4's [`Policy`] decides; the runner prompts (D69) and never turns one decision into another.
 
 mod gate;
+pub mod resume;
 mod script;
 mod sessions;
 mod task;
@@ -91,6 +92,8 @@ pub struct Runner<'r> {
     notice: Option<Vec<String>>,
     /// Tasks whose scripts ran before, for the notice.
     earlier: Vec<String>,
+    /// What resume replays of the interrupted task (D77).
+    replay: Option<resume::Replay>,
 }
 
 impl<'r> Runner<'r> {
@@ -114,13 +117,14 @@ impl<'r> Runner<'r> {
             sessions,
             notice: None,
             earlier: Vec::new(),
+            replay: None,
         }
     }
 
     /// Runs the plan's tasks from `--from` to `--to`. Every way it ends is journaled
     /// (`run-end`), except a kill.
     pub fn run(&mut self) -> Result<Finished> {
-        let result = self.start().and_then(|()| self.tasks());
+        let result = self.start();
         let (end, reason) = match &result {
             Ok(Flow::Go) => (End::Completed, None),
             Ok(Flow::Stop(reason)) => (End::Stopped, Some(reason.clone())),
@@ -135,7 +139,21 @@ impl<'r> Runner<'r> {
         Ok(Finished { end, reason })
     }
 
-    fn start(&mut self) -> Result<()> {
+    fn start(&mut self) -> Result<Flow> {
+        self.start_record(false)?;
+        let from = self.config.from.unwrap_or(0);
+        if from > 0 {
+            self.earlier = self.plan.tasks[..from]
+                .iter()
+                .map(|t| t.id.raw.to_string())
+                .collect();
+            self.notice = Some(self.notice_text("the run starts at a later task (--from)"));
+        }
+        self.tasks_from(from)
+    }
+
+    /// The `run` record: a run, or a resume (D76).
+    fn start_record(&mut self, resume: bool) -> Result<()> {
         let policy = &self.config.policy;
         let auto = policy.auto().iter().map(|c| class_name(*c)).collect();
         let record = Record::Run {
@@ -154,23 +172,14 @@ impl<'r> Runner<'r> {
                 .config
                 .to
                 .map(|i| self.plan.tasks[i].id.raw.to_string()),
-            resume: false,
+            resume,
             planrun: env!("CARGO_PKG_VERSION").to_owned(),
         };
-        self.append(record)?;
-        let from = self.config.from.unwrap_or(0);
-        if from > 0 {
-            self.earlier = self.plan.tasks[..from]
-                .iter()
-                .map(|t| t.id.raw.to_string())
-                .collect();
-            self.notice = Some(self.notice_text("the run starts at a later task (--from)"));
-        }
-        Ok(())
+        self.append(record)
     }
 
-    fn tasks(&mut self) -> Result<Flow> {
-        let from = self.config.from.unwrap_or(0);
+    /// Runs the tasks from position `from` to `--to`.
+    fn tasks_from(&mut self, from: usize) -> Result<Flow> {
         let to = self
             .config
             .to

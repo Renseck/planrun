@@ -5,12 +5,13 @@
 use planrun_model::{Action, Script, ScriptIntent};
 
 use super::gate::Attempt;
+use super::resume::Past;
 use super::sessions::{NotRun, name};
 use super::task::TaskRun;
 use super::{Answer, Flow, Result, RunError, Runner, Typed, canonical, describe};
 use crate::expect::{self, Mismatch, Reason, Verdict};
 use crate::journal::{Outcome, PathBlob, Record};
-use crate::policy::{Decision, Skip};
+use crate::policy::{Decision, PolicyClass, Skip};
 use crate::shell::{RunStatus, ScriptRun};
 use crate::ui::{Choice, Position, Question};
 
@@ -45,6 +46,14 @@ impl Runner<'_> {
             .policy
             .decide(task, action, &plan.source, &self.classifier);
         let line = self.line(action);
+        match self.replayed(pos, action, script, commit)? {
+            Replayed::Again => {}
+            Replayed::Keep => {
+                return self.skipped(run, pos, action, script, decision, Outcome::Kept);
+            }
+            Replayed::Done => return Ok(Flow::Go),
+            Replayed::Stop(why) => return Ok(Flow::Stop(why)),
+        }
         if let Decision::Skip(Skip::ExpectedFailure) = decision {
             self.ui.status(&format!(
                 "  L{line:<5} {}: skipped: expected failure (D67)",
@@ -108,6 +117,83 @@ impl Runner<'_> {
         }
     }
 
+    /// What resume does with a script that ran, or was running, before the interruption
+    /// (D77): a made Commit is done; one that was running asks whatever its class; one that
+    /// ended runs again, Modify and Destructive ones asking first.
+    fn replayed(
+        &mut self,
+        pos: Position,
+        action: &Action,
+        script: &Script,
+        commit: bool,
+    ) -> Result<Replayed> {
+        let line = self.line(action);
+        if commit && self.commit_made(pos.task, (pos.step, pos.action)) {
+            self.ui.status(&format!(
+                "  L{line:<5} {}: made before the interruption",
+                describe(action)
+            ));
+            return Ok(Replayed::Done);
+        }
+        let Some(past) = self.take_past(pos.task, (pos.step, pos.action)) else {
+            return Ok(Replayed::Again);
+        };
+        let ended_ok = matches!(
+            past,
+            Past::Ended(Outcome::Passed | Outcome::Confirmed | Outcome::Accepted)
+        );
+        if commit && ended_ok {
+            self.ui.status(&format!(
+                "  L{line:<5} {}: made before the interruption",
+                describe(action)
+            ));
+            return Ok(Replayed::Done);
+        }
+        let why = match past {
+            Past::Ended(Outcome::Kept) => return Ok(Replayed::Keep),
+            Past::Ended(Outcome::SkippedPolicy) => return Ok(Replayed::Again),
+            Past::Running { .. } => {
+                "was running when planrun was interrupted; it may have done part of its work"
+            }
+            Past::Ended(_) => {
+                let body = self.plan.source.resolve(&script.body);
+                let class = self.classifier.explain(script.shell, body).class;
+                if class < PolicyClass::Modify {
+                    self.ui.status(&format!(
+                        "  L{line:<5} {}: ran before the interruption; it runs again",
+                        describe(action)
+                    ));
+                    return Ok(Replayed::Again);
+                }
+                "ran before the interruption"
+            }
+        };
+        let question = Question {
+            kind: "again",
+            at: Some(pos),
+            text: vec![
+                format!("L{line} {} {why}", describe(action)),
+                "retry runs it again (its decision applies); keep leaves its result as it is"
+                    .to_owned(),
+            ],
+            choices: vec![
+                Choice::Retry,
+                Choice::Keep,
+                Choice::View,
+                Choice::Diff,
+                Choice::Shell,
+                Choice::Quit,
+            ],
+            typed: false,
+        };
+        Ok(match self.ask(question)? {
+            Answer::Choice(Choice::Retry) => Replayed::Again,
+            Answer::Choice(Choice::Keep) => Replayed::Keep,
+            Answer::Stop(why) => Replayed::Stop(why),
+            _ => Replayed::Stop("quit".to_owned()),
+        })
+    }
+
     /// A skipped script, journaled as started and ended, and recorded for the gate.
     fn skipped(
         &mut self,
@@ -140,7 +226,11 @@ impl Runner<'_> {
             outcome,
             gate: script.intent == ScriptIntent::Gate,
             shell: script.shell,
-            generation: self.sessions.generation(script.shell),
+            generation: if outcome == Outcome::Kept {
+                u64::MAX
+            } else {
+                self.sessions.generation(script.shell)
+            },
         };
         run.gate.record((pos.step, pos.action), attempt);
         Ok(Flow::Go)
@@ -434,6 +524,14 @@ impl Runner<'_> {
             head,
         })
     }
+}
+
+/// What resume does with a script.
+enum Replayed {
+    Again,
+    Keep,
+    Done,
+    Stop(String),
 }
 
 /// What the run prompt came to.

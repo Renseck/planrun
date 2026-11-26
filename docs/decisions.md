@@ -65,15 +65,17 @@ Each dependency is justified here; add none without a line.
 | `sha1_smol` | git blob ids in-process: the `blob-chain` check from a created file's contents (planrun-parse only; planrun-exec asks `git hash-object`, D56) |
 | `similar` | showing diffs of overwrites and replacements. **Not** for applying patches (D20) |
 | `clap` | arguments |
-| `dialoguer` | line prompts (D15) |
 | `annotate-snippets` | diagnostics with source context |
 | `insta` (dev) | golden snapshots of the IR |
 | `sha2` (Phase 1) | the plan fingerprint (SHA-256) |
 
 Rejected: `rusqlite` (D18), `ratatui` for now (D15), `tracing` for now (the journal is the record),
-`similar` as a patch engine (D20), `windows-sys` and `libc` for the process tree (D64).
+`similar` as a patch engine (D20), `windows-sys` and `libc` for the process tree (D64), `dialoguer`
+(D74: it refuses a stdin that is not a terminal), `ctrlc` (D73: it brings `nix` and
+`windows-sys`).
 
-Amended by D56 (no `sha1_smol` in planrun-exec) and D64 (the hand-declared process-tree calls).
+Amended by D56 (no `sha1_smol` in planrun-exec), D64 (the hand-declared process-tree calls), D73
+(`ctrlc` rejected) and D74 (`dialoguer` dropped).
 
 ## D10 Line endings of written files
 
@@ -110,10 +112,14 @@ Amended by D68 (the classifier, a built-in allowlist) and D69 (`--auto`, Read as
 An action recorded `Running` or `Done` is re-examined: postimages present → done; preimages
 present → not done; otherwise the user decides.
 
+Amended by D77 (resume, per action kind).
+
 ## D15 Line prompts first
 
 `dialoguer` and plain output keep cargo's output in the terminal's scrollback. A ratatui TUI can
 come later behind the `Ui` trait.
+
+Amended by D74 (line prompts on std, without `dialoguer`).
 
 ## D16 Real plans stay local
 
@@ -130,6 +136,8 @@ planrun applies the patch itself. There is no `--verbatim` mode.
 One writer, sequential, a few hundred records per plan: SQLite adds a C dependency and a binary
 file nobody can read when it matters. JSONL is appendable, crash-tolerant (a torn last line is
 dropped), and readable. Inside `.git/` so `git status --porcelain` stays empty.
+
+Amended by D76 (one file per plan, the records, when they are synced).
 
 ## D19 Windows first
 
@@ -150,6 +158,8 @@ matches a format's manual markers, and edits described in prose are `Manual` (al
 
 The plan's commit script runs as written (it may gate itself on `$gate`), and planrun runs it only
 when every verification of the task passed or was skipped by policy (D12).
+
+Amended by D75 (the commit gate, a question of its own).
 
 ## D23 File actions are transactional per step
 
@@ -588,6 +598,8 @@ than `gc.pruneExpire` (two weeks by default). P5 decides whether a resume past t
 detected (the object is gone: the user decides, D14) or whether the objects are pinned (for
 example by a ref under `refs/planrun/`). Recorded now, not solved in P3.
 
+Settled by D77: detection, no pin.
+
 ## D58 A write without a mode is an error
 
 A `WriteFile` whose mode is still `FromManifest` at a path no manifest entry declares (a task
@@ -658,6 +670,8 @@ the terminal it carries over between commands); a terminating error ends the blo
 pwsh `$PSScriptRoot` and `$MyInvocation` name the block's temp file; pwsh `exit n` ends only the
 block (D61); `GIT_TERMINAL_PROMPT=0` (D62).
 
+Amended by D71 (`builtin` for the wrapper's commands, RemoteSigned).
+
 ## D61 How a block ends
 
 `RunStatus` is `Exited(code)`, `Threw` (pwsh), `SessionEnded(Option<code>)`, `TimedOut` or
@@ -685,6 +699,8 @@ block (D61); `GIT_TERMINAL_PROMPT=0` (D62).
 
   In the six local plans at most 6 of 222 pwsh fences use a silencing probe, all
   `SilentlyContinue`: accepted as noise.
+
+Amended by D71 (the shell gone while its pipes are held) and D81 (a dead session in a run).
 
 ## D62 The session environment
 
@@ -745,12 +761,16 @@ Amends D9 (no crate).
   144 bytes on 64-bit targets, and the read-back flag is tested, so a wrong layout fails a test.
   `windows-sys` would bring hundreds of generated declarations for five functions.
 
+Amended by D71 (PDEATHSIG, `waitid`) and D73 (the interrupt handlers).
+
 ## D65 No default timeout yet
 
 A block may run as long as it runs: cargo, dotnet and npm runs are long, and Rens' terminal has
 no timeout. `SessionConfig::timeout` exists; the tests use 60 seconds (5 for the timeout test,
 which checks that a grandchild dies with the tree, on both platforms). Whether the runner has a
 default is a P5 decision.
+
+Amended by D73: still no default timeout.
 
 ## D66 Matching a run against its expectation
 
@@ -847,6 +867,8 @@ per format. The tables are Rust constants in `crates/planrun-exec/src/policy/hea
 - The local plans' scripts are classified by an ignored test in planrun-cli
   (`local_classes`), whose output stays in the terminal (D16).
 
+Amended by D72 (sed; xtask and repository scripts stay Destructive).
+
 ## D69 `--auto`, and what P4 decides for P5
 
 Amends D13. `--auto` takes `read`, `build` and `modify`; `destructive` is a usage error. Without
@@ -868,3 +890,297 @@ Such fences stay `Manual(HumanCheck)` (`manual-prose#run-from`). What it would t
 `Script.workdir` with `skip_serializing_if`, so no IR snapshot changes; the run-from lead
 becoming a script lead; and the directory resolved from the session (D60 reports the working
 directory after every block) and checked against the repository root before the block runs.
+
+## D71 Sessions that cannot hang or drift
+
+Amends D60, D61 and D64.
+
+- **The shell gone, its pipes held.** `Session::collect` waits for events in slices of 100 ms.
+  Between slices it asks whether the shell itself has exited, without reaping it: on Linux
+  `waitid(P_PID, pid, WEXITED | WNOHANG | WNOWAIT)` (std's `try_wait` would reap the shell, and
+  D64 allows `kill(-pgid)` only before the reap, when the group id cannot have been reused); on
+  Windows a zero-timeout `WaitForSingleObject` on the process handle the tree keeps open. When
+  it has, the tree is killed so that a descendant holding stdout or stderr (a build server, a
+  background job) lets go, and the block ends as `SessionEnded(None)`. Other Unix systems answer
+  "not exited" and keep the P4 behaviour (D19).
+- **A block that cannot be written ends the session.** Any I/O error while `ShellSession::run`
+  writes or renames `b<n>` kills the session: the shell would wait for that file forever, and
+  the next block would be numbered past it.
+- **Every command the bash wrapper runs goes through `builtin`:** `source`, `local`, `printf`,
+  `pwd`. A plan function of any of those names changes nothing. The prologue's own `unset` and
+  `trap` run before any plan code. Not defended: a plan function named `builtin`, or one named
+  like the wrapper's `__planrun_*` functions.
+- **The shell dies with planrun on Linux.** The `pre_exec` of every session sets
+  `PR_SET_PDEATHSIG` to SIGKILL after `setsid`, then compares `getppid()` with planrun's process
+  id read before the fork and refuses to start when they differ (the parent died in between).
+  The signal follows the thread that spawned the child, so sessions are spawned from planrun's
+  main thread. It reaches the shell only, not its descendants (D73). Other Unix systems are out
+  of scope (D19). `prctl`, `getppid` and `waitid` are declared by hand in `shell/kill.rs`, with
+  SAFETY comments; `siginfo_t` is read only for its first field and its size is tested.
+- **`-ExecutionPolicy RemoteSigned`** replaces `Bypass` for the pwsh session on Windows: the
+  block files are local and run; a downloaded script a block calls keeps the Mark-of-the-Web
+  check of Rens' terminal. A `-ExecutionPolicy` argument sets the Process scope, which outranks
+  the user's CurrentUser and LocalMachine settings: a terminal set to Bypass or Unrestricted is
+  less strict than the session. A group policy (MachinePolicy, UserPolicy) still wins over both.
+
+## D72 sed is read; xtask and repository scripts stay Destructive
+
+Amends D68.
+
+- **sed** without `-i` is Read only when its script neither writes nor runs anything. The
+  script (`-e`, `--expression`, or the first operand) is read command by command with GNU's
+  syntax: addresses, `!`, `{ }`, `s` with any delimiter and its flags, `y`, the text of `a`,
+  `i`, `c` (continued lines included), labels, `r`/`R`. `w`, `W` and the `s///w` flag are
+  Modify; `e` and the `s///e` flag are Destructive; so is `-f`/`--file` (a script the
+  classifier never sees), a script with an expansion, an unknown option, and anything the
+  reader does not recognise with confidence. `-i` stays Modify.
+- **`cargo xtask …` and `pwsh -File <relative path>`** stay Destructive. `cargo test` is Build
+  because a test runner is what it is; `xtask` is a general task runner, and a repository script
+  can do anything, deploys and releases included. Under `--auto modify` either would run
+  unasked. D13 holds: a command whose effect the tables do not know is Destructive. In the six
+  local plans these two account for 49 of the Destructive reasons; the question goes to the P6
+  handover with the dogfooding data.
+
+## D73 Interrupts and timeouts
+
+Amends D64 and D65; D9 rejects `ctrlc`.
+
+- **No default timeout** (D65 holds). A hung block is ended by the user: Ctrl-C ends planrun,
+  and `resume` goes on from the journal.
+- **Windows:** no handler on the normal path. Ctrl-C ends planrun and the job objects
+  (`KILL_ON_JOB_CLOSE`) kill every session's tree.
+- **Unix:** `setsid` keeps SIGINT and SIGHUP from the sessions, and PDEATHSIG (D71) kills only
+  the shell, so a running build would keep writing after planrun died. planrun installs a
+  handler for SIGINT, SIGTERM and SIGHUP that does only async-signal-safe things: `kill(-pgid,
+  SIGKILL)` for every registered session group (a static array of atomics; a slot is cleared
+  before its leader is reaped, as D64 requires), then restores the default action and raises
+  the signal again. It is installed with `signal`, not `sigaction`: `struct sigaction` differs
+  between architectures and C libraries, and a hand-declared layout would be the riskiest
+  declaration in `kill.rs`; glibc's `signal` keeps the handler installed and restarts
+  interrupted calls.
+- **While the `[o]` shell runs** planrun ignores Ctrl-C, so it reaches the shell and not
+  planrun. Windows: a console control handler routine that returns TRUE for Ctrl-C and
+  Ctrl-Break while a flag is set. Not `SetConsoleCtrlHandler(NULL, TRUE)`: that attribute is
+  inherited by child processes, so the shell and every command started in it would ignore
+  Ctrl-C too. Unix: the same flag makes the handler ignore SIGINT.
+- **What an interrupt leaves.** It can land anywhere, inside a step's commit too. Resume
+  recognises every state it can leave (D77): a step as before, as planned, or mixed (Unknown);
+  a journal whose last line is torn (dropped, D76); a writer's temp file (removed by name,
+  D77). A SIGKILL of planrun on Unix leaves a session's descendants running: stated, not
+  solved.
+- `ctrlc` is rejected (D9): it brings `nix` and `windows-sys`, which D64 already rejected.
+
+## D74 Line prompts on std
+
+Amends D15; D9 drops `dialoguer`.
+
+- **std only.** `dialoguer` refuses a stdin that is not a terminal, and its prompts redraw lines.
+  The prompts are plain lines on stdout and a line read from stdin, so cargo's output stays in
+  the scrollback. planrun-cli implements `Ui`; planrun-exec's runner decides what is asked.
+- **Only a terminal answers.** When stdin is not a terminal (`IsTerminal`), the first question
+  stops the run with an explanation, journaled as `run-end` with the reason; there is never a
+  default answer. planrun-cli's `e2e` feature lifts this for its own tests (D82).
+- **A typed `yes`** is the line with only its trailing `\n` or `\r\n` removed, equal to `yes`
+  exactly: case-sensitive, nothing trimmed. `skip` skips a Destructive script and `quit`
+  stops; anything else does not run and asks again.
+- **The prompt per decision** (D69): `Auto` shows one line and runs; `Ask` shows the script's
+  head and offers `[enter] run [s] skip [v] view [d] diff [o] shell [q] quit`; `AskUnscoped`
+  shows op, path, PathOrigin and plan line with the same keys; `TypedYes` shows the whole
+  script and the classifier's reasons; `Wait` (a Manual) shows its text and waits for
+  `[enter]`; `Show` prints a Note; `Skip` prints why. `[v]` shows the step in full, `[d]` runs
+  `git --no-optional-locks diff HEAD` and lists untracked files, `[o]` starts an interactive
+  shell at the root that is not the plan's session (it says so). An answer the question did
+  not offer asks again. Every answer is journaled.
+- **Questions of their own**, asked whatever `--auto` says: the session notice (D81), a working
+  (D75), a step changed between prepare and commit (D78), and resume's Unknown step,
+  interrupted script and dirt a remaining file action writes over (D77). Each answer is journaled with the question's name.
+
+## D75 The commit gate
+
+Amends D22. The commit script still runs as written, and may gate itself on `$gate`.
+
+- **A question of its own**, before the Commit: when the gate is closed, the user sees every
+  reason and opens it only with a typed `yes`, whatever `--auto` says, journaled as
+  `gate-override` with the reasons. The Commit's own decision then applies unchanged: P4
+  decides, P5 prompts, and P5 never turns a decision into another one.
+- **Its inputs** are the last attempt of every script of the task (a passing retry replaces
+  the mismatch), not only Verify and Gate, the file actions the user skipped, and the
+  `Generated` checks. It is closed by an unresolved mismatch, a confirmation answered no, a user
+  skip of any script or file action, an accepted mismatch, a missing `Generated` path, and a
+  Gate that ran only in a session that has ended. A skip by policy (D67) keeps it open.
+- **A Gate from an ended session runs again** before the commit, under its decision: its
+  `$gate` is gone with the session, so its verdict no longer counts.
+- **Accept** is offered only for an `Exited` or `Threw` mismatch. For `SessionEnded`, `TimedOut`
+  and `Broken` the answers are retry (a new session, D81), shell and abort: accepting a dead
+  session would send the commit block into a session without its variables.
+- A Gate's confirmation always asks (D11); "no" counts as failed.
+
+## D76 The journal
+
+Amends D18; corrects architecture.md §6.6.
+
+- **One file per plan:** `<git-dir>/planrun/<plan file stem>.jsonl` (`rev-parse
+  --absolute-git-dir`, so a linked worktree has its own). Every `run` record stores the plan's
+  path (repository-relative, or canonical when the plan is outside the repository) and its
+  fingerprint. A journal of that stem whose records name another path is a hard stop that names
+  both: two plans never share a file, and planrun never picks another name on its own. The
+  fingerprint is not the name: a changed plan must find its journal to be told it changed.
+- **Runs are appended.** A `run` record starts a chain; each `resume` appends its own `run`
+  record (`resume: true`) to the chain. `run` refuses a plan whose last chain did not complete
+  and points to `resume`; `run --restart` gives the unfinished run up by renaming its journal to
+  `<stem>.<milliseconds>.jsonl`. Nothing deletes a journal.
+- **Records**, each with the schema version and the time: `run`, `task-start`,
+  `step-prepared` (the write-ahead record: per path the pre-image id or absent, the post-image's
+  exact and filtered ids, the modes, the directories it creates and the writer's temp name),
+  `step-written`, `step-failed`, `step-verified`, `step-restored`, `step-accepted`,
+  `action-start` (with the decision, `Auto` included, HEAD before it, and for a Commit the
+  task's paths as they are on disk), `action-end` (outcome, status, `errored`, the working
+  directory, the last 20 output lines, HEAD after it), `answer`, `gate-override`, `head-seen`,
+  `session`, `task-end`, `run-end`. No output digest: nothing reads one.
+- **Writes:** one `write_all` per record (the JSON and its `\n`), no buffer across records.
+  `step-prepared`, every `action-start` and `run-end` are followed by `sync_data`; the rest
+  reach the OS only. A killed process loses nothing the OS has; `sync_data` matters only after a
+  power cut, and those three are the records whose loss would change what resume does. The
+  plan's own file writes are not synced: after a power cut a step is neither as before nor as
+  planned, and resume asks (Unknown, D77).
+- **Reads:** a line counts only when it ends in `\n`. A last line without one is dropped even
+  when it parses, and before the first append the file is cut back to its last `\n`, so the next
+  record never joins a fragment. A bad line that is not the last one is an error, never
+  skipped. `status` reads the same way and takes no lock.
+- **An observer** sees every appended record and every path a step's commit wrote; planrun-cli
+  uses it for its fault seam (D82).
+
+## D77 Resume, and one planrun per repository
+
+Amends D14 and D57.
+
+- **What is read:** the journal's last chain. It stops, with an explanation, when the plan's
+  fingerprint differs from the chain's (both are shown), when `.git/index.lock` exists (planrun
+  never removes it), and when HEAD or the ref it points to is not what the journal last recorded
+  (HEAD is recorded after every script, Manual, `[o]` and Commit, D80). The one exception is
+  the action that was running: when HEAD moved by one commit on the recorded one, a Commit
+  whose new tree holds what it was to hold is done (D79); for any other action the user
+  decides (keep it as done, or run it again; the question offers no `[o]`, whose `head-seen`
+  would pass the check unanswered).
+- **The recorded HEAD** is set by the chain's first `run`, `task-start`, `action-end`,
+  `head-seen` and `task-end`, never by a resume's own `run` record: that one is written before
+  the checks, so a resume that stops leaves the next one the same check. Where resume accepts a
+  moved HEAD it journals that at once: an `action-end` for the running action (`passed` for a
+  Commit found made, `kept` for the user's keep), or `head-seen` for a retry. A crash after it
+  resumes from there; `head-seen` alone would leave a made Commit "running" at an equal HEAD,
+  and run it again.
+- **The interrupted task runs again from its start**, in a new session, under the journaled
+  policy and range unless the flags say otherwise. Before its first script a notice is shown
+  that must be acknowledged even with `--auto` (D81).
+- **File steps** the journal prepared are checked against the disk, never trusted from it: every
+  path as planned (bytes, mode under `core.filemode`, and for a git delete the index entry
+  gone) is Done, and the step is not written again (`step-verified`); every path as before is
+  NotDone, and the step is prepared and written again; anything else is Unknown: `[r]` restores
+  it from its pre-images and writes it again, offered only when every pre-image object is still
+  there (`cat-file --batch-check`; `git gc` may have pruned them, D57) and no git delete of the
+  step has left the index yet; `[a]` accepts it as done, which overrides the disk check and so
+  needs a typed `yes`. The writer's temp files the step named are removed by name, never found
+  by pattern.
+- **D57 is settled by detection.** Done and NotDone compare hashes and need no object; only
+  `[r]` needs the pre-images. No ref pins them. Rollback inside a run is unaffected: its objects
+  are minutes old.
+- **Scripts:** one that ended runs again under its decision; a Read or Build one is only
+  announced (without `--auto` it asks as always), a Modify or Destructive one first asks "ran
+  before the interruption: run again or keep". One journaled as running asks the same, whatever
+  its class and `--auto`, shown as "was running when interrupted". A kept script keeps its
+  result; a kept Gate still runs again before the commit (D75). A Manual acknowledged before is
+  not asked again. A Commit that was running when HEAD did not move runs again under its
+  decision.
+- **Preflight of the resumed task** leaves out the file steps found done, and every path of the
+  task may have been changed by the interrupted run (by a step or by a script): dirt in those
+  paths is a warning, and their manifest checks are left out. The remaining file actions are
+  simulated exactly. Dirt in a path that no step found done or accepted wrote, and that a
+  remaining file action writes over, may be the user's (an edit between the crash and the
+  resume): it is `resume-dirt`, listed and asked about once before the task's first action,
+  whatever `--auto` says. A path that only a script writes is not asked about; a script that
+  ran before the interruption asks on its own (above).
+- **One planrun per repository:** `<git-dir>/planrun/lock`, held with `File::try_lock` (stable
+  since Rust 1.89; the workspace sets no `rust-version`) for the whole of `run` and `resume`,
+  prompts included, for every plan of the repository. The operating system releases it when the
+  process ends, however it ends: there is no stale lock. The holder's process id goes into
+  `lock.pid` for the message only (on Windows another process cannot read a locked file).
+  `status` and `--dry-run` take no lock. Its limit: on Unix, after a SIGKILL of planrun, a
+  session's descendants can outlive the lock (D73).
+
+## D78 Step transactions in a real run
+
+Amends D53. Settles the P3 open items on the gap between prepare and commit, file modes, a git
+delete of an untracked file, and the writer's temp files.
+
+- **The order inside commit:** check the disk again, then the write-ahead record (synced,
+  D76), then the writes. Each path is stat'ed first (`hash-object --stdin-paths` fails the whole
+  batch on a missing file), then the present ones are hashed in one call and compared with the
+  pre-images; the directories the step will create must still be absent. On any difference
+  nothing is recorded or written, the paths are shown, and the user chooses `[p]` prepare again
+  or `[q]` quit. planrun never prepares again silently: something else is writing the tree, and
+  an Overwrite prepared again would clobber it. Nothing that prompts lies between the check and
+  the writes.
+- **Modes:** the post-image's mode is the virtual tree's index entry after prepare (a patch's
+  mode lines included), journaled in `step-prepared`, and set on the temp file before the
+  rename when `core.filemode` is true (unset: true on Unix). Windows has no executable bit.
+  Rollback and restore put the pre-image's mode back; Done compares the mode too.
+- **Ids for resume:** `step-prepared` holds each post-image's exact-bytes id (`--no-filters`,
+  not stored) beside its filtered blob id, so Done and NotDone compare like with like.
+- **Temp names** are chosen at prepare and journaled per path; resume removes exactly those
+  (D77).
+- **A git delete of an untracked file** (`Delete` with `via_git`) is `delete-untracked`, an
+  error of a real run's preflight: the plan's own `git rm` would refuse it. The dry run keeps
+  simulating it (P3's stated decision 16).
+
+## D79 When a commit counts as made
+
+A Commit is made only when HEAD moved by exactly one commit on the HEAD before it and that
+commit's tree holds the task's paths as they were on disk when the Commit started: its file
+actions, `Generated` paths and manifest file entries, journaled in the Commit's `action-start`
+as git's blob ids (absent paths absent). This is not the journaled post-images of the task's
+steps: a script between a step and the commit may change a written file (`cargo fmt`, D55),
+and a `Generated` path has no post-image at all. A commit script that exits 0 without making
+that commit (a gated script with `$gate` unset) is a mismatch, not done; resume applies the
+same test to a Commit that was running (D77).
+
+## D80 The repository around a commit
+
+- **HEAD and the ref it points to** are recorded after every script, every Manual, every `[o]`
+  and every Commit, not only at a task's end: any of them can move HEAD (a commit by hand, D33,
+  or a Modify script with `git commit`).
+- **Before every Commit**, one `status` over the tree: dirt outside the task's paths (its file
+  actions, manifest entries, patterns included, and `Generated` paths) is listed and asked about,
+  whatever `--auto` says. A commit script that stages everything would take it.
+- **After the Commit**, `git diff-tree -r --name-only` between the HEAD before and after: a
+  path outside the task's paths is reported loudly.
+- **After a Manual** that moved HEAD (a commit by hand), the task's paths that still have
+  changes are reported.
+
+## D81 Sessions within a run
+
+Amends D61.
+
+- **A dead session** (`SessionEnded`, `TimedOut`, `Broken`) is a mismatch whose answers are
+  retry, shell and abort (D75). Retry starts a new session; nothing restarts one silently.
+- **The session notice:** before the first block of a new session that is not the run's first
+  (a restart), of a resume, and of a run with `--from`, planrun says that the session is new and
+  that variables, functions and the working directory of earlier blocks are gone, and lists the
+  earlier tasks whose scripts ran in another session. It must be acknowledged even with
+  `--auto`.
+- **A working directory outside the repository** (compared canonically; a pwsh provider path
+  that is no file-system path counts as outside) asks before each next block of that session,
+  whatever `--auto` says: D68 classes a relative redirection as Modify on the assumption that
+  the directory is inside the repository. The block's decision is unchanged.
+
+## D82 The end-to-end tests drive the binary
+
+planrun-cli has a test-only feature, `e2e`. Its end-to-end test target (`tests/run.rs`) has
+`required-features = ["e2e"]`, and every plan's gate runs `cargo clippy -p planrun-cli
+--all-targets --features e2e -- -D warnings` and `cargo test -p planrun-cli --features e2e
+--test run` (with `PLANRUN_REQUIRE_SHELLS=1`). No release build compiles it. Under the feature
+only, prompts read answers from a stdin that is not a terminal, and `PLANRUN_E2E_ABORT=<seam>@<task>`
+ends the process right after a seam: `step-prepared` (no write yet), `write<k>` (after a step's
+k-th write), `commit-start` (after a Commit's `action-start`). It ends with `exit(134)`, not
+`abort()`: no destructor runs, as in a kill, and on Windows no Windows Error Reporting is raised
+for the test machine to answer. A kill of `git commit` itself (HEAD moved, `action-end` missing)
+is tested in planrun-exec, where the observer can make the commit before it crashes.

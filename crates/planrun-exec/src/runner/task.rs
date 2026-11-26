@@ -4,6 +4,7 @@
 use planrun_model::{Action, ActionKind, RepoPath, Task};
 
 use super::gate::Gate;
+use super::resume::Past;
 use super::{Answer, Flow, Result, RunError, Runner, Typed, describe, is_file_action, task_paths};
 use crate::finding::{Finding, Severity};
 use crate::journal::{Outcome, PathBlob, Record};
@@ -28,8 +29,15 @@ impl Runner<'_> {
         let task = &plan.tasks[index];
         self.ui
             .status(&format!("{}  {}", task.id, plan.text(&task.title)));
-        let found = preflight::preflight(self.ws, plan, task)?;
+        let resumed = match self.replay_steps(index)? {
+            Ok(resumed) => resumed,
+            Err(why) => return Ok(Flow::Stop(why)),
+        };
+        let found = preflight::preflight_resumed(self.ws, plan, task, &resumed)?;
         if let Flow::Stop(why) = self.findings(task, &found) {
+            return Ok(Flow::Stop(why));
+        }
+        if let Flow::Stop(why) = self.resume_dirt(&found)? {
             return Ok(Flow::Stop(why));
         }
         let head = self.head()?;
@@ -98,6 +106,39 @@ impl Runner<'_> {
         Flow::Go
     }
 
+    /// Resume's dirt (D77): paths with changes that no verified step of the interrupted run
+    /// made and that a remaining file action writes over. They may be the user's, so they are
+    /// asked about once, whatever `--auto` says.
+    fn resume_dirt(&mut self, found: &[Finding]) -> Result<Flow> {
+        let paths: Vec<String> = found
+            .iter()
+            .filter(|f| f.code == "resume-dirt")
+            .filter_map(|f| f.path.as_ref())
+            .map(|p| format!("  {p}"))
+            .collect();
+        if paths.is_empty() {
+            return Ok(Flow::Go);
+        }
+        let mut text = vec![format!(
+            "{} path(s) of the task have changes that the interrupted run did not verify as its              own, and a remaining file action writes over them:",
+            paths.len()
+        )];
+        text.extend(paths);
+        text.push("continue writes over them; quit leaves them as they are".to_owned());
+        let question = Question {
+            kind: "resume-dirt",
+            at: None,
+            text,
+            choices: vec![Choice::Continue, Choice::Diff, Choice::Shell, Choice::Quit],
+            typed: false,
+        };
+        Ok(match self.ask(question)? {
+            Answer::Choice(Choice::Continue) => Flow::Go,
+            Answer::Stop(why) => Flow::Stop(why),
+            _ => Flow::Stop("quit".to_owned()),
+        })
+    }
+
     /// One action that is not a file action.
     fn action(&mut self, run: &mut TaskRun, pos: Position, action: &Action) -> Result<Flow> {
         let task = &self.plan.tasks[pos.task];
@@ -129,6 +170,17 @@ impl Runner<'_> {
     fn files(&mut self, run: &mut TaskRun, pos: Position, group: &[&Action]) -> Result<Flow> {
         let plan = self.plan;
         let task = &plan.tasks[pos.task];
+        if self.group_done(pos.task, (pos.step, pos.action)) {
+            self.append(Record::StepVerified { at: self.at(pos) })?;
+            for action in group {
+                let line = self.line(action);
+                self.ui.status(&format!(
+                    "  L{line:<5} {}: done on disk, not written again",
+                    describe(action)
+                ));
+            }
+            return Ok(Flow::Go);
+        }
         let mut chosen: Vec<&Action> = Vec::new();
         for (k, action) in group.iter().enumerate() {
             let here = Position {
@@ -257,6 +309,14 @@ impl Runner<'_> {
         let ActionKind::Manual { reason, text } = &action.kind else {
             return Ok(Flow::Go);
         };
+        let past = self.take_past(pos.task, (pos.step, pos.action));
+        if past == Some(Past::Ended(Outcome::Acknowledged)) {
+            self.ui.status(&format!(
+                "  L{} manual: acknowledged before the interruption",
+                self.line(action)
+            ));
+            return Ok(Flow::Go);
+        }
         let head = self.head()?;
         self.append(Record::ActionStart {
             at: self.at(pos),

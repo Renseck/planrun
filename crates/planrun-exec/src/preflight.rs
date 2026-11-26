@@ -100,6 +100,24 @@ struct Walk<'t, 'w> {
     unrun: bool,
     /// A real run's preflight: the repository is about to be changed, not simulated (D78).
     real: bool,
+    /// Resume (D77): the file actions to leave out, as (step, action) positions.
+    skip: Vec<(usize, usize)>,
+    /// Resume: the paths the interrupted run wrote, whose manifest checks are left out.
+    own: Vec<RepoPath>,
+}
+
+/// What resume tells preflight about the interrupted task (D77): the file actions it found
+/// done on disk, the paths the interrupted run may have changed (all of the task's), and the
+/// paths of the steps found done or accepted.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Resumed {
+    /// The (step, action) positions of the file actions done on disk.
+    pub done: Vec<(usize, usize)>,
+    /// The task's paths and every path the journal prepared.
+    pub own: Vec<RepoPath>,
+    /// The paths of the steps found done on disk or accepted: their dirt is the interrupted
+    /// run's own writes, verified.
+    pub verified: Vec<RepoPath>,
 }
 
 /// The dry run of `plan` (D55): parse and checks are done; this preflights every task against
@@ -113,6 +131,8 @@ pub fn dry_run(ws: &Workspace, plan: &Plan) -> Result<DryRun, WorkspaceError> {
         handlers: HandlerSet::files(),
         unrun: false,
         real: false,
+        skip: Vec::new(),
+        own: Vec::new(),
     };
     let tasks = plan
         .tasks
@@ -139,13 +159,49 @@ pub fn dry_run(ws: &Workspace, plan: &Plan) -> Result<DryRun, WorkspaceError> {
 /// dirt in the task's paths, the manifest checks, and the file actions up to the first script
 /// or Manual. Every error finding stops the task.
 pub fn preflight(ws: &Workspace, plan: &Plan, task: &Task) -> Result<Vec<Finding>, WorkspaceError> {
+    preflight_resumed(ws, plan, task, &Resumed::default())
+}
+
+/// The preflight of a task that resume runs again (D77): the file actions done on disk are
+/// left out, the manifest checks of the paths the interrupted run may have written too, and
+/// dirt in those paths is a warning. Dirt that a remaining file action would write over, in a
+/// path no verified step wrote, is `resume-dirt`: it may be the user's, and the runner asks.
+pub fn preflight_resumed(
+    ws: &Workspace,
+    plan: &Plan,
+    task: &Task,
+    resumed: &Resumed,
+) -> Result<Vec<Finding>, WorkspaceError> {
     let mut found = dirt(ws, std::iter::once(task))?;
+    let remaining = remaining_writes(task, &resumed.done);
+    for f in &mut found {
+        let Some(path) = f.path.as_ref() else {
+            continue;
+        };
+        if f.code != "path-dirty" || !resumed.own.contains(path) {
+            continue;
+        }
+        f.severity = Severity::Warning;
+        if resumed.verified.contains(path) {
+            f.message = format!("{} (the interrupted run wrote it; verified)", f.message);
+        } else if remaining.contains(path) {
+            f.code = "resume-dirt";
+            f.message = format!(
+                "{} (not a verified write of the interrupted run; a remaining file action                  writes it)",
+                f.message
+            );
+        } else {
+            f.message = format!("{} (the interrupted run may have written it)", f.message);
+        }
+    }
     let mut tree = VirtualTree::new(ws)?;
     let mut walk = Walk {
         tree: &mut tree,
         handlers: HandlerSet::files(),
         unrun: false,
         real: true,
+        skip: resumed.done.clone(),
+        own: resumed.own.clone(),
     };
     let report = walk.task(plan, 0, task, true);
     found.extend(report.manifest);
@@ -166,7 +222,10 @@ impl Walk<'_, '_> {
             .collect();
         let mut actions = Vec::new();
         for (step, s) in task.steps.iter().enumerate() {
-            for action in &s.actions {
+            for (at, action) in s.actions.iter().enumerate() {
+                if self.skip.contains(&(step, at)) {
+                    continue;
+                }
                 if stop_at_unrun && self.unrun {
                     return TaskReport {
                         task: index,
@@ -195,7 +254,7 @@ impl Walk<'_, '_> {
         let ManifestPath::File(path) = &entry.path else {
             return None;
         };
-        if entry.origin == PathOrigin::Bare {
+        if entry.origin == PathOrigin::Bare || self.own.contains(path) {
             return None;
         }
         let must_exist = match entry.change {
@@ -381,6 +440,25 @@ fn touched(task: &Task) -> impl Iterator<Item = &RepoPath> {
             kind => file_path(kind),
         });
     actions.chain(task.manifest.entries.iter().filter_map(|e| e.path.file()))
+}
+
+/// The paths the task's file actions write, leaving out those at the `done` positions.
+fn remaining_writes(task: &Task, done: &[(usize, usize)]) -> Vec<RepoPath> {
+    let mut paths: Vec<RepoPath> = Vec::new();
+    for (step, s) in task.steps.iter().enumerate() {
+        for (at, action) in s.actions.iter().enumerate() {
+            if done.contains(&(step, at)) {
+                continue;
+            }
+            let Some(path) = file_path(&action.kind) else {
+                continue;
+            };
+            if !paths.contains(path) {
+                paths.push(path.clone());
+            }
+        }
+    }
+    paths
 }
 
 /// Real dirt (D55), from one `git status`: a touched path with uncommitted changes is
