@@ -61,7 +61,7 @@ test result: ok. N passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 Gate:
 
 ```powershell
-cargo fmt --check; if ($LASTEXITCODE -eq 0) { cargo clippy --all-targets -- -D warnings }; if ($LASTEXITCODE -eq 0) { cargo test }; $gate = $LASTEXITCODE; "gate exit code: $gate"
+$env:PLANRUN_REQUIRE_SHELLS = '1'; cargo fmt --check; if ($LASTEXITCODE -eq 0) { cargo clippy --all-targets -- -D warnings }; if ($LASTEXITCODE -eq 0) { cargo clippy -p planrun-cli --all-targets --features e2e -- -D warnings }; if ($LASTEXITCODE -eq 0) { cargo test }; if ($LASTEXITCODE -eq 0) { cargo test -p planrun-cli --features e2e --test run }; $gate = $LASTEXITCODE; "gate exit code: $gate"
 ```
 
 Expected (exit code 0; summary lines):
@@ -95,3 +95,4 @@ Expected: the commit, then no output from `git status --porcelain`.
   the plan.
 - Prose that is an instruction to the human contains "by hand" or "manual step", so planrun shows
   it as Manual.
+  

@@ -22,9 +22,10 @@ crates/planrun-parse   Markdown → IR: source, document, format, spec, registry
                        patch, check, diagnostic
 crates/planrun-exec    IR → effects: git, workspace, eol, tree, handler, transaction,
                        preflight, finding (P3); shell/ (sessions, kill.rs: the only unsafe
-                       code), expect, policy/ (classifier, decisions) (P4); journal, runner
-                       (P5)
-crates/planrun-cli     the `planrun` binary: check, show (view, render), run --dry-run
+                       code), expect, policy/ (classifier, decisions) (P4); journal, lock,
+                       done, ui, runner/ (tasks, scripts, sessions, gate, resume) (P5)
+crates/planrun-cli     the `planrun` binary: check, show (view, render), run (dry_run, run,
+                       ui: line prompts), resume, status; the `e2e` test feature (e2e.rs)
 formats/*.toml         built-in plan formats (embedded): assay, superpowers, before-after; the
                        file name is the format id
 docs/                  architecture, plan-grammar, extending, decisions, roadmap, plans/,
@@ -64,10 +65,13 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 cargo test -- --ignored local_corpus      # parses the private real plans, when present
 cargo test -p planrun-cli --test local_classes -- --ignored --nocapture   # their script classes
+cargo clippy -p planrun-cli --all-targets --features e2e -- -D warnings
+cargo test -p planrun-cli --features e2e --test run   # the end-to-end runs (D82)
 cargo run -p planrun-cli -- check tests/corpus/synthetic/assay-style.md
 ```
 
-The gate for every task is all three of fmt, clippy (warnings are errors) and test.
+The gate for every task is fmt, clippy (warnings are errors) and test, each also with the `e2e`
+feature of planrun-cli (D82).
 
 ## Code conventions
 
@@ -96,6 +100,9 @@ The gate for every task is all three of fmt, clippy (warnings are errors) and te
   planrun-cli.
 - Shell tests (`crates/planrun-exec/tests/shell.rs`) skip a missing shell with a message;
   `PLANRUN_REQUIRE_SHELLS=1` makes it a failure, and every plan's verification sets it (D63).
+- Runner tests (`crates/planrun-exec/tests/runner.rs`, `resume.rs`) drive the runner with a
+  scripted `Ui` and crash it from the journal's observer; the binary's end-to-end runs are
+  `crates/planrun-cli/tests/run.rs`, behind the `e2e` feature (D82).
 - Table tests (classifier, matcher) keep their rows on one line each under `#[rustfmt::skip]`.
 
 ## Docs stay in step
@@ -122,3 +129,4 @@ The gate for every task is all three of fmt, clippy (warnings are errors) and te
 - When a phase is done, write a handover for the next session:
   `docs/handovers/YYYY-MM-DD-p<N>-to-p<N+1>.md` (state, what the phase built, open items, notes
   for the next phase, how plans are verified). A new session starts from the latest one.
+  

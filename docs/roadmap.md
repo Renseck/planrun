@@ -109,13 +109,22 @@ classifier (D68) and the policy decisions (D67, D69); the classes in the dry run
 (a script working directory from a run lead) is deferred (D70). The P4 review items P5 must fix
 first are in `docs/handovers/2026-11-25-p4-to-p5.md`.
 
-## P5 — Runner, journal, resume, interactive CLI
+## P5 — Runner, journal, resume, interactive CLI (done)
 
 The runner state machine; the commit gate (D22); the JSONL journal (D18); resume with `DoneState`
 (D14); `run`, `resume`, `status`; the line-prompt UI (D15) with view/diff/shell/skip/quit. End to
 end: `planrun run tests/corpus/synthetic/assay-style.md --auto read,build,modify` on a fixture copy
 produces the same two commits (same trees) as the fixture's history; killing the process mid-task
 and resuming completes it without repeating a write.
+
+The decisions are D71–D82. Plan: `docs/plans/2026-11-25-p5-runner-journal-resume.md`. First the
+P4 review items for sessions (D71) and sed (D72); then the transaction hardening and the step's
+state on disk (D78), the journal and the lock (D76, D77), the runner with the commit gate and the
+checks around a commit (D73–D75, D79–D81), resume (D77), and the CLI with line prompts (D74).
+The fixture has no history of its own: the acceptance test builds the two expected trees, and
+drives the binary through the test-only `e2e` feature (D82), uninterrupted, killed at a
+question, and ended at three seams. The synthetic plan writes `docs/modules.txt` with LF only,
+and the greeter ignores `Cargo.lock`.
 
 ## P6 — Dogfood and polish
 

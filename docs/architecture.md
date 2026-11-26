@@ -223,21 +223,28 @@ front end. They change rarely; formats change often. Details: [extending.md](ext
 
 ### 6.1 Runner
 
-A state machine over Task → Step → Action. Per action: `Pending → Previewed → Running →
-Done | Failed | Skipped`. Per task, the lifecycle of your §6.1 proposal:
+`runner::Runner`: a state machine over Task → Step → Action, talking to a `Ui` (§7). Per action:
+`Pending → Running → Done | Failed | Skipped`; per task:
 
-1. Show the task, its manifest and its actions (with `Note`/`Manual` in place).
+1. Show the task.
 2. **Preflight** (`preflight::preflight`): no touched path has uncommitted changes
    (`path-dirty`; other dirt is a warning, D55); manifest Create entries absent, Modify, Rewrite
    and Delete entries present (patterns and Bare entries are skipped: they name no single known
    file, D41, D45); then the task's file actions up to its first script or Manual, simulated on
    a fresh virtual tree: every preimage blob, every patch, every `before`. A Bare-targeted
-   Overwrite or Delete is `path-ambiguous`; an unscoped file action is confirmed (D50).
-3. Execute steps in order; each step's file actions as one transaction (§6.2), scripts in sessions
-   (§6.3), stopping per policy (§6.5).
-4. Commit only through the plan's own commit script, and only when the task's gate/verify passed
-   (D22).
-5. Journal every transition (§6.6).
+   Overwrite or Delete is `path-ambiguous`; a git delete of an untracked file is
+   `delete-untracked` (D78). Any error stops the run. `task-start` is journaled.
+3. The steps in order. Consecutive file actions are one transaction (§6.2): an unscoped one asks
+   first (D50), `step-prepared` is the write-ahead record, `step-written` follows. Scripts run
+   one at a time in their shell's session (§6.3) per their decision (§6.5): `action-start`, the
+   block streamed to the `Ui`, the matcher's verdict (§6.4) and what it asks, `action-end`. A
+   Manual waits; a Note is shown.
+4. Before the Commit: the task's `Generated` paths are checked once each, a Gate from a session
+   that has ended runs again, dirt outside the task's paths is asked about (D80), and the commit
+   gate (D75) must be open or opened with a typed `yes`. The plan's own commit script then runs
+   as written; it is made only when HEAD moved by one commit holding the task's paths (D79).
+   After it, paths the commit changed outside the task are reported.
+5. `task-end`. Every way a run ends is journaled as `run-end`, except a kill (§6.6).
 
 ### 6.2 Workspace and files
 
@@ -258,7 +265,8 @@ Done | Failed | Skipped`. Per task, the lifecycle of your §6.1 proposal:
 - **Pre-images** of every file about to change are stored in git's object database
   (`git hash-object -w --no-filters`: the exact bytes) and their ids journaled: rollback is
   `git cat-file`, untracked files included, no extra storage. They are unreachable objects;
-  pruning is a P5 decision (D57).
+  `git gc` may prune them after two weeks; only resume's `[r]` needs them, and it checks first
+  (D57, D77).
 - **One writer** (D52): the path is resolved first (no link, junction, short name or case
   mismatch in its existing part); directories are created one segment at a time, each checked;
   the contents go to `.planrun-<random>.tmp` in the target's directory (`create_new`); the parent
@@ -306,9 +314,15 @@ implements `ShellSession`; P5 keeps one per shell.
   `Broken` (a sentinel that does not fit). pwsh also reports `errored`: `$Error[0]` changed.
 - **Environment** (D62): planrun's own, without `BASH_ENV`, `ENV` and the git wrapper's
   variables, with `GIT_TERMINAL_PROMPT=0`.
-- **The process tree** (D64): a job object on Windows, `setsid` on Unix; a timeout (none by
-  default, D65) or a drop kills every descendant. `shell/kill.rs` holds planrun's only
-  `unsafe` code.
+- **The process tree** (D64, D71, D73): a job object on Windows, `setsid` and `PR_SET_PDEATHSIG`
+  on Linux; a timeout (none by default, D65), a drop, or a shell that exited while a descendant
+  holds its pipes kills every descendant. On Unix SIGINT, SIGTERM and SIGHUP kill the sessions'
+  groups before planrun ends; while the `[o]` shell runs, Ctrl-C goes to it. `shell/kill.rs`
+  holds planrun's only `unsafe` code.
+- **In a run** (D81): one session per shell, started at the first block; a dead one is a
+  mismatch whose retry starts a new one, announced by a notice that must be acknowledged (also
+  on resume and with `--from`); a working directory outside the repository asks before the
+  next block.
 - **Stated differences from the terminal:** `$LASTEXITCODE` is reset to 0 before each block; a
   terminating error ends the block; `$PSScriptRoot` and `$MyInvocation` name the block's temp
   file; pwsh `exit n` ends only the block, bash `exit n` the session; `GIT_TERMINAL_PROMPT=0`.
@@ -335,8 +349,8 @@ Windows with PowerShell 7 is the primary platform (D19); Linux with pwsh and bas
 - **Expected failures** (`Expected: build error`, "run the test to verify it fails"): a Verify
   script expecting failure is **skipped by default** (D12, D67), decided by the policy before
   the run; `--run-expected-failures` runs it. Gates, previews and applies always run.
-- A mismatch stops and offers (P5): accept (journaled as accepted-with-mismatch), retry, open a
-  shell, abort.
+- A mismatch stops and offers accept (journaled as `accepted`; it closes the commit gate), retry,
+  open a shell, abort; a dead session offers only retry, shell and abort (D75).
 
 ### 6.5 Policy
 
@@ -358,18 +372,36 @@ Defaults (D13, D69): file actions within the task's scope run automatically; eve
 Read ones included; Destructive scripts show the script and ask for a typed `yes`; `Manual`
 always waits; a file action outside the scope (D50) and an Apply script always ask. `--auto
 read,build,modify` (any of them) lets those classes run without asking; `destructive` is
-refused. `Policy::decide` computes the decision in P4; the runner prompts in P5.
+refused. `Policy::decide` computes the decision; the runner prompts for it (D74) and never turns one
+decision into another.
 
 ### 6.6 Journal and resume
 
-JSONL at `.git/planrun/<plan-fingerprint>.jsonl` (D18), one record per transition: run start
-(plan fingerprint, HEAD, repo root), action start (`Running`), action end (outcome, output digest,
-pre-image ids, post-state file hashes), task end, user decisions.
+JSONL at `<git-dir>/planrun/<plan file stem>.jsonl` (D18, D76), one record per transition, each
+with the schema version and the time: `run` (the plan's path and fingerprint, HEAD, the policy
+and range), `task-start`, `step-prepared` (the write-ahead record of a step: per path the
+pre-image id, the post-image's ids and mode, the directories it creates, the writer's temp
+name), `step-written`, `action-start` (with the decision and HEAD; for a Commit the task's paths
+as on disk), `action-end` (outcome, status, the last output lines, HEAD), the user's answers,
+`gate-override`, `task-end`, `run-end`. One write per record; `step-prepared`, `action-start`
+and `run-end` are synced. A torn last line is dropped, and cut off before the next append; any
+other bad line is an error. One planrun runs per repository at a time: `<git-dir>/planrun/lock`
+(D77).
 
-Resume never trusts the journal alone (D14). For each action recorded `Running` or `Done`, the
-handler reports `DoneState` from the disk: postimages present → `Done`; preimages present →
-`NotDone`; neither or mixed → `Unknown`, and the user decides. A changed HEAD or a plan whose
-fingerprint differs from the journal's stops the resume with an explanation.
+Resume never trusts the journal alone (D14, D77). It reads the last chain (a `run` and the
+`resume`s after it) and stops when the plan's fingerprint differs, when `.git/index.lock`
+exists, or when HEAD is not what the journal last recorded, except for the one action that was
+running (a Commit found made is done, D79; for anything else the user decides). The interrupted
+task runs again from its start in a new session. Each prepared step is compared with the disk
+(`done::step_state`): every path as planned → `Done`, not written again; every path as before →
+`NotDone`, written again; anything else → `Unknown`: restore it from its pre-images (when `git
+gc` has left them, D57) or accept it with a typed `yes`. Scripts run again under their
+decisions; a Modify or Destructive one that ran, and any that was running, asks first. Dirt in
+a path that no verified step wrote and that a remaining file action writes over may be the
+user's: it is asked about once (`resume-dirt`). A resume's own `run` record never sets the
+recorded HEAD; where resume accepts a moved HEAD it journals the running action's end (or
+`head-seen` for a retry) at once, so a stopped or crashed resume leaves the next one the same
+check.
 
 ## 7. CLI
 
@@ -377,10 +409,17 @@ fingerprint differs from the journal's stops the resume with an explanation.
 planrun check  <plan> [--format <id>]          parse + checks + coverage; writes nothing
 planrun show   <plan> [P1-T2[/1]]              the IR, a task, or a step
 planrun run    <plan> [--from P1-T2] [--to P1-T3] [--auto read,build] [--dry-run]
-               [--run-expected-failures]
-planrun resume <plan>
-planrun status <plan>
+               [--run-expected-failures] [--restart]
+planrun resume <plan> [--auto …] [--from …] [--to …] [--run-expected-failures]
+planrun status <plan>                          what the journal says; changes nothing
 ```
+
+`run` executes the plan in the repository of the current directory, under the lock (D77). It
+refuses a plan whose journal holds an unfinished run; `--restart` keeps that journal under
+another name and starts again. `resume` goes on with the unfinished run, with its policy and
+range unless the flags say otherwise. Exit 0 when the run completed, 1 when it stopped (a
+failure, a check, a question answered with quit, or no terminal to answer), 2 for usage, git,
+the lock or the journal.
 
 `--dry-run` (D55): parse, check, check real dirt once for the paths of every task, then preflight
 every task against **one virtual tree** carried across the tasks (D52), so a task sees what the
@@ -391,7 +430,8 @@ its path is unknown from then on; every ok after that point assumes those steps 
 Each script and commit shows its class and what the default policy would do with it ("would ask
 (Build)", "typed yes (Destructive)", "skipped: expected failure", D69). Exit 0 when nothing fails, 1 when something does, 2 when git or the repository cannot be used.
 
-The interactive screen (line prompts first, D15):
+The prompts are lines on stdout, answered by a line on stdin (D15, D74); only a terminal
+answers: a stdin that is not one stops the run at its first question. A sketch of the screen:
 
 ```
 planrun · greeter · plan assay-style.md (assay) · repo C:\src\greeter
