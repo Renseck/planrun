@@ -16,6 +16,38 @@ use std::path::PathBuf;
 
 pub use session::{Session, SessionConfig, locate};
 
+/// Installs planrun's interrupt handling once, from the main thread, before the first session
+/// starts (D73). On Unix SIGINT, SIGTERM and SIGHUP kill every session's process group and then
+/// end planrun as the signal would; on Windows Ctrl-C ends planrun and the job objects kill the
+/// sessions.
+pub fn install_interrupt_handler() {
+    kill::install_interrupts();
+}
+
+/// While the guard lives, Ctrl-C does not end planrun: the `[o]` shell runs in the foreground
+/// and gets it instead (D73).
+pub struct InterruptsIgnored(());
+
+impl InterruptsIgnored {
+    /// Starts ignoring Ctrl-C until the guard is dropped.
+    pub fn new() -> InterruptsIgnored {
+        kill::ignore_interrupts(true);
+        InterruptsIgnored(())
+    }
+}
+
+impl Default for InterruptsIgnored {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for InterruptsIgnored {
+    fn drop(&mut self) {
+        kill::ignore_interrupts(false);
+    }
+}
+
 /// Which stream a line came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stream {

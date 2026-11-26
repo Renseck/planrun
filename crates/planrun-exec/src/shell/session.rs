@@ -80,7 +80,12 @@ pub struct Session {
     block: u64,
     timeout: Option<Duration>,
     alive: bool,
+    /// The shell itself has exited and its tree was killed; the pipes close soon (D71).
+    gone: bool,
 }
+
+/// How often `collect` checks whether the shell itself is still there (D71).
+const SLICE: Duration = Duration::from_millis(100);
 
 enum Event {
     Line {
@@ -149,6 +154,7 @@ impl Session {
             block: 0,
             timeout: config.timeout,
             alive: true,
+            gone: false,
         };
         session.handshake(prologue)?;
         Ok(session)
@@ -252,15 +258,26 @@ impl Session {
         Ok(c)
     }
 
-    fn next(&self, deadline: Option<Instant>) -> Result<Event, RecvTimeoutError> {
-        let Some(deadline) = deadline else {
-            return self
-                .events
-                .recv()
-                .map_err(|_| RecvTimeoutError::Disconnected);
-        };
-        let left = deadline.saturating_duration_since(Instant::now());
-        self.events.recv_timeout(left)
+    /// The next event, in slices: when the shell itself has exited without its sentinel while
+    /// a descendant still holds its pipes, the tree is killed so that the pipes close, and the
+    /// block ends as `SessionEnded(None)` (D71).
+    fn next(&mut self, deadline: Option<Instant>) -> Result<Event, RecvTimeoutError> {
+        loop {
+            let wait = deadline.map_or(SLICE, |d| {
+                d.saturating_duration_since(Instant::now()).min(SLICE)
+            });
+            match self.events.recv_timeout(wait) {
+                Err(RecvTimeoutError::Timeout) => {}
+                other => return other,
+            }
+            if deadline.is_some_and(|d| Instant::now() >= d) {
+                return Err(RecvTimeoutError::Timeout);
+            }
+            if !self.gone && self.tree.exited().unwrap_or(false) {
+                self.gone = true;
+                let _ = self.tree.kill();
+            }
+        }
     }
 
     /// Parses what follows the marker: `<n>__`, then on stdout ` <kind> <status> <errored>
@@ -358,6 +375,23 @@ impl ShellSession for Session {
             )));
         }
         self.block += 1;
+        if let Err(e) = self.stage(script) {
+            self.end(Vec::new(), RunStatus::SessionEnded(None));
+            let block = self.block;
+            return Err(io::Error::new(
+                e.kind(),
+                format!("block {block} could not be written, so the session was ended: {e}"),
+            ));
+        }
+        let line = self.dialect.block_line(self.block);
+        self.send(line, on_line)
+    }
+}
+
+impl Session {
+    /// Writes the current block's file: `b<n>.tmp`, then renamed whole. An error leaves the
+    /// shell waiting for a block that never comes, so the caller ends the session (D71).
+    fn stage(&self, script: &str) -> io::Result<()> {
         let staged = self.dir.path().join(format!("b{}.tmp", self.block));
         let mut file = OpenOptions::new()
             .write(true)
@@ -366,9 +400,7 @@ impl ShellSession for Session {
         file.write_all(script.as_bytes())?;
         drop(file);
         let name = format!("b{}.{}", self.block, self.dialect.extension());
-        std::fs::rename(&staged, self.dir.path().join(name))?;
-        let line = self.dialect.block_line(self.block);
-        self.send(line, on_line)
+        std::fs::rename(&staged, self.dir.path().join(name))
     }
 }
 

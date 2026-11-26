@@ -992,6 +992,7 @@ Amends D15; D9 drops `dialoguer`.
   shell at the root that is not the plan's session (it says so). An answer the question did
   not offer asks again. Every answer is journaled.
 - **Questions of their own**, asked whatever `--auto` says: the session notice (D81), a working
+  directory outside the repository (D81), dirt before a commit (D80), a closed commit gate
   (D75), a step changed between prepare and commit (D78), and resume's Unknown step,
   interrupted script and dirt a remaining file action writes over (D77). Each answer is journaled with the question's name.
 

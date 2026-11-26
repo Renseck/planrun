@@ -4142,10 +4142,10 @@ Targeted: planrun-exec's unit tests:
 cargo test -p planrun-exec --lib
 ```
 
-Expected (exit code 0; summary lines; 44 on Windows, where the `#[cfg(unix)]` mode test in `done_tests.rs` is not compiled):
+Expected (exit code 0; summary lines):
 
 ```text
-test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in …s
+test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in …s
 ```
 
 Gate:
@@ -4161,7 +4161,7 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in …s
 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in …s
 test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in …s
-test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in …s
+test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in …s
 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in …s
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in …s
 test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in …s

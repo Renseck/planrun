@@ -97,7 +97,7 @@ impl Dialect for Bash {
         };
         Some(format!(
             "__planrun_dir=${DIR_VAR}; unset {DIR_VAR}; {path}\
-             __planrun_hex() {{ local LC_ALL=C __planrun_i __planrun_c; __planrun_h=; \
+             __planrun_hex() {{ builtin local LC_ALL=C __planrun_i __planrun_c; __planrun_h=; \
              for ((__planrun_i = 0; __planrun_i < ${{#1}}; __planrun_i++)); do \
              builtin printf -v __planrun_c '%02x' \"'${{1:__planrun_i:1}}\"; \
              __planrun_h+=$__planrun_c; done; }}; \
@@ -111,7 +111,7 @@ impl Dialect for Bash {
 
     fn block_line(&self, n: u64) -> Option<String> {
         Some(format!(
-            "__planrun_n={n}; source \"$__planrun_dir/b{n}.sh\" </dev/null; __planrun_s=$?; \
+            "__planrun_n={n}; builtin source \"$__planrun_dir/b{n}.sh\" </dev/null; __planrun_s=$?; \
              __planrun_end ok"
         ))
     }

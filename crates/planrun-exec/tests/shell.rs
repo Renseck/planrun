@@ -298,6 +298,57 @@ fn bash_exit_set_e_a_replaced_trap_and_exec_end_the_session() {
 }
 
 #[test]
+fn a_shell_that_exits_while_a_descendant_holds_its_pipes_ends_the_session() {
+    let f = Fixture::greeter(false);
+    let pwsh = "$null = [Diagnostics.Process]::Start((Get-Process -Id $PID).Path, '-NoProfile -Command Start-Sleep 120')\n[Environment]::Exit(0)\n";
+    let bash = "sleep 120 &\ntrap - EXIT\nexit 0\n";
+    for (shell, script) in [(Shell::Pwsh, pwsh), (Shell::Bash, bash)] {
+        let Some(mut s) = start(shell, &f, Duration::from_secs(60)) else {
+            continue;
+        };
+        let started = Instant::now();
+        let r = run(&mut s, script);
+        assert_eq!(r.status, RunStatus::SessionEnded(None), "{shell:?}");
+        assert!(started.elapsed() < Duration::from_secs(30), "{shell:?}");
+        assert!(!s.is_alive());
+    }
+}
+
+#[test]
+fn bash_plan_functions_named_like_the_wrapper_s_commands_change_nothing() {
+    let f = Fixture::greeter(false);
+    let Some(mut s) = session(Shell::Bash, &f) else {
+        return;
+    };
+    let define = "source() { echo hijacked; }\nlocal() { echo hijacked; }\nprintf() { echo hijacked; }\npwd() { echo hijacked; }\nv=kept\n";
+    assert_eq!(run(&mut s, define).status, RunStatus::Exited(0));
+    let next = run(&mut s, "echo \"$v\"\n");
+    assert_eq!(next.status, RunStatus::Exited(0));
+    assert_eq!(stdout(&next), ["kept"]);
+    assert!(next.cwd.is_some_and(|c| same_dir(&c, f.path())));
+}
+
+#[test]
+fn a_block_that_cannot_be_written_ends_the_session() {
+    let f = Fixture::greeter(false);
+    let temp = f.outside().join("runs");
+    std::fs::create_dir_all(&temp).unwrap_or_else(|e| panic!("{e}"));
+    for shell in [Shell::Pwsh, Shell::Bash] {
+        let Some(mut s) = start_in(shell, &f, Duration::from_secs(60), temp.clone()) else {
+            continue;
+        };
+        for entry in std::fs::read_dir(&temp)
+            .unwrap_or_else(|e| panic!("{e}"))
+            .flatten()
+        {
+            std::fs::remove_dir_all(entry.path()).unwrap_or_else(|e| panic!("{e}"));
+        }
+        assert!(s.run("echo x\n", &mut |_| {}).is_err(), "{shell:?}");
+        assert!(!s.is_alive(), "{shell:?}");
+    }
+}
+
+#[test]
 fn a_forged_sentinel_breaks_the_session() {
     let f = Fixture::greeter(false);
     let pwsh =

@@ -47,7 +47,7 @@ impl Dialect for Pwsh {
     fn args(&self, marker: &str) -> Vec<String> {
         let mut args = vec!["-NoProfile", "-NonInteractive", "-NoLogo"];
         if cfg!(windows) {
-            args.extend(["-ExecutionPolicy", "Bypass"]);
+            args.extend(["-ExecutionPolicy", "RemoteSigned"]);
         }
         args.push("-Command");
         let mut args: Vec<String> = args.into_iter().map(str::to_owned).collect();
