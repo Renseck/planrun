@@ -24,7 +24,9 @@
 //! - [`journal`]: one JSONL file per plan under `<git-dir>/planrun/`, the write-ahead recorder
 //!   (D18, D76).
 //! - [`lock`]: one planrun per repository (D77).
-//! - `runner`: the state machine Task → Step → Action, talking to a [`Ui`].
+//! - [`runner`]: the state machine Task → Step → Action over the journal and the sessions,
+//!   talking to a [`Ui`] (D73–D81).
+//! - [`ui`]: the [`Ui`] trait and its questions (D15, D74).
 
 pub mod done;
 pub mod eol;
@@ -36,14 +38,17 @@ pub mod journal;
 pub mod lock;
 pub mod policy;
 pub mod preflight;
+pub mod runner;
 pub mod shell;
 pub mod transaction;
 pub mod tree;
+pub mod ui;
 pub mod workspace;
 
 pub use handler::{ActionHandler, HandlerSet};
 pub use policy::{CommandClassifier, PolicyClass};
 pub use shell::{ScriptRun, ShellSession};
+pub use ui::Ui;
 
 #[cfg(test)]
 #[path = "../../../tests/support/fixture.rs"]
@@ -61,10 +66,4 @@ pub enum DoneState {
     NotDone,
     /// Some are, some are not, or neither matches: the user decides.
     Unknown,
-}
-
-/// The interactive surface the runner talks to (decision D15: line prompts first).
-pub trait Ui {
-    /// Shows a line of progress.
-    fn status(&mut self, line: &str);
 }

@@ -204,6 +204,57 @@ impl Git {
         })
     }
 
+    /// The first parent of `commit`; `None` for a root commit.
+    pub fn parent(&self, commit: &str) -> Result<Option<String>, GitError> {
+        let spec = format!("{commit}^");
+        match self.run(&["rev-parse", "-q", "--verify", &spec], None, &[]) {
+            Ok(out) => Ok(Some(text(&out).trim().to_owned())),
+            Err(GitError::Failed { code: Some(1), .. }) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// The blob id of each of `paths` in `commit`'s tree, in order; `None` where the tree has
+    /// no file there.
+    pub fn tree_blobs(
+        &self,
+        commit: &str,
+        paths: &[&RepoPath],
+    ) -> Result<Vec<Option<BlobId>>, GitError> {
+        if paths.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut args = vec!["ls-tree", "-r", "-z", commit, "--"];
+        args.extend(paths.iter().map(|p| p.as_str()));
+        let out = text(&self.run(&args, None, &[])?).into_owned();
+        let mut found = vec![None; paths.len()];
+        for entry in out.split('\0').filter(|e| !e.is_empty()) {
+            let Some((meta, path)) = entry.split_once('\t') else {
+                return Err(output_error(&args, entry));
+            };
+            let id = meta.split_whitespace().nth(2).and_then(BlobId::parse);
+            if let Some(i) = paths.iter().position(|p| p.as_str() == path) {
+                found[i] = id;
+            }
+        }
+        Ok(found)
+    }
+
+    /// The paths that differ between the trees of `from` and `to`
+    /// (`diff-tree -r --name-only -z`).
+    pub fn changed_paths(&self, from: &str, to: &str) -> Result<Vec<String>, GitError> {
+        let out = self.run(
+            &["diff-tree", "-r", "--name-only", "-z", from, to],
+            None,
+            &[],
+        )?;
+        Ok(text(&out)
+            .split('\0')
+            .filter(|p| !p.is_empty())
+            .map(str::to_owned)
+            .collect())
+    }
+
     /// The absolute path of the repository's object directory.
     pub fn object_dir(&self) -> Result<PathBuf, GitError> {
         let objects = PathBuf::from(self.rev_parse(&["--git-path", "objects"])?);

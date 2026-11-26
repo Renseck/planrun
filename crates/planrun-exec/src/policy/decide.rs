@@ -74,6 +74,16 @@ impl Policy {
             .collect()
     }
 
+    /// The classes that run without asking (`--auto`).
+    pub fn auto(&self) -> &[PolicyClass] {
+        &self.auto
+    }
+
+    /// Whether Verify scripts that expect failure run (`--run-expected-failures`).
+    pub fn runs_expected_failures(&self) -> bool {
+        self.run_expected_failures
+    }
+
     /// The decision for `action` of `task`; scripts are classified by `classifier`.
     pub fn decide(
         &self,
