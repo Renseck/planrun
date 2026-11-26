@@ -316,7 +316,7 @@ fn changed_since_prepare(
         }
     }
     let paths: Vec<&RepoPath> = to_hash.iter().map(|(p, _)| *p).collect();
-    let ids = ws.git().hash_paths(&paths)?;
+    let ids = ws.git().hash_paths(&paths, false)?;
     for ((path, pre), now) in to_hash.iter().zip(ids) {
         if **pre != now {
             changed.push((*path).clone());

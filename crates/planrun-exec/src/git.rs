@@ -56,6 +56,16 @@ impl<'de> serde::Deserialize<'de> for BlobId {
     }
 }
 
+/// HEAD as git reports it: the commit (none in an empty repository) and the ref it points to
+/// (none when detached).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Head {
+    /// The commit id.
+    pub commit: Option<String>,
+    /// `refs/heads/main`.
+    pub reference: Option<String>,
+}
+
 /// Why a git call failed.
 #[derive(Debug, thiserror::Error)]
 pub enum GitError {
@@ -174,6 +184,26 @@ impl Git {
         Ok(text(&self.run(&all, None, &[])?).trim().to_owned())
     }
 
+    /// The absolute path of this work tree's git directory (`--absolute-git-dir`; a linked
+    /// worktree has its own).
+    pub fn git_dir(&self) -> Result<PathBuf, GitError> {
+        Ok(PathBuf::from(self.rev_parse(&["--absolute-git-dir"])?))
+    }
+
+    /// HEAD: `rev-parse -q --verify HEAD` (none when unborn) and `symbolic-ref -q HEAD` (none
+    /// when detached).
+    pub fn head(&self) -> Result<Head, GitError> {
+        let optional = |args: &[&str]| match self.run(args, None, &[]) {
+            Ok(out) => Ok(Some(text(&out).trim().to_owned())),
+            Err(GitError::Failed { code: Some(1), .. }) => Ok(None),
+            Err(e) => Err(e),
+        };
+        Ok(Head {
+            commit: optional(&["rev-parse", "-q", "--verify", "HEAD"])?,
+            reference: optional(&["symbolic-ref", "-q", "HEAD"])?,
+        })
+    }
+
     /// The absolute path of the repository's object directory.
     pub fn object_dir(&self) -> Result<PathBuf, GitError> {
         let objects = PathBuf::from(self.rev_parse(&["--git-path", "objects"])?);
@@ -236,22 +266,27 @@ impl Git {
         blob_id(&args, &out)
     }
 
-    /// The exact-bytes blob ids (`--no-filters`) of the files at `paths`, in one
-    /// `hash-object --stdin-paths` call, nothing stored. Every path must exist: git fails the
-    /// whole batch on a missing one, so callers stat first.
-    pub fn hash_paths(&self, paths: &[&RepoPath]) -> Result<Vec<BlobId>, GitError> {
+    /// The blob ids of the files at `paths`, in one `hash-object --stdin-paths` call, nothing
+    /// stored: git's view with `filters` (what a commit would hold), the exact bytes
+    /// (`--no-filters`) without. Every path must exist: git fails the whole batch on a missing
+    /// one, so callers stat first.
+    pub fn hash_paths(&self, paths: &[&RepoPath], filters: bool) -> Result<Vec<BlobId>, GitError> {
         if paths.is_empty() {
             return Ok(Vec::new());
         }
-        let args = ["hash-object", "--no-filters", "--stdin-paths"];
+        let args: &[&str] = if filters {
+            &["hash-object", "--stdin-paths"]
+        } else {
+            &["hash-object", "--no-filters", "--stdin-paths"]
+        };
         let input: String = paths.iter().map(|p| format!("{p}\n")).collect();
-        let out = self.run(&args, Some(input.as_bytes()), &[])?;
+        let out = self.run(args, Some(input.as_bytes()), &[])?;
         let ids: Vec<BlobId> = text(&out)
             .lines()
-            .map(|line| BlobId::parse(line).ok_or_else(|| output_error(&args, line)))
+            .map(|line| BlobId::parse(line).ok_or_else(|| output_error(args, line)))
             .collect::<Result<_, _>>()?;
         if ids.len() != paths.len() {
-            return Err(output_error(&args, &text(&out)));
+            return Err(output_error(args, &text(&out)));
         }
         Ok(ids)
     }

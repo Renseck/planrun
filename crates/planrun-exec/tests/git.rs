@@ -156,3 +156,26 @@ fn the_index_entry_of_a_tracked_file() {
         .unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(none, None::<(String, BlobId)>);
 }
+
+#[test]
+fn head_git_dir_and_hashes_of_paths() {
+    let f = Fixture::greeter(false);
+    let g = git(&f);
+    let head = g.head().unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(head.reference.as_deref(), Some("refs/heads/main"));
+    assert_eq!(head.commit.map(|c| c.len()), Some(40));
+    f.git(&["checkout", "-q", "--detach"]);
+    assert_eq!(g.head().unwrap_or_else(|e| panic!("{e}")).reference, None);
+    let dir = g.git_dir().unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(canonical(&dir), canonical(&f.path().join(".git")));
+    let ids = g
+        .hash_paths(&[&path("src/lib.rs"), &path("src/old.rs")], false)
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert!(ids[0].matches(&abbrev("aa80cf1")));
+    assert_eq!(ids.len(), 2);
+    let missing = BlobId::parse(&"2".repeat(40)).unwrap_or_else(|| panic!("hex"));
+    let found = g
+        .missing_objects(&[ids[0], missing])
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(found, [missing]);
+}

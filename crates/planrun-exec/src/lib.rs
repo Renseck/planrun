@@ -21,7 +21,9 @@
 //!   for confirmation (D11, D66).
 //! - [`policy`]: command classes and the [`CommandClassifier`]: a built-in allowlist over a
 //!   splitter per shell (D13, D68).
-//! - `journal`: JSONL under `.git/planrun/`.
+//! - [`journal`]: one JSONL file per plan under `<git-dir>/planrun/`, the write-ahead recorder
+//!   (D18, D76).
+//! - [`lock`]: one planrun per repository (D77).
 //! - `runner`: the state machine Task → Step → Action, talking to a [`Ui`].
 
 pub mod done;
@@ -30,6 +32,8 @@ pub mod expect;
 pub mod finding;
 pub mod git;
 pub mod handler;
+pub mod journal;
+pub mod lock;
 pub mod policy;
 pub mod preflight;
 pub mod shell;

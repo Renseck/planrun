@@ -68,7 +68,7 @@ pub fn step_state(ws: &Workspace, step: &StepRecord) -> Result<StepOnDisk, Works
         .filter(|(_, now)| now.present)
         .map(|(r, _)| &r.path)
         .collect();
-    let mut ids = ws.git().hash_paths(&present)?.into_iter();
+    let mut ids = ws.git().hash_paths(&present, false)?.into_iter();
     for now in nows.iter_mut().filter(|n| n.present) {
         now.raw = ids.next();
     }
