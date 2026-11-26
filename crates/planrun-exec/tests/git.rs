@@ -3,6 +3,8 @@
 #[path = "../../../tests/support/fixture.rs"]
 mod fixture;
 
+use std::collections::BTreeSet;
+
 use fixture::{Fixture, canonical};
 use planrun_exec::git::{Attributes, BlobId, Git};
 use planrun_model::{AbbrevBlobId, RepoPath};
@@ -74,7 +76,16 @@ fn a_patch_checks_against_the_working_tree_with_and_without_autocrlf() {
         git(&f)
             .apply(PATCH.as_bytes(), false, true, &[])
             .unwrap_or_else(|e| panic!("autocrlf={autocrlf}: {e}"));
-        assert_eq!(f.snapshot(), before, "--check wrote something");
+        let after = f.snapshot();
+        let changed: BTreeSet<&String> = before
+            .keys()
+            .chain(after.keys())
+            .filter(|k| before.get(*k) != after.get(*k))
+            .collect();
+        assert!(
+            changed.is_empty(),
+            "autocrlf={autocrlf}: --check wrote {changed:?}"
+        );
     }
 }
 
