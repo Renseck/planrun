@@ -136,7 +136,7 @@ tasks:
             run:
               shell: pwsh
               intent: verify
-              body: "New-Item -ItemType Directory -Force docs | Out-Null; (Get-ChildItem src -Name | Sort-Object) -join \"`n\" | Set-Content -NoNewline docs/modules.txt; Add-Content docs/modules.txt ''\nGet-Content docs/modules.txt\n"
+              body: "New-Item -ItemType Directory -Force docs | Out-Null; ((Get-ChildItem src -Name | Sort-Object) -join \"`n\") + \"`n\" | Set-Content -NoNewline docs/modules.txt\nGet-Content docs/modules.txt\n"
               expect:
                 exit: exit 0
                 lines: "greet.rs\nlib.rs\n"

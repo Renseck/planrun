@@ -3,7 +3,11 @@
 #![forbid(unsafe_code)]
 
 mod dry_run;
+#[cfg(feature = "e2e")]
+mod e2e;
 mod render;
+mod run;
+mod ui;
 mod view;
 
 use std::path::{Path, PathBuf};
@@ -44,8 +48,7 @@ enum Command {
         #[arg(long)]
         format: Option<String>,
     },
-    /// Execute a plan in the git repository of the current directory. Only `--dry-run` exists
-    /// so far (Phase 3); the run itself is Phase 5.
+    /// Execute a plan in the git repository of the current directory, task by task.
     Run {
         /// The plan file.
         plan: PathBuf,
@@ -55,10 +58,53 @@ enum Command {
         /// Force a format id.
         #[arg(long)]
         format: Option<String>,
+        /// Script classes that run without asking: read, build, modify (D69).
+        #[arg(long)]
+        auto: Option<String>,
+        /// Run the verifications that expect to fail (D67).
+        #[arg(long)]
+        run_expected_failures: bool,
+        /// The first task to run.
+        #[arg(long)]
+        from: Option<String>,
+        /// The last task to run.
+        #[arg(long)]
+        to: Option<String>,
+        /// Give up the plan's unfinished run; its journal is kept under another name.
+        #[arg(long)]
+        restart: bool,
+    },
+    /// Go on with the plan's interrupted or stopped run (D14).
+    Resume {
+        /// The plan file.
+        plan: PathBuf,
+        /// Force a format id.
+        #[arg(long)]
+        format: Option<String>,
+        /// Script classes that run without asking; the journaled run's when not given.
+        #[arg(long)]
+        auto: Option<String>,
+        /// Run the verifications that expect to fail.
+        #[arg(long)]
+        run_expected_failures: bool,
+        /// The first task (the journaled run's when not given).
+        #[arg(long)]
+        from: Option<String>,
+        /// The last task (the journaled run's when not given).
+        #[arg(long)]
+        to: Option<String>,
+    },
+    /// What the plan's journal says: the tasks done, the one interrupted. Changes nothing.
+    Status {
+        /// The plan file.
+        plan: PathBuf,
+        /// Force a format id.
+        #[arg(long)]
+        format: Option<String>,
     },
 }
 
-/// Exit codes: 0 fine, 1 the plan has errors, 2 a usage or I/O problem.
+/// Exit codes: 0 fine, 1 the plan has errors or the run stopped, 2 a usage or I/O problem.
 const OK: u8 = 0;
 const PLAN_ERRORS: u8 = 1;
 const USAGE: u8 = 2;
@@ -77,12 +123,52 @@ fn main() -> ExitCode {
             plan,
             dry_run: true,
             format,
+            ..
         } => run_dry(plan, format.as_deref(), &mut out),
-        Command::Run { .. } => {
-            out.push_str(
-                "planrun: run without --dry-run is not implemented yet (docs/roadmap.md, P5)\n",
-            );
-            USAGE
+        Command::Run {
+            plan,
+            format,
+            auto,
+            run_expected_failures,
+            from,
+            to,
+            restart,
+            ..
+        } => {
+            let opts = run::Options {
+                auto: auto.clone(),
+                run_expected_failures: *run_expected_failures,
+                from: from.clone(),
+                to: to.clone(),
+                restart: *restart,
+            };
+            with_plan(plan, format.as_deref(), &mut out, |p, out| {
+                run::run(plan, p, &opts, out)
+            })
+        }
+        Command::Resume {
+            plan,
+            format,
+            auto,
+            run_expected_failures,
+            from,
+            to,
+        } => {
+            let opts = run::Options {
+                auto: auto.clone(),
+                run_expected_failures: *run_expected_failures,
+                from: from.clone(),
+                to: to.clone(),
+                restart: false,
+            };
+            with_plan(plan, format.as_deref(), &mut out, |p, out| {
+                run::resume(plan, p, &opts, out)
+            })
+        }
+        Command::Status { plan, format } => {
+            with_plan(plan, format.as_deref(), &mut out, |p, out| {
+                run::status(plan, p, out)
+            })
         }
     };
     if code == OK {
@@ -91,6 +177,19 @@ fn main() -> ExitCode {
         eprint!("{out}");
     }
     ExitCode::from(code)
+}
+
+/// Loads the plan and hands it to `f`; a plan that does not parse runs nothing (D3).
+fn with_plan(
+    path: &Path,
+    format: Option<&str>,
+    out: &mut String,
+    f: impl FnOnce(&planrun_model::Plan, &mut String) -> u8,
+) -> u8 {
+    match load(path, format, out) {
+        Loaded::Parsed(parsed) => f(&parsed.plan, out),
+        Loaded::Failed(code) => code,
+    }
 }
 
 /// A plan read and parsed, or the exit code when it was not.

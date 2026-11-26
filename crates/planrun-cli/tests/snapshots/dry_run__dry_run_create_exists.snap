@@ -6,7 +6,7 @@ dry run of ../outside/assay-style.md (assay, 2 tasks): nothing is written, no sc
 after the first script, commit or Manual step, each result assumes it changed no files
 
 P1-T1  the greet module
-  files: 1 problem(s)
+  the task's files: 1 error(s), 0 warning(s)
   L35    write     src/greet.rs             FAILED create-exists
   L54    patch     src/lib.rs               aa80cf1 → 97bd92a: ok
   L83    script                             not run; would ask (Build)

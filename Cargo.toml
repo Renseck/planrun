@@ -18,7 +18,6 @@ planrun-exec = { path = "crates/planrun-exec" }
 # Each dependency is justified in docs/decisions.md (D9). Add none without a line there.
 annotate-snippets = "0.12"
 clap = { version = "4.6", features = ["derive"] }
-dialoguer = { version = "0.12", default-features = false }
 insta = { version = "1.49", features = ["yaml"] }
 pulldown-cmark = { version = "0.13", default-features = false }
 regex = "1.13"

@@ -161,14 +161,34 @@ fn an_overwrite_of_a_bare_entry_is_ambiguous_in_the_devready_format() {
 }
 
 #[test]
-fn run_without_dry_run_is_not_there_yet() {
+fn a_real_run_without_a_terminal_stops_at_its_first_question() {
     let f = Fixture::greeter(false);
+    let plan = f.outside().join(PLAN);
+    std::fs::write(&plan, plan_text()).unwrap_or_else(|e| panic!("{e}"));
     let output = Command::new(env!("CARGO_BIN_EXE_planrun"))
+        .args(["run", "../outside/assay-style.md"])
+        .current_dir(f.path())
+        .envs(f.env())
+        .env("CARGO_TARGET_DIR", f.outside().join("target"))
+        .output()
+        .unwrap_or_else(|e| panic!("{e}"));
+    let text = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{text}");
+    assert!(text.contains("stdin"), "{text}");
+    let journal = f.path().join(".git/planrun/assay-style.jsonl");
+    let journal = std::fs::read_to_string(&journal).unwrap_or_else(|e| panic!("{e}"));
+    assert!(
+        journal
+            .lines()
+            .last()
+            .is_some_and(|l| l.contains("\"run-end\"")),
+        "{journal}"
+    );
+    let missing = Command::new(env!("CARGO_BIN_EXE_planrun"))
         .args(["run", "../outside/none.md"])
         .current_dir(f.path())
         .envs(f.env())
         .output()
         .unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(output.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("P5"));
+    assert_eq!(missing.status.code(), Some(2));
 }

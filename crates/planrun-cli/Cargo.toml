@@ -13,11 +13,19 @@ path = "src/main.rs"
 [dependencies]
 annotate-snippets.workspace = true
 clap.workspace = true
-dialoguer.workspace = true
 planrun-exec.workspace = true
 planrun-model.workspace = true
 planrun-parse.workspace = true
 serde.workspace = true
+
+[features]
+# Test-only (D82): answers from a pipe, and the PLANRUN_E2E_ABORT fault seam. No release build
+# compiles it.
+e2e = []
+
+[[test]]
+name = "run"
+required-features = ["e2e"]
 
 [dev-dependencies]
 insta.workspace = true

@@ -37,7 +37,7 @@ P1-T2  re-export greeting, remove the legacy module  L120
     L161   generated   docs/modules.txt  (generated#notice)
   step 2 — verify  L163
     L165   note        Generate the module list:  (fallback)
-    L167   run         pwsh verify  New-Item -ItemType Directory -Force docs | Out-Null; (Get-ChildItem src …  (script#assay)
+    L167   run         pwsh verify  New-Item -ItemType Directory -Force docs | Out-Null; ((Get-ChildItem src…  (script#assay)
            expect: exit 0; 2 summary line(s)
     L179   note        Gate:  (fallback)
     L181   run         pwsh gate  cargo test; $gate = $LASTEXITCODE; "gate exit code: $gate"  (script#assay)

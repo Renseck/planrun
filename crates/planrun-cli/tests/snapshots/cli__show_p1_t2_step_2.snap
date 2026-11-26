@@ -5,9 +5,9 @@ expression: out
   step 2 — verify  L163
     L165   note        Generate the module list:  (fallback)
            | Generate the module list:
-    L167   run         pwsh verify  New-Item -ItemType Directory -Force docs | Out-Null; (Get-ChildItem src …  (script#assay)
+    L167   run         pwsh verify  New-Item -ItemType Directory -Force docs | Out-Null; ((Get-ChildItem src…  (script#assay)
            expect: exit 0; 2 summary line(s)
-           | New-Item -ItemType Directory -Force docs | Out-Null; (Get-ChildItem src -Name | Sort-Object) -join "`n" | Set-Content -NoNewline docs/modules.txt; Add-Content docs/modules.txt ''
+           | New-Item -ItemType Directory -Force docs | Out-Null; ((Get-ChildItem src -Name | Sort-Object) -join "`n") + "`n" | Set-Content -NoNewline docs/modules.txt
            | Get-Content docs/modules.txt
     L179   note        Gate:  (fallback)
            | Gate:

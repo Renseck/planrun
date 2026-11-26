@@ -165,7 +165,7 @@ Delete `src/old.rs`.
 Generate the module list:
 
 ```powershell
-New-Item -ItemType Directory -Force docs | Out-Null; (Get-ChildItem src -Name | Sort-Object) -join "`n" | Set-Content -NoNewline docs/modules.txt; Add-Content docs/modules.txt ''
+New-Item -ItemType Directory -Force docs | Out-Null; ((Get-ChildItem src -Name | Sort-Object) -join "`n") + "`n" | Set-Content -NoNewline docs/modules.txt
 Get-Content docs/modules.txt
 ```
 

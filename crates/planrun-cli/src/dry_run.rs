@@ -43,7 +43,11 @@ pub fn report(plan: &Plan, run: &DryRun, out: &mut String) {
         let t = &plan.tasks[task.task];
         out.push_str(&format!("\n{}  {}\n", t.id, plan.text(&t.title)));
         if !task.manifest.is_empty() {
-            out.push_str(&format!("  files: {} problem(s)\n", task.manifest.len()));
+            let errors = task.manifest.iter().filter(|f| f.is_error()).count();
+            let warnings = task.manifest.len() - errors;
+            out.push_str(&format!(
+                "  the task's files: {errors} error(s), {warnings} warning(s)\n"
+            ));
         }
         for a in &task.actions {
             if let Some(line) = action_line(plan, t, a, &mut counts) {
