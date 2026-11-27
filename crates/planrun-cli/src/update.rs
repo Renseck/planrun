@@ -28,6 +28,24 @@ pub fn run(check: bool, out: &mut String) -> u8 {
     }
 }
 
+/// The update check for the TUI's indicator (D83): what `planrun update --check` would say.
+pub fn state() -> planrun_tui::jobs::UpdateState {
+    use planrun_tui::jobs::UpdateState;
+    let Some(installed) = Version::parse(env!("CARGO_PKG_VERSION")) else {
+        return UpdateState::Failed;
+    };
+    let latest = Tools::find()
+        .and_then(|tools| tools.fetch(LATEST))
+        .and_then(|json| Release::from_json(&json));
+    match latest {
+        Ok(release) if release.version > installed => {
+            UpdateState::Available(release.version.to_string())
+        }
+        Ok(_) => UpdateState::Current,
+        Err(_) => UpdateState::Failed,
+    }
+}
+
 fn update(check: bool, out: &mut String) -> Result<(), UpdateError> {
     let Some(installed) = Version::parse(env!("CARGO_PKG_VERSION")) else {
         return Err(UpdateError::new(

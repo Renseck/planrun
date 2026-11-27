@@ -14,12 +14,16 @@ publish = false
 planrun-model = { path = "crates/planrun-model" }
 planrun-parse = { path = "crates/planrun-parse" }
 planrun-exec = { path = "crates/planrun-exec" }
+planrun-tui = { path = "crates/planrun-tui" }
 
 # Each dependency is justified in docs/decisions.md (D9). Add none without a line there.
 annotate-snippets = "0.12"
 clap = { version = "4.6", features = ["derive"] }
 insta = { version = "1.49", features = ["yaml"] }
 pulldown-cmark = { version = "0.13", default-features = false }
+# The TUI's terminal comes through ratatui's re-export (`ratatui::crossterm`, crossterm 0.29),
+# so the two never disagree on a version (D92).
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
 regex = "1.13"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -28,6 +32,7 @@ sha2 = "0.11"
 similar = "3.2"
 thiserror = "2.0"
 toml = "1.2"
+unicode-width = "0.2.3"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

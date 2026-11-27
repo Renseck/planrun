@@ -103,6 +103,12 @@ enum Command {
         #[arg(long)]
         format: Option<String>,
     },
+    /// The TUI over the repository of the current directory (docs/tui-design.md, D84–D94).
+    Tui {
+        /// The directory of plan files; `docs/plans` under the repository's root when not
+        /// given.
+        plans_dir: Option<PathBuf>,
+    },
     /// Install the latest GitHub release over this executable when it is newer (D83).
     Update {
         /// Report whether a newer release exists; change nothing.
@@ -179,6 +185,7 @@ fn main() -> ExitCode {
             })
         }
         Command::Update { check } => update::run(*check, &mut out),
+        Command::Tui { plans_dir } => tui(plans_dir.clone(), &mut out),
     };
     if code == OK {
         print!("{out}");
@@ -186,6 +193,30 @@ fn main() -> ExitCode {
         eprint!("{out}");
     }
     ExitCode::from(code)
+}
+
+/// `planrun tui`: exit 0 when it quits, 2 when it cannot start (no terminal, no repository).
+fn tui(plans_dir: Option<PathBuf>, out: &mut String) -> u8 {
+    let dir = match std::env::current_dir() {
+        Ok(dir) => dir,
+        Err(e) => {
+            out.push_str(&format!("planrun: the current directory: {e}\n"));
+            return USAGE;
+        }
+    };
+    let host = planrun_tui::Host {
+        dir,
+        plans: plans_dir,
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+        update: Some(Box::new(update::state)),
+    };
+    match planrun_tui::run(host) {
+        Ok(()) => OK,
+        Err(e) => {
+            out.push_str(&format!("planrun: {e}\n"));
+            USAGE
+        }
+    }
 }
 
 /// Loads the plan and hands it to `f`; a plan that does not parse runs nothing (D3).

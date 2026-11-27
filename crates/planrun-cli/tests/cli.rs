@@ -69,3 +69,10 @@ fn usage_problems_exit_with_2() {
     assert_eq!(planrun(&["show", SYNTHETIC, "P1-T1/7"]).0, 2);
     assert_eq!(planrun(&["check", SYNTHETIC, "--format", "nope"]).0, 1);
 }
+
+#[test]
+fn tui_refuses_a_stdout_that_is_not_a_terminal() {
+    let (code, out) = planrun(&["tui"]);
+    assert_eq!(code, 2, "{out}");
+    assert!(out.contains("planrun tui needs a terminal"), "{out}");
+}

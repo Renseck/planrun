@@ -16,6 +16,7 @@ clap.workspace = true
 planrun-exec.workspace = true
 planrun-model.workspace = true
 planrun-parse.workspace = true
+planrun-tui.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

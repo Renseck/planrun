@@ -1,0 +1,20 @@
+[package]
+name = "planrun-tui"
+description = "The planrun TUI: plans, the plan view, the decision dock, history and the resume preview"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+planrun-exec.workspace = true
+planrun-model.workspace = true
+planrun-parse.workspace = true
+ratatui.workspace = true
+unicode-width.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+
+[lints]
+workspace = true
