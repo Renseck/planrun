@@ -68,16 +68,19 @@ Each dependency is justified here; add none without a line.
 | `annotate-snippets` | diagnostics with source context |
 | `insta` (dev) | golden snapshots of the IR |
 | `sha2` (Phase 1) | the plan fingerprint (SHA-256) |
+| `ratatui` | the TUI's layout and widgets (planrun-tui only, D92) |
+| `crossterm` | the TUI's terminal: raw mode, the alternate screen, key events (planrun-tui only, D92) |
+| `unicode-width` | the TUI's cell widths, and the test that pins its glyphs to one cell (planrun-tui only, D89) |
 
-Rejected: `rusqlite` (D18), `ratatui` for now (D15), `tracing` for now (the journal is the record),
+Rejected: `rusqlite` (D18), `tracing` for now (the journal is the record),
 `similar` as a patch engine (D20), `windows-sys` and `libc` for the process tree (D64), `dialoguer`
 (D74: it refuses a stdin that is not a terminal), `ctrlc` (D73: it brings `nix` and
 `windows-sys`), `ureq`, `reqwest`, `self_update`, `self-replace`, `zip` and `flate2` for
 `planrun update` (D83: curl and tar do it, like git, with no TLS stack in the build).
 
 Amended by D56 (no `sha1_smol` in planrun-exec), D64 (the hand-declared process-tree calls), D73
-(`ctrlc` rejected), D74 (`dialoguer` dropped) and D83 (`serde_json` in planrun-cli; the update
-crates rejected).
+(`ctrlc` rejected), D74 (`dialoguer` dropped), D83 (`serde_json` in planrun-cli; the update
+crates rejected) and D92 (the TUI's crates, in planrun-tui only).
 
 ## D10 Line endings of written files
 
@@ -121,7 +124,8 @@ Amended by D77 (resume, per action kind).
 `dialoguer` and plain output keep cargo's output in the terminal's scrollback. A ratatui TUI can
 come later behind the `Ui` trait.
 
-Amended by D74 (line prompts on std, without `dialoguer`).
+Amended by D74 (line prompts on std, without `dialoguer`) and D84–D92 (the TUI,
+docs/tui-design.md).
 
 ## D16 Real plans stay local
 
@@ -974,6 +978,8 @@ Amends D64 and D65; D9 rejects `ctrlc`.
   solved.
 - `ctrlc` is rejected (D9): it brings `nix` and `windows-sys`, which D64 already rejected.
 
+Amended by D91 (`shell::end_now`, for a UI that reads Ctrl-C as a key).
+
 ## D74 Line prompts on std
 
 Amends D15; D9 drops `dialoguer`.
@@ -999,6 +1005,8 @@ Amends D15; D9 drops `dialoguer`.
   directory outside the repository (D81), dirt before a commit (D80), a closed commit gate
   (D75), a step changed between prepare and commit (D78), and resume's Unknown step,
   interrupted script and dirt a remaining file action writes over (D77). Each answer is journaled with the question's name.
+
+Amended by D86 (`QuestionKind`).
 
 ## D75 The commit gate
 
@@ -1054,6 +1062,8 @@ Amends D18; corrects architecture.md §6.6.
   skipped. `status` reads the same way and takes no lock.
 - **An observer** sees every appended record and every path a step's commit wrote; planrun-cli
   uses it for its fault seam (D82).
+
+Amended by D90 (a journal takes any number of observers).
 
 ## D77 Resume, and one planrun per repository
 
@@ -1111,6 +1121,8 @@ Amends D14 and D57.
   `lock.pid` for the message only (on Windows another process cannot read a locked file).
   `status` and `--dry-run` take no lock. Its limit: on Unix, after a SIGKILL of planrun, a
   session's descendants can outlive the lock (D73).
+
+Amended by D90 (`lock.live`: a live run is seen without trying the lock).
 
 ## D78 Step transactions in a real run
 
@@ -1234,3 +1246,141 @@ step needs a token.
 - **Cleanup.** Every planrun start removes `planrun.old[.exe]` and `planrun.new[.exe]` beside its
   executable, best effort and silently: one or two file removals, no process. On Windows the
   `.old` of the update just made stays until the next start, because it is still running.
+
+## D84 The TUI: one plan view, two modes
+
+Amends D15. The design is docs/tui-design.md; D84–D92 are its decisions.
+
+- **`planrun tui`** is a second `Ui` over the same crates, in a crate of its own, `planrun-tui`
+  (ratatui and crossterm), composed by planrun-cli. It shows the domain model and adds no model
+  of its own. Resume, policy and preflight stay authoritative: the TUI explains and asks; it never
+  decides and never turns one decision into another (D74). The line prompts stay (D74).
+- **One plan view, two modes.** Inspect is filled from a dry run (D55); Run from the live runner.
+  Same layout, same tree. Inspect states the policy it assumes (`--auto`,
+  `--run-expected-failures`, what `Policy::new` takes), and `R` runs with exactly that policy.
+  The dry run is advisory: the real preflight decides at run time, so a stale Inspect never
+  authorises anything.
+- **What Inspect reads.** The dry run's report is typed: `Outcome::Ok` and `Outcome::WouldAsk`
+  carry an `Effect` (create, overwrite, a patch with its blob ids, replace, delete), whose
+  `Display` is the text `planrun run --dry-run` prints, so the CLI's output does not change. The
+  class and policy column come from `DefaultClassifier::explain` and `Policy::decide`, both pure,
+  called by the TUI.
+
+## D85 Questions open in a dock; the resume preview only shows
+
+Amends D15.
+
+- A question opens in a dock over the console's region and leaves the plan tree and the change
+  inspector visible. There are no centred modals.
+- **The resume preview** is a read-only full view, built from `analyse` and
+  `runner::preview::preview`: whether a run is live (D90), the plan's fingerprint against the
+  journal's, `.git/index.lock`, resume's own verdict on HEAD (unchanged, moved by the action that
+  was running, or moved so that resume stops; computed by the function resume uses), each
+  prepared step of the interrupted task as it is on disk (Done, NotDone or Unknown, whether it
+  could be restored, the writer's temp files), the scripts that will ask "run again or keep",
+  and the paths resume will ask about as `resume-dirt` (never an Unknown step's: restoring puts
+  them back, accepting verifies them).
+  It takes no lock and writes nothing, and it shows when it was read. Every question in it is labelled "asked when resume reaches it":
+  `Runner::resume` takes the lock, checks everything again against the disk as it is then, and
+  asks in the dock, each answer journaled when asked (D74, D77). Answering in the preview would
+  be a decision of its own, with the runner checking that the state still matches: not now.
+
+## D86 `QuestionKind`
+
+Amends D74.
+
+- `Question.kind` is an enum, `QuestionKind`, one variant per question the runner asks, with what
+  the run knows about it that the plan does not say as its payload: the decision (`run`), the
+  classifier's reasons (`typed-yes`), the matcher's reasons and `errored` (`confirm`), the status,
+  the mismatches, the block's output lines, the expected lines aligned to them, the commit
+  problem and whether the session is dead (`mismatch`), the dirty paths (`dirt`,
+  `resume-dirt`), the shell and directory (`outside`), why a session is new and the earlier
+  tasks (`session`), the gate's reasons (`gate`), the changed paths (`changed`), whether the
+  script was running (`again`), the step's journal place with each path's state and whether it
+  can be restored (`unknown`, and the place for `accept-done`), and the running action's place
+  with both HEADs (`head-moved`). What the plan says is reached through `Question.at`; resume's
+  questions name their step or action by its journal place, since they have no `at`.
+- **Typed answers are explicit.** `Question.typed` is the list of words a typed question
+  accepts (`yes`, `skip`, `quit` for a Destructive script; `yes`, `quit` for the commit gate and
+  for accepting a step as done), and `None` for a question of choices. The runner reads it back
+  to decide what a word does, so the list and the behaviour cannot drift.
+- `QuestionKind::name()` is the journal name (`run`, `typed-yes`, …): the journal format does not
+  change.
+- A UI matches on it exhaustively, so the compiler finds a question it does not show. Its keys
+  and typed input come from `Question.choices` and `Question.typed`; it shows every answer the
+  runner offers and no other.
+- **The matcher's alignment:** `expect::align` returns each non-blank expected line with the
+  output line it matched (or none), the way `expect::check` matches them (D66); `check` is
+  unchanged.
+
+## D87 Phases are not a navigator level
+
+Amends D15. One plan file is one phase (D5): the TUI's Plans view is a table of plan files, and
+the plan view's tree is Task → Step → Action.
+
+## D88 No workspaces yet
+
+Amends D15. `planrun tui [<plans-dir>]` runs from the target repository, like `run`. A list of
+repositories is a later decision.
+
+## D89 Colour and glyphs
+
+Amends D15.
+
+- 24-bit colour, chosen when `COLORTERM` is `truecolor` or `24bit` or `WT_SESSION` is set. The
+  256-colour fallback and `NO_COLOR` (bold for focus, reverse for selection) come after the first
+  version; the colour tokens keep their 256-colour indices for it.
+- Green only after verification, amber only when planrun waits for you (or for a warning), red
+  for failure and the Destructive class, blue for focus and the running action, purple for
+  identifiers. Bold and reverse only.
+- The glyphs are single-width in `unicode-width` (a unit test) and checked by hand in Windows
+  Terminal with Cascadia Mono; each has an ASCII fallback, and `PLANRUN_ASCII=1` switches to them
+  all. No Nerd Font, no wide or emoji glyphs.
+
+## D90 The runner stays synchronous, on a worker thread
+
+Amends D15, D76 and D77.
+
+- The runner runs on a worker thread; the render thread owns the terminal and never waits on git,
+  a shell or the network. The runner reaches the terminal only through blocking round trips:
+  `ask`, `shell`, `view` and `diff`. For `shell` the render thread leaves the alternate screen,
+  turns raw mode off, sets D73's "shell running" flag, runs the shell, restores the terminal and
+  replies; `view` and `diff` are answered in the TUI with the dock left open.
+- **The journal drives the live view.** The TUI's tree, its outcome tags, its change states and
+  its history come from the journal's records (D76), which a journal observer forwards over a
+  channel; there is no event stream beside it. A journal takes any number of observers, called
+  in the order they were added, so the TUI's and the `e2e` seam's (D82) coexist. `Ui::status` is
+  shown as prose and never parsed; `Ui::output` carries each output line with its stream.
+- **Background work** (plan checks, `update --check`, `git status --porcelain
+  --no-optional-locks`, journal scans, the liveness probe) runs on threads; each result carries
+  the fingerprint of its input. Background checks never replace preflight.
+- **A live run is seen through a second lock, `<git-dir>/planrun/lock.live`.** A run takes
+  `lock` as before (a try: held means "another planrun is running", D77), then `lock.live` with a
+  blocking lock, and holds both until it ends; the operating system releases them however it
+  ends. `lock::live` probes with a try on `lock.live` only and lets go at once: a run starting
+  while a probe holds it waits a moment, never fails. A successful try means no run is live;
+  `lock.pid` is then only shown, never trusted (it stays when its run ends). The one gap: a probe
+  in the instant between a starting run's two locks sees no live run. Never probe `lock` itself:
+  a try there would make a starting run fail.
+
+## D91 Ctrl-C in the TUI ends planrun, as it does on the line prompts
+
+Amends D73.
+
+- Raw mode makes Ctrl-C a key. The TUI confirms in the dock, restores the terminal, and calls
+  `shell::end_now(code)`, which ends planrun the way an interrupt does: every session's process
+  tree is killed, no destructor runs and no `run-end` is written, so `resume` goes on from the
+  journal (D73, D77). On Windows it is `process::exit`: exiting closes every job handle, and
+  `KILL_ON_JOB_CLOSE` kills each tree (D64). On Unix it first kills every registered process
+  group with the loop the signal handler uses, now one function that both call; no `unsafe` is
+  added.
+- Cancelling the run while planrun stays up would kill a running block from inside (D64): not
+  offered. Nor is a pause: asking under `--auto` would turn Auto into Ask, a decision change the
+  UI may not make. If it is wanted, it is a decision of its own with runner support.
+
+## D92 The TUI's dependencies
+
+Amends D9. `ratatui`, `crossterm` and `unicode-width`, in planrun-tui only. crossterm
+brings `windows-sys`, `mio` and `signal-hook`, which D64 and D73 keep out of planrun-exec; they
+stay out of it: planrun-exec's dependencies and its `unsafe` surface (`shell/kill.rs`) do not
+change.

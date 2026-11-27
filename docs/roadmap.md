@@ -136,3 +136,13 @@ for CI.
   a `v*.*.*` tag, `scripts/install.ps1` and `install.sh` (a release, or `--from-source`), and
   `planrun update [--check]` (D83). Plan: `docs/plans/2026-11-26-p6a-release-update.md`; the
   first plan planrun executes on itself. Open items: `docs/handovers/2026-11-26-p5-to-p6.md`.
+- **P6b — the TUI's prerequisites.** The TUI's design (`docs/tui-design.md`) and its decisions
+  (D84–D92), then what it needs from planrun-exec (its §9): a journal with any number of
+  observers, `shell::end_now`, typed effects in the dry-run report, the matcher's alignment,
+  `QuestionKind`, and the read-only resume preview. The CLI's behaviour and the journal format do
+  not change. Plan: `docs/plans/2026-11-26-p6b-tui-prerequisites.md`.
+- **P6c — the TUI.** The `planrun-tui` crate and `planrun tui`: theme and glyphs, the shell, the
+  background work, Plans, the plan view (Inspect, then Run through its `Ui` and a journal
+  observer), the dock with every `QuestionKind`, History, the resume preview and the command
+  palette (`docs/tui-design.md` §11). Its acceptance drives the TUI against the greeter fixture
+  through the `e2e` seam (D82).
