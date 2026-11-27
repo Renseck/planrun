@@ -3,6 +3,7 @@
 //! crossterm's events; the tests a `TestBackend` and scripted keys.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, Instant};
 
@@ -13,23 +14,35 @@ use crate::app::{App, Effect, Msg};
 use crate::jobs::panic_message;
 use crate::keys::Key;
 
+/// What the driver cannot do on its own: the terminal's half of the `[o]` round trip, and
+/// ending planrun on a confirmed Ctrl-C.
+pub trait Hooks {
+    /// Leaves the screen, runs an interactive shell at `root` until it exits, and comes back;
+    /// Ctrl-C reaches the shell, not planrun (D73).
+    fn shell(&mut self, root: &Path);
+    /// Ends planrun the way an interrupt does (D91). The terminal's never returns.
+    fn end_now(&mut self);
+}
+
 /// The app, its terminal, and the channel its threads answer on.
 pub struct Core<B: Backend> {
     app: App,
     terminal: Terminal<B>,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
+    hooks: Box<dyn Hooks>,
 }
 
 impl<B: Backend> Core<B> {
-    /// The core over `terminal`.
-    pub fn new(app: App, terminal: Terminal<B>) -> Core<B> {
+    /// The core over `terminal`, with `hooks` for the shell and Ctrl-C.
+    pub fn new(app: App, terminal: Terminal<B>, hooks: Box<dyn Hooks>) -> Core<B> {
         let (tx, rx) = channel();
         Core {
             app,
             terminal,
             tx,
             rx,
+            hooks,
         }
     }
 
@@ -134,6 +147,16 @@ impl<B: Backend> Core<B> {
                 }
                 Effect::Run(request) => {
                     crate::worker::start(request, self.app.context(), self.tx.clone());
+                }
+                Effect::Shell(reply) => {
+                    let root = self.app.context().root.clone();
+                    self.hooks.shell(&root);
+                    let _ = self.redraw();
+                    let _ = reply.send(());
+                }
+                Effect::EndNow => {
+                    self.hooks.end_now();
+                    self.app.quit = true;
                 }
                 Effect::Quit => self.app.quit = true,
             }

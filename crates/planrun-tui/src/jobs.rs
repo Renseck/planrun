@@ -203,6 +203,8 @@ pub enum Job {
         /// Its paths.
         paths: Vec<String>,
     },
+    /// `git diff HEAD` and the untracked files, for `[d]`.
+    WorkTree,
     /// The dry run of a plan (D55), for Inspect.
     DryRun {
         /// The plan file.
@@ -237,6 +239,8 @@ pub enum Done {
         /// The diffs.
         files: Vec<crate::diff::FileDiff>,
     },
+    /// The working tree against HEAD, and the untracked files.
+    WorkTree(Result<(Vec<crate::diff::FileDiff>, Vec<String>), String>),
     /// A plan's dry run.
     DryRun {
         /// The plan file.
@@ -277,6 +281,7 @@ impl Job {
             }
             Job::Live => Box::new(|e| Done::Live(Err(e))),
             Job::Update(_) => Box::new(|_| Done::Update(UpdateState::Failed)),
+            Job::WorkTree => Box::new(|e| Done::WorkTree(Err(e))),
             Job::Changes { task, .. } => {
                 // CHANGES falls back to the planned diff.
                 let task = *task;
@@ -311,6 +316,13 @@ impl Job {
                 task,
                 files: changes(ctx, &paths),
             },
+            Job::WorkTree => {
+                let untracked = git_out(ctx, &["ls-files", "--others", "--exclude-standard"])
+                    .lines()
+                    .map(str::to_owned)
+                    .collect();
+                Done::WorkTree(Ok((changes(ctx, &[".".to_owned()]), untracked)))
+            }
             Job::DryRun { path, parsed } => {
                 let plan = &parsed.plan;
                 let result = Workspace::open(&ctx.root, ctx.env.clone())
@@ -323,6 +335,20 @@ impl Job {
                 }
             }
         }
+    }
+}
+
+/// The output of `git --no-optional-locks args…`; empty when git fails.
+fn git_out(ctx: &Context, args: &[&str]) -> String {
+    let out = std::process::Command::new("git")
+        .arg("--no-optional-locks")
+        .args(args)
+        .current_dir(&ctx.root)
+        .envs(ctx.env.iter().map(|(k, v)| (k, v)))
+        .output();
+    match out {
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).into_owned(),
+        _ => String::new(),
     }
 }
 

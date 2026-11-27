@@ -172,8 +172,21 @@ pub struct Run {
     pub on_disk: Vec<FileDiff>,
     /// Focus: 0 the navigator, 1 CHANGES, 2 the console or the dock.
     pub focus: u8,
-    /// The action shown in ACTION, for `[v]`.
-    pub viewing: Option<(usize, usize, usize)>,
+    /// What the upper right panel shows.
+    pub inspector: Inspector,
+    /// Ctrl-C was pressed: the dock asks whether to end planrun (D91).
+    pub ending: bool,
+}
+
+/// What the upper right panel shows while a run is on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Inspector {
+    /// CHANGES: the current task's files.
+    Changes,
+    /// `[v]`: the action in full.
+    Action((usize, usize, usize)),
+    /// `[d]`: `git diff HEAD` and the untracked files.
+    Tree(Vec<FileDiff>, Vec<String>),
 }
 
 /// What the app should do after a run message.
@@ -215,7 +228,8 @@ impl Run {
             file: 0,
             on_disk: Vec::new(),
             focus: 0,
-            viewing: None,
+            inspector: Inspector::Changes,
+            ending: false,
         }
     }
 
@@ -297,7 +311,15 @@ impl Run {
         if let Some(at) = question.at {
             self.tree.select(Node::Action(at.task, at.step, at.action));
         }
-        self.dock = Some(Dock::new(question, reply));
+        let commit = question.at.is_some_and(|at| {
+            matches!(
+                self.action((at.task, at.step, at.action)).map(|a| &a.kind),
+                Some(ActionKind::Commit(_))
+            )
+        });
+        let mut dock = Dock::new(question, reply);
+        dock.guard_quit = commit;
+        self.dock = Some(dock);
         self.focus = 2;
     }
 
@@ -854,6 +876,12 @@ impl Run {
 
     /// The keys the footer shows.
     pub fn footer(&self) -> Vec<(String, String)> {
+        if self.ending {
+            return vec![
+                ("y".into(), "end planrun".into()),
+                ("n".into(), "keep running".into()),
+            ];
+        }
         if let Some(dock) = &self.dock {
             return dock.footer();
         }
@@ -902,10 +930,123 @@ impl Run {
             right.width,
             right.height - upper_h,
         );
-        self.draw_changes(buf, upper, g);
+        match &self.inspector {
+            Inspector::Changes => self.draw_changes(buf, upper, g),
+            Inspector::Action(p) => self.draw_viewed(buf, upper, *p, g),
+            Inspector::Tree(files, untracked) => {
+                self.draw_tree_diff(buf, upper, files, untracked, g)
+            }
+        }
         match &self.dock {
+            _ if self.ending => draw_end(buf, lower, g),
             Some(dock) => dock.draw(buf, lower, plan, self.focus == 2, g),
             None => self.draw_console(buf, lower, g),
+        }
+    }
+
+    /// `[v]`: the action in full, its planned diff or its block; the dock stays open (D90).
+    fn draw_viewed(&self, buf: &mut Buffer, area: Rect, p: (usize, usize, usize), g: Glyphs) {
+        let plan = self.plan();
+        let Some(action) = self.action(p) else {
+            return;
+        };
+        let line = plan.source.line_col(action.span.start).line;
+        band(
+            buf,
+            area,
+            self.focus == 1,
+            "ACTION",
+            &format!("line {line} of the plan"),
+            g,
+        );
+        let mut pen = Pen::new(buf, area.x + 2, area.y + 1, area.right(), g);
+        pen.glyph(tree::kind_glyph(action), bold(tree::kind_color(action)))
+            .gap(1);
+        pen.text(&tree::label(plan, action), bold(Token::Fg));
+        let rest = Rect::new(
+            area.x + 1,
+            area.y + 2,
+            area.width - 1,
+            area.height.saturating_sub(2),
+        );
+        if let Some(diff) = diff::planned(plan, &action.kind) {
+            diff::header(buf, rest, &diff, ("PLANNED", Token::Fg2), "", g);
+            let rows = Rect::new(
+                rest.x,
+                rest.y + 1,
+                rest.width,
+                rest.height.saturating_sub(1),
+            );
+            diff::draw_rows(buf, rows, &diff.rows, 0, g);
+            return;
+        }
+        let body = match &action.kind {
+            ActionKind::RunScript(s) | ActionKind::Commit(s) => plan.text(&s.body),
+            ActionKind::Manual { text, .. } | ActionKind::Note { text } => plan.text(text),
+            _ => "",
+        };
+        for (i, l) in body.lines().take(usize::from(rest.height)).enumerate() {
+            let mut pen = Pen::new(
+                buf,
+                rest.x + 1,
+                rest.y + u16::try_from(i).unwrap_or(0),
+                rest.right(),
+                g,
+            );
+            pen.text(&text::right(&(i + 1).to_string(), 4), fg(Token::Fg3))
+                .gap(2)
+                .text(l, fg(Token::Fg));
+        }
+    }
+
+    /// `[d]`: the working tree against HEAD, and the untracked files.
+    fn draw_tree_diff(
+        &self,
+        buf: &mut Buffer,
+        area: Rect,
+        files: &[FileDiff],
+        untracked: &[String],
+        g: Glyphs,
+    ) {
+        band(
+            buf,
+            area,
+            self.focus == 1,
+            "DIFF",
+            "git diff HEAD, and the untracked files",
+            g,
+        );
+        let mut y = area.y + 1;
+        for file in files {
+            if y + 1 >= area.bottom() {
+                return;
+            }
+            let header = Rect::new(area.x + 1, y, area.width - 1, 1);
+            diff::header(buf, header, file, ("WORKING TREE", Token::Act), "", g);
+            let n = u16::try_from(file.rows.len())
+                .unwrap_or(u16::MAX)
+                .min(area.bottom() - y - 1);
+            diff::draw_rows(
+                buf,
+                Rect::new(area.x + 1, y + 1, area.width - 1, n),
+                &file.rows,
+                0,
+                g,
+            );
+            y += n + 1;
+        }
+        for path in untracked {
+            if y >= area.bottom() {
+                return;
+            }
+            Pen::new(buf, area.x + 2, y, area.right(), g)
+                .text("?? ", fg(Token::Warn))
+                .text(path, fg(Token::Fg));
+            y += 1;
+        }
+        if files.is_empty() && untracked.is_empty() {
+            Pen::new(buf, area.x + 2, y, area.right(), g)
+                .text("no changes against HEAD", fg(Token::Fg2));
         }
     }
 
@@ -1051,6 +1192,42 @@ impl Run {
             );
         }
     }
+}
+
+/// The Ctrl-C confirm (D91): planrun ends as an interrupt ends it; resume goes on.
+fn draw_end(buf: &mut Buffer, area: Rect, g: Glyphs) {
+    crate::draw::fill(
+        buf,
+        Rect::new(area.x, area.y, area.width, 1),
+        on(Token::Fg, Token::Bg1),
+    );
+    let mut pen = Pen::new(buf, area.x, area.y, area.right(), g);
+    pen.glyph(Glyph::Band, on(Token::Warn, Token::Bg1)).gap(1);
+    pen.glyph(Glyph::Waiting, bold(Token::Warn).bg(Token::Bg1.color()))
+        .gap(1);
+    pen.text("END PLANRUN", bold(Token::Warn).bg(Token::Bg1.color()))
+        .gap(2);
+    pen.text("ctrl+c", on(Token::Fg2, Token::Bg1));
+    let lines = [
+        "planrun ends now, as an interrupt ends it: every session's process tree is killed,",
+        "the running block stops mid-way, and no run-end is written.",
+        "`planrun resume` (or History, F4) goes on from the journal.",
+    ];
+    for (i, l) in lines.iter().enumerate() {
+        Pen::new(
+            buf,
+            area.x + 2,
+            area.y + 2 + u16::try_from(i).unwrap_or(0),
+            area.right(),
+            g,
+        )
+        .text(l, fg(Token::Fg2));
+    }
+    let y = area.bottom().saturating_sub(3);
+    let mut pen = Pen::new(buf, area.x + 2, y, area.right(), g);
+    pen.chip("y", "end planrun now", Token::Bg0)
+        .gap(3)
+        .chip("n", "keep running", Token::Bg0);
 }
 
 fn outcome_word(outcome: Outcome) -> &'static str {

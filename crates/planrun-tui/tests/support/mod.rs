@@ -35,6 +35,26 @@ pub const PLANS: [&str; 5] = [
     "superpowers-style.md",
 ];
 
+/// The tests' hooks: they count the shell round trips and the ends.
+#[derive(Clone, Default)]
+pub struct Counted {
+    /// `[o]` shells run.
+    pub shells: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    /// Confirmed Ctrl-Cs.
+    pub ends: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl planrun_tui::driver::Hooks for Counted {
+    fn shell(&mut self, _root: &std::path::Path) {
+        self.shells
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn end_now(&mut self) {
+        self.ends.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 /// A fixture with its plans directory.
 pub struct Setup {
     /// The repository.
@@ -89,8 +109,13 @@ impl Setup {
 
     /// A started core whose plans are all checked.
     pub fn core(&self) -> Core<TestBackend> {
+        self.core_with(Counted::default())
+    }
+
+    /// A started core with `hooks`, its plans all checked.
+    pub fn core_with(&self, hooks: Counted) -> Core<TestBackend> {
         let terminal = Terminal::new(TestBackend::new(120, 36)).unwrap_or_else(|e| panic!("{e}"));
-        let mut core = Core::new(self.app(), terminal);
+        let mut core = Core::new(self.app(), terminal, Box::new(hooks));
         core.start();
         let n = std::fs::read_dir(&self.plans).map_or(0, |d| d.count());
         let checked = core.wait(Duration::from_secs(60), |app| {

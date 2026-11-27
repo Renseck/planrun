@@ -16,7 +16,7 @@ use crate::inspect::{Assumed, Did, Inspect};
 use crate::jobs::{Bg, Context, Done, Job, UpdateCheck, UpdateState};
 use crate::keys::Key;
 use crate::plans::{self, Labels, Plans};
-use crate::run::{Follow, Run};
+use crate::run::{Follow, Inspector, Run};
 use crate::theme::{Token, base, on};
 use crate::worker::{ObserverFactory, RunMsg, RunRequest};
 
@@ -50,6 +50,10 @@ pub enum Effect {
     Job(Job),
     /// Start the runner on its worker thread.
     Run(RunRequest),
+    /// The `[o]` round trip: run the shell, then reply (D90).
+    Shell(std::sync::mpsc::Sender<()>),
+    /// Ctrl-C, confirmed: end planrun as an interrupt does (D91).
+    EndNow,
     /// Stop.
     Quit,
 }
@@ -207,6 +211,17 @@ impl App {
                 }
                 Vec::new()
             }
+            Done::WorkTree(result) => {
+                let now = self.now();
+                let Some(run) = self.run.as_mut() else {
+                    return Vec::new();
+                };
+                match result {
+                    Ok((files, untracked)) => run.inspector = Inspector::Tree(files, untracked),
+                    Err(e) => run.status(now, &format!("[d] could not read the diff: {e}")),
+                }
+                Vec::new()
+            }
             Done::Changes { task, files } => {
                 if let Some(run) = self.run.as_mut() {
                     run.diffed(task, files);
@@ -233,15 +248,14 @@ impl App {
             RunMsg::Output(line) => run.output(now, &line),
             RunMsg::Ask(question, reply) => run.ask(question, reply),
             RunMsg::View(at, reply) => {
-                run.viewing = Some((at.task, at.step, at.action));
+                run.inspector = Inspector::Action((at.task, at.step, at.action));
                 let _ = reply.send(());
             }
             RunMsg::Diff(reply) => {
                 let _ = reply.send(());
+                return vec![Effect::Job(Job::WorkTree)];
             }
-            RunMsg::Shell(reply) => {
-                let _ = reply.send(());
-            }
+            RunMsg::Shell(reply) => return vec![Effect::Shell(reply)],
             RunMsg::Ended(result) => {
                 run.ended(now, result);
                 return vec![Effect::Job(Job::Scan)];
@@ -261,8 +275,16 @@ impl App {
                 self.view = View::Plan;
                 return Vec::new();
             }
-            Key::Ctrl('c') if self.view == View::Plans && !self.running() => {
-                return vec![Effect::Quit];
+            Key::Ctrl('c') if !self.running() => return vec![Effect::Quit],
+            Key::Ctrl('c') => {
+                if let Some(run) = self.run.as_mut() {
+                    if run.ending {
+                        return vec![Effect::EndNow];
+                    }
+                    run.ending = true;
+                    self.view = View::Plan;
+                }
+                return Vec::new();
             }
             _ => {}
         }
@@ -282,6 +304,14 @@ impl App {
         let Some(run) = self.run.as_mut() else {
             return Vec::new();
         };
+        if run.ending {
+            match key {
+                Key::Char('y') => return vec![Effect::EndNow],
+                Key::Char('n') | Key::Esc => run.ending = false,
+                _ => {}
+            }
+            return Vec::new();
+        }
         if let Some(dock) = run.dock.as_mut()
             && run.focus == 2
             && !matches!(key, Key::Tab | Key::BackTab)
@@ -289,6 +319,7 @@ impl App {
             if let Some(reply) = dock.key(key) {
                 dock.answer(reply);
                 run.dock = None;
+                run.inspector = Inspector::Changes;
             }
             return Vec::new();
         }

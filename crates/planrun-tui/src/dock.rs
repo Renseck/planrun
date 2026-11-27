@@ -38,6 +38,11 @@ pub struct Dock {
     pub refused: Option<String>,
     /// The first body line shown.
     pub top: usize,
+    /// The question is about a Commit: `q` needs pressing twice (the P5→P6 handover's item 8:
+    /// quitting after the commit was made loses it for resume).
+    pub guard_quit: bool,
+    /// `q` was pressed once.
+    pub armed: bool,
 }
 
 impl Dock {
@@ -49,6 +54,8 @@ impl Dock {
             input: String::new(),
             refused: None,
             top: 0,
+            guard_quit: false,
+            armed: false,
         }
     }
 
@@ -92,6 +99,10 @@ impl Dock {
         }
         let pressed = match key {
             Key::Enter => "",
+            Key::Char('q') if self.guard_quit && !self.armed && self.offers(Choice::Quit) => {
+                self.armed = true;
+                return None;
+            }
             Key::Char(c) => return self.choice(&c.to_string()),
             Key::Down => {
                 self.top += 1;
@@ -104,6 +115,10 @@ impl Dock {
             _ => return None,
         };
         self.choice(pressed)
+    }
+
+    fn offers(&self, choice: Choice) -> bool {
+        self.question.choices.contains(&choice)
     }
 
     fn choice(&self, key: &str) -> Option<Reply> {
@@ -582,6 +597,12 @@ impl Dock {
                         pen.gap(3);
                     }
                     pen.chip(key_name(*c), c.label(), Token::Bg0);
+                }
+                if self.armed {
+                    Pen::new(buf, area.x, area.y + 1, area.right(), g).text(
+                        "q again quits; if the commit was made, quitting loses it for resume: answer y",
+                        fg(Token::Warn),
+                    );
                 }
             }
         }

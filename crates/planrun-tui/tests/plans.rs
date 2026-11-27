@@ -46,6 +46,7 @@ fn below_100_by_30_the_tui_says_it_is_too_small() {
     let mut small = planrun_tui::driver::Core::new(
         setup.app(),
         ratatui::Terminal::new(backend).unwrap_or_else(|e| panic!("{e}")),
+        Box::new(support::Counted::default()),
     );
     let text = screen(&mut small);
     assert!(text.contains("terminal too small"), "{text}");
@@ -59,7 +60,8 @@ fn a_job_that_panics_comes_back_in_its_failed_state() {
     let app = setup.app_with(Some(Box::new(|| panic!("the update check broke"))));
     let terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 36))
         .unwrap_or_else(|e| panic!("{e}"));
-    let mut core = planrun_tui::driver::Core::new(app, terminal);
+    let mut core =
+        planrun_tui::driver::Core::new(app, terminal, Box::new(support::Counted::default()));
     core.start();
     let failed = core.wait(std::time::Duration::from_secs(30), |app| {
         app.update() == &planrun_tui::jobs::UpdateState::Failed

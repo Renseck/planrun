@@ -11,12 +11,14 @@ use std::thread::ThreadId;
 use std::time::Duration;
 
 use ratatui::crossterm::event::{self, Event};
+use ratatui::crossterm::execute;
+use ratatui::crossterm::terminal::{self, EnterAlternateScreen};
 
-use planrun_exec::shell::install_interrupt_handler;
+use planrun_exec::shell::{InterruptsIgnored, install_interrupt_handler};
 use planrun_exec::workspace::Workspace;
 
 use crate::app::{App, system_clock};
-use crate::driver::Core;
+use crate::driver::{Core, Hooks};
 use crate::glyph::Glyphs;
 use crate::jobs::{Context, UpdateCheck};
 use crate::keys;
@@ -92,7 +94,7 @@ pub fn run(host: Host) -> Result<(), String> {
     let report = std::panic::take_hook();
     let terminal = ratatui::init();
     install_panic_hook(report);
-    let result = drive(Core::new(app, terminal));
+    let result = drive(Core::new(app, terminal, Box::new(Crossterm)));
     ratatui::restore();
     result
 }
@@ -129,6 +131,39 @@ fn install_panic_hook(report: Report) {
             report(info);
         }
     }));
+}
+
+/// The terminal's hooks.
+struct Crossterm;
+
+impl Hooks for Crossterm {
+    fn shell(&mut self, root: &Path) {
+        ratatui::restore();
+        let program = if cfg!(windows) { "pwsh" } else { "bash" };
+        println!(
+            "{program} at {}; this is not the plan's session (its variables are not here). Exit to return.",
+            root.display()
+        );
+        {
+            let _quiet = InterruptsIgnored::new();
+            if let Err(e) = std::process::Command::new(program)
+                .current_dir(root)
+                .status()
+            {
+                println!("{program} did not start: {e}");
+            }
+        }
+        let _ = terminal::enable_raw_mode();
+        let _ = execute!(std::io::stdout(), EnterAlternateScreen);
+        while event::poll(Duration::ZERO).unwrap_or(false) {
+            let _ = event::read();
+        }
+    }
+
+    fn end_now(&mut self) {
+        ratatui::restore();
+        planrun_exec::shell::end_now(130);
+    }
 }
 
 fn drive<B: ratatui::backend::Backend>(mut core: Core<B>) -> Result<(), String> {
