@@ -13,17 +13,17 @@ use planrun_model::{
 };
 
 use crate::finding::{Finding, Severity};
-use crate::handler::{HandlerSet, file_path};
+use crate::handler::{Effect, HandlerSet, file_path};
 use crate::tree::VirtualTree;
 use crate::workspace::{Workspace, WorkspaceError};
 
 /// What became of one action in a dry run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
-    /// A file action that would run on its own.
-    Ok(String),
+    /// A file action that would run on its own, and what it would do.
+    Ok(Effect),
     /// A file action that would run after you confirm it: unscoped (D50).
-    WouldAsk(String),
+    WouldAsk(Effect),
     /// A file action that would fail.
     Failed(Finding),
     /// A file action whose result depends on a script or Manual step that did not run (D55).
@@ -322,8 +322,8 @@ impl Walk<'_, '_> {
             return Outcome::Failed(Finding::error("internal", span, Some(path), "no handler"));
         };
         match handler.simulate(action, &plan.source, self.tree) {
-            Ok(done) if task.manifest.scopes(path) => Outcome::Ok(done.detail),
-            Ok(done) => Outcome::WouldAsk(done.detail),
+            Ok(done) if task.manifest.scopes(path) => Outcome::Ok(done.effect),
+            Ok(done) => Outcome::WouldAsk(done.effect),
             Err(f) if f.severity == Severity::Warning => Outcome::Depends(f),
             Err(f) if self.unrun && depends_on_state(f.code) => {
                 self.tree.mark_unknown(path);

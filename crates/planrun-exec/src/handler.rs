@@ -2,6 +2,8 @@
 //! plugin point, docs/extending.md §7). A handler simulates its action on a virtual tree (the
 //! dry-run behaviour of extending.md §4); writing is the transaction's job (D53).
 
+use std::fmt;
+
 use planrun_model::{AbbrevBlobId, Action, ActionKind, PlanSource, RepoPath, Span, WriteMode};
 
 use crate::eol;
@@ -13,8 +15,47 @@ use crate::tree::{State, VirtualTree};
 pub struct Simulated {
     /// The path it changed.
     pub path: RepoPath,
-    /// A short description (`create`, `aa80cf1 → 97bd92a`).
-    pub detail: String,
+    /// What it did to the path.
+    pub effect: Effect,
+}
+
+/// What a file action does to its path. Its `Display` is the dry run's short description
+/// (`create`, `aa80cf1 → 97bd92a`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Effect {
+    /// Full contents for a path that does not exist.
+    Create,
+    /// Full contents for a path that exists.
+    Overwrite,
+    /// A patch, with the blob ids the plan states before and after it.
+    Patch {
+        /// The `index` line's pre-image id, when the patch has one.
+        pre: Option<AbbrevBlobId>,
+        /// Its post-image id.
+        post: Option<AbbrevBlobId>,
+    },
+    /// An exact replacement.
+    Replace,
+    /// A delete; `via_git` for `git rm`.
+    Delete {
+        /// Through `git rm`.
+        via_git: bool,
+    },
+}
+
+impl fmt::Display for Effect {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let id =
+            |a: &Option<AbbrevBlobId>| a.as_ref().map_or_else(|| "?".to_owned(), |a| a.to_string());
+        match self {
+            Effect::Create => f.write_str("create"),
+            Effect::Overwrite => f.write_str("overwrite"),
+            Effect::Patch { pre, post } => write!(f, "{} → {}", id(pre), id(post)),
+            Effect::Replace => f.write_str("replace"),
+            Effect::Delete { via_git: true } => f.write_str("delete (git rm)"),
+            Effect::Delete { via_git: false } => f.write_str("delete"),
+        }
+    }
 }
 
 /// Executes one kind of action. Registered per kind in the [`HandlerSet`].
@@ -147,16 +188,16 @@ impl ActionHandler for WriteHandler {
         }
         let present = presence(tree, path, span)?;
         let body = source.resolve(body).as_bytes();
-        let (bytes, detail) = match mode {
+        let (bytes, effect) = match mode {
             WriteMode::Create if present => return Err(exists(path, span)),
-            WriteMode::Create => (body.to_vec(), "create"),
+            WriteMode::Create => (body.to_vec(), Effect::Create),
             _ if !present => return Err(missing(path, span, "; the plan overwrites it")),
-            _ => (overwrite_bytes(tree, path, body, span)?, "overwrite"),
+            _ => (overwrite_bytes(tree, path, body, span)?, Effect::Overwrite),
         };
         tree.put(path, bytes, span)?;
         Ok(Simulated {
             path: path.clone(),
-            detail: detail.to_owned(),
+            effect,
         })
     }
 }
@@ -212,10 +253,12 @@ impl ActionHandler for PatchHandler {
             )
         })?;
         check_post(tree, path, post.as_ref(), span)?;
-        let id = |a: Option<&AbbrevBlobId>| a.map_or_else(|| "?".to_owned(), |a| a.to_string());
         Ok(Simulated {
             path: path.clone(),
-            detail: format!("{} → {}", id(pre.as_ref()), id(post.as_ref())),
+            effect: Effect::Patch {
+                pre: *pre,
+                post: *post,
+            },
         })
     }
 }
@@ -331,7 +374,7 @@ impl ActionHandler for ReplaceHandler {
         tree.put(path, eol::render(&replaced, convention), span)?;
         Ok(Simulated {
             path: path.clone(),
-            detail: "replace".to_owned(),
+            effect: Effect::Replace,
         })
     }
 }
@@ -382,12 +425,7 @@ impl ActionHandler for DeleteHandler {
         tree.delete(path, span)?;
         Ok(Simulated {
             path: path.clone(),
-            detail: if *via_git {
-                "delete (git rm)"
-            } else {
-                "delete"
-            }
-            .to_owned(),
+            effect: Effect::Delete { via_git: *via_git },
         })
     }
 }

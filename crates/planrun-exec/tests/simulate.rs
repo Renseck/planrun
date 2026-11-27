@@ -30,7 +30,7 @@ fn run(ws: &Workspace, ir: &Ir, actions: &[Action]) -> Vec<String> {
             let handler = handlers.find(a).unwrap_or_else(|| panic!("no handler"));
             let outcome: Result<Simulated, Finding> = handler.simulate(a, &source, &mut tree);
             match outcome {
-                Ok(s) => format!("ok {}", s.detail),
+                Ok(s) => format!("ok {}", s.effect),
                 Err(f) => f.code.to_owned(),
             }
         })

@@ -8,9 +8,10 @@ mod ir;
 
 use fixture::Fixture;
 use ir::{Ir, PATCH_T1, PATCH_T2};
+use planrun_exec::handler::Effect;
 use planrun_exec::preflight::{DryRun, Outcome, dry_run, preflight};
 use planrun_exec::workspace::Workspace;
-use planrun_model::{ChangeKind, Manifest, PathOrigin, Plan, WriteMode};
+use planrun_model::{AbbrevBlobId, ChangeKind, Manifest, PathOrigin, Plan, WriteMode};
 
 fn open(f: &Fixture) -> Workspace {
     Workspace::open(f.path(), f.env()).unwrap_or_else(|e| panic!("{e}"))
@@ -91,6 +92,43 @@ fn the_assay_plan_passes_and_writes_nothing() {
         );
         assert_eq!(f.snapshot(), before, "autocrlf={autocrlf}");
     }
+}
+
+#[test]
+fn the_report_says_what_each_file_action_does() {
+    let f = Fixture::greeter(false);
+    let plan = assay(&mut Ir::default());
+    let report = run(&f, &plan);
+    let effects: Vec<Effect> = report
+        .tasks
+        .iter()
+        .flat_map(|t| &t.actions)
+        .filter_map(|a| match &a.outcome {
+            Outcome::Ok(effect) => Some(effect.clone()),
+            _ => None,
+        })
+        .collect();
+    let id = |hex: &str| Some(AbbrevBlobId::parse(hex).unwrap_or_else(|e| panic!("{e}")));
+    assert_eq!(
+        effects,
+        [
+            Effect::Create,
+            Effect::Patch {
+                pre: id("aa80cf1"),
+                post: id("97bd92a")
+            },
+            Effect::Patch {
+                pre: id("97bd92a"),
+                post: id("6b269fc")
+            },
+            Effect::Delete { via_git: false },
+        ]
+    );
+    let shown: Vec<String> = effects.iter().map(ToString::to_string).collect();
+    assert_eq!(
+        shown,
+        ["create", "aa80cf1 → 97bd92a", "97bd92a → 6b269fc", "delete"]
+    );
 }
 
 #[test]
