@@ -63,6 +63,29 @@ pub enum Mismatch {
     },
 }
 
+/// One non-blank line of the expected block, and the output line it matched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Aligned {
+    /// Its 1-based line number within the expected block.
+    pub number: usize,
+    /// The index into [`ScriptRun::lines`] of the output line it matched; `None` when no output
+    /// line after the previous match matches it.
+    pub output: Option<usize>,
+}
+
+/// The expected summary lines of `expect` against `run`'s output, as [`check`] matches them
+/// (D66): each non-blank line with the output line it matched, for a UI to show the two side
+/// by side. Empty when the plan expects no lines.
+pub fn align(expect: Option<&Expectation>, run: &ScriptRun, source: &PlanSource) -> Vec<Aligned> {
+    let Some(lines) = expect.and_then(|e| e.lines.as_ref()) else {
+        return Vec::new();
+    };
+    aligned(source.resolve(lines), run)
+        .into_iter()
+        .map(|(a, _)| a)
+        .collect()
+}
+
 /// Checks `run` against `expect` (`None`: the plan expects nothing in particular).
 pub fn check(expect: Option<&Expectation>, run: &ScriptRun, source: &PlanSource) -> Verdict {
     let mut mismatches = Vec::new();
@@ -123,30 +146,42 @@ fn reasons(expect: Option<&Expectation>, exit: ExitExpect, run: &ScriptRun) -> V
     reasons
 }
 
-/// The expected lines that do not match, as a subsequence of the output: each non-blank line
-/// must match an output line after the one the line before it matched. The earliest match is
-/// taken for each, which finds a subsequence whenever one exists.
+/// The expected lines that do not match.
 fn unmatched(expected: &str, run: &ScriptRun) -> Vec<Mismatch> {
+    aligned(expected, run)
+        .into_iter()
+        .filter(|(a, _)| a.output.is_none())
+        .map(|(a, line)| Mismatch::Line {
+            number: a.number,
+            line: line.to_owned(),
+        })
+        .collect()
+}
+
+/// The expected lines as a subsequence of the output: each non-blank line must match an output
+/// line after the one the line before it matched. The earliest match is taken for each, which
+/// finds a subsequence whenever one exists. A line that matches nothing leaves the position
+/// where it was.
+fn aligned<'e>(expected: &'e str, run: &ScriptRun) -> Vec<(Aligned, &'e str)> {
     let output: Vec<Cow<'_, str>> = run.lines.iter().map(|l| strip_ansi(&l.text)).collect();
     let mut next = 0;
-    let mut missing = Vec::new();
+    let mut found = Vec::new();
     for (i, line) in expected.split('\n').enumerate() {
         let pattern = line.trim_end();
         if pattern.is_empty() {
             continue;
         }
-        let found = output[next..]
+        let at = output[next..]
             .iter()
-            .position(|out| line_matches(pattern, out.trim_end()));
-        match found {
-            Some(at) => next += at + 1,
-            None => missing.push(Mismatch::Line {
-                number: i + 1,
-                line: line.to_owned(),
-            }),
+            .position(|out| line_matches(pattern, out.trim_end()))
+            .map(|at| next + at);
+        if let Some(at) = at {
+            next = at + 1;
         }
+        let number = i + 1;
+        found.push((Aligned { number, output: at }, line));
     }
-    missing
+    found
 }
 
 /// Whether `line` matches `pattern`: equal, except that each `…` matches any run of characters,
@@ -313,6 +348,47 @@ mod tests {
             Verdict::Mismatch(m) => format!("mismatch {m:?}"),
             Verdict::Confirm(c) => format!("confirm {:?} errored={}", c.reasons, c.errored),
         }
+    }
+
+    #[test]
+    fn alignment() {
+        let mut text = String::from("ok: …\n\nmissing\ndone\n");
+        let lines = TextRef::Span(Span::new(0, text.len() as u32));
+        text.push_str("tail");
+        let source = PlanSource::from_normalized("t.md", text, String::new());
+        let expect = Expectation {
+            exit: ExitExpect::Success,
+            lines: Some(lines),
+            prose: None,
+            comments: None,
+        };
+        let out = ["noise", "ok: 3", "done", "done"];
+        let run = ScriptRun {
+            status: RunStatus::Exited(0),
+            errored: false,
+            lines: out
+                .iter()
+                .map(|t| OutLine {
+                    stream: Stream::Stdout,
+                    text: (*t).to_owned(),
+                    newline: true,
+                })
+                .collect(),
+            cwd: None,
+        };
+        let shown: Vec<(usize, Option<usize>)> = align(Some(&expect), &run, &source)
+            .iter()
+            .map(|a| (a.number, a.output))
+            .collect();
+        assert_eq!(shown, [(1, Some(1)), (3, None), (4, Some(2))]);
+        assert_eq!(
+            check(Some(&expect), &run, &source),
+            Verdict::Mismatch(vec![Mismatch::Line {
+                number: 3,
+                line: "missing".to_owned()
+            }])
+        );
+        assert!(align(None, &run, &source).is_empty());
     }
 
     #[test]
