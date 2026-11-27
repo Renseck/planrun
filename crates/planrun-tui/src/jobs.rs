@@ -196,6 +196,13 @@ pub enum Job {
     Live,
     /// `planrun update --check`.
     Update(UpdateCheck),
+    /// `git diff HEAD` of a running task's paths, for CHANGES.
+    Changes {
+        /// The task, by position.
+        task: usize,
+        /// Its paths.
+        paths: Vec<String>,
+    },
     /// The dry run of a plan (D55), for Inspect.
     DryRun {
         /// The plan file.
@@ -223,6 +230,13 @@ pub enum Done {
     Live(Result<Option<Option<u32>>, String>),
     /// The update check.
     Update(UpdateState),
+    /// A task's diff against HEAD, one per file that has one.
+    Changes {
+        /// The task, by position.
+        task: usize,
+        /// The diffs.
+        files: Vec<crate::diff::FileDiff>,
+    },
     /// A plan's dry run.
     DryRun {
         /// The plan file.
@@ -263,6 +277,14 @@ impl Job {
             }
             Job::Live => Box::new(|e| Done::Live(Err(e))),
             Job::Update(_) => Box::new(|_| Done::Update(UpdateState::Failed)),
+            Job::Changes { task, .. } => {
+                // CHANGES falls back to the planned diff.
+                let task = *task;
+                Box::new(move |_| Done::Changes {
+                    task,
+                    files: Vec::new(),
+                })
+            }
             Job::DryRun { path, parsed } => {
                 let path = path.clone();
                 let fingerprint = parsed.plan.source.fingerprint.to_string();
@@ -285,6 +307,10 @@ impl Job {
             }
             Job::Live => Done::Live(live(ctx)),
             Job::Update(check) => Done::Update(check()),
+            Job::Changes { task, paths } => Done::Changes {
+                task,
+                files: changes(ctx, &paths),
+            },
             Job::DryRun { path, parsed } => {
                 let plan = &parsed.plan;
                 let result = Workspace::open(&ctx.root, ctx.env.clone())
@@ -297,6 +323,25 @@ impl Job {
                 }
             }
         }
+    }
+}
+
+/// `git --no-optional-locks diff HEAD -- paths`, read-only; empty when git fails.
+fn changes(ctx: &Context, paths: &[String]) -> Vec<crate::diff::FileDiff> {
+    if paths.is_empty() {
+        return Vec::new();
+    }
+    let out = std::process::Command::new("git")
+        .args(["--no-optional-locks", "diff", "--no-color", "HEAD", "--"])
+        .args(paths)
+        .current_dir(&ctx.root)
+        .envs(ctx.env.iter().map(|(k, v)| (k, v)))
+        .output();
+    match out {
+        Ok(out) if out.status.success() => {
+            crate::diff::parse(&String::from_utf8_lossy(&out.stdout))
+        }
+        _ => Vec::new(),
     }
 }
 

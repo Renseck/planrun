@@ -8,6 +8,7 @@
 pub mod app;
 pub mod chrome;
 pub mod diff;
+pub mod dock;
 pub mod draw;
 pub mod driver;
 pub mod glyph;
@@ -16,9 +17,11 @@ pub mod inspect;
 pub mod jobs;
 pub mod keys;
 pub mod plans;
+pub mod run;
 pub mod terminal;
 pub mod text;
 pub mod theme;
 pub mod tree;
+pub mod worker;
 
 pub use terminal::{Host, run};

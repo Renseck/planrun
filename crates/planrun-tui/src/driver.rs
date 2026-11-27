@@ -38,6 +38,11 @@ impl<B: Backend> Core<B> {
         &self.app
     }
 
+    /// The app, to change it (the tests add a crash observer, D93).
+    pub fn app_mut(&mut self) -> &mut App {
+        &mut self.app
+    }
+
     /// The terminal.
     pub fn terminal(&self) -> &Terminal<B> {
         &self.terminal
@@ -126,6 +131,9 @@ impl<B: Backend> Core<B> {
                         };
                         let _ = tx.send(Msg::Done(done));
                     });
+                }
+                Effect::Run(request) => {
+                    crate::worker::start(request, self.app.context(), self.tx.clone());
                 }
                 Effect::Quit => self.app.quit = true,
             }
