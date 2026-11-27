@@ -16,6 +16,7 @@ use crate::history::{self, History};
 use crate::inspect::{Assumed, Did, Inspect};
 use crate::jobs::{Bg, Context, Done, Job, UpdateCheck, UpdateState};
 use crate::keys::Key;
+use crate::palette::{Cmd, Command, Palette, Pick};
 use crate::plans::{self, Labels, Plans};
 use crate::preview::ResumeView;
 use crate::run::{Follow, Inspector, Run};
@@ -48,6 +49,14 @@ pub enum View {
     History,
     /// The resume preview of a run in History.
     Resume,
+}
+
+/// What lies over the view.
+pub enum Overlay {
+    /// F1, `?`.
+    Help,
+    /// `ctrl+k`, `ctrl+p`.
+    Palette(Palette),
 }
 
 /// What the app asks the driver to do.
@@ -83,6 +92,7 @@ pub struct App {
     pub(crate) run: Option<Run>,
     pub(crate) history: History,
     pub(crate) resume: Option<ResumeView>,
+    pub(crate) overlay: Option<Overlay>,
     pub(crate) observers: Vec<ObserverFactory>,
     pub(crate) update: UpdateState,
     pub(crate) update_check: Option<UpdateCheck>,
@@ -106,6 +116,7 @@ impl App {
             run: None,
             history: History::default(),
             resume: None,
+            overlay: None,
             observers: Vec::new(),
             update: UpdateState::Unchecked,
             update_check: update,
@@ -149,6 +160,14 @@ impl App {
     /// The resume preview, when it is open.
     pub fn resume_view(&self) -> Option<&ResumeView> {
         self.resume.as_ref()
+    }
+
+    /// The open palette, if any.
+    pub fn palette(&self) -> Option<&Palette> {
+        match &self.overlay {
+            Some(Overlay::Palette(p)) => Some(p),
+            _ => None,
+        }
     }
 
     /// The run, when there is one.
@@ -301,6 +320,50 @@ impl App {
 
     /// A key.
     pub fn key(&mut self, key: Key) -> Vec<Effect> {
+        if let Some(overlay) = self.overlay.as_mut() {
+            return match overlay {
+                Overlay::Help => {
+                    if matches!(key, Key::Esc | Key::F(1) | Key::Char('?') | Key::Char('q')) {
+                        self.overlay = None;
+                    }
+                    Vec::new()
+                }
+                Overlay::Palette(p) => match p.key(key) {
+                    Pick::Open => Vec::new(),
+                    Pick::Closed => {
+                        self.overlay = None;
+                        Vec::new()
+                    }
+                    Pick::Chosen(cmd) => {
+                        self.overlay = None;
+                        self.command(cmd)
+                    }
+                },
+            };
+        }
+        let typing = self.typing();
+        match key {
+            Key::F(1) => {
+                self.overlay = Some(Overlay::Help);
+                return Vec::new();
+            }
+            Key::Char('?') if !typing => {
+                self.overlay = Some(Overlay::Help);
+                return Vec::new();
+            }
+            Key::Ctrl('k') => {
+                self.overlay = Some(Overlay::Palette(Palette::new(false, self.commands())));
+                return Vec::new();
+            }
+            Key::Ctrl('p') => {
+                let targets = self.targets();
+                if !targets.is_empty() {
+                    self.overlay = Some(Overlay::Palette(Palette::new(true, targets)));
+                }
+                return Vec::new();
+            }
+            _ => {}
+        }
         match key {
             Key::F(2) => {
                 self.view = View::Plans;
@@ -338,25 +401,28 @@ impl App {
 
     fn history_key(&mut self, key: Key) -> Vec<Effect> {
         match self.history.key(key) {
-            history::Did::Preview(entry) => {
-                let job = Job::Preview {
-                    journal: entry.journal.clone(),
-                    plan: entry.plan.clone(),
-                    now: self.now(),
-                };
-                self.resume = Some(ResumeView {
-                    entry,
-                    data: Bg::Running,
-                });
-                self.view = View::Resume;
-                vec![Effect::Job(job)]
-            }
+            history::Did::Preview(entry) => self.history_key_preview(entry),
             history::Did::Back => {
                 self.view = View::Plans;
                 Vec::new()
             }
             history::Did::None => Vec::new(),
         }
+    }
+
+    /// Opens the resume preview of `entry`.
+    fn history_key_preview(&mut self, entry: history::RunEntry) -> Vec<Effect> {
+        let job = Job::Preview {
+            journal: entry.journal.clone(),
+            plan: entry.plan.clone(),
+            now: self.now(),
+        };
+        self.resume = Some(ResumeView {
+            entry,
+            data: Bg::Running,
+        });
+        self.view = View::Resume;
+        vec![Effect::Job(job)]
     }
 
     fn resume_key(&mut self, key: Key) -> Vec<Effect> {
@@ -416,6 +482,209 @@ impl App {
             resume: true,
             observers: std::mem::take(&mut self.observers),
         })]
+    }
+
+    /// Whether keys go to a text field: a typed answer, or the Plans filter.
+    fn typing(&self) -> bool {
+        let typed = self.view == View::Plan
+            && self.run.as_ref().is_some_and(|r| {
+                r.focus == 2 && r.dock.as_ref().is_some_and(|d| d.question.typed.is_some())
+            });
+        typed || (self.view == View::Plans && self.plans.editing)
+    }
+
+    /// The registry: what can be done from here, as the keys do it.
+    fn commands(&self) -> Vec<Command> {
+        let mut out = Vec::new();
+        let command = |group, title: String, key: &str, cmd| Command {
+            group,
+            title,
+            key: key.to_owned(),
+            cmd,
+        };
+        if let Some(inspect) = self.inspect.as_ref().filter(|_| !self.running()) {
+            let name = inspect
+                .path
+                .file_name()
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+            let policy = inspect.assumed.describe();
+            out.push(command(
+                "PLAN",
+                format!("Run {name} with policy {policy}"),
+                "R",
+                Cmd::Run(None),
+            ));
+            for (t, task) in inspect.plan().tasks.iter().enumerate().skip(1) {
+                out.push(command(
+                    "PLAN",
+                    format!(
+                        "Run from task {} {}",
+                        task.id.raw,
+                        inspect.plan().text(&task.title)
+                    ),
+                    "shift+R",
+                    Cmd::Run(Some(t)),
+                ));
+            }
+            out.push(command(
+                "PLAN",
+                "Assume a policy…".to_owned(),
+                "a",
+                Cmd::Policy,
+            ));
+        }
+        for entry in &self.plans.entries {
+            if entry.check.value().is_some_and(|f| f.parsed.is_some()) {
+                out.push(command(
+                    "PLANS",
+                    format!("Inspect {}", entry.name),
+                    "enter",
+                    Cmd::Inspect(entry.path.clone()),
+                ));
+            }
+        }
+        if let Some(Ok(runs)) = &self.history.runs {
+            for run in runs.iter().filter(|r| r.resumable()) {
+                out.push(command(
+                    "HISTORY",
+                    format!("Resume {}: preview", run.name()),
+                    "R",
+                    Cmd::Preview(run.clone()),
+                ));
+            }
+        }
+        out.push(command(
+            "VIEW",
+            "Plans".to_owned(),
+            "F2",
+            Cmd::Key(Key::F(2)),
+        ));
+        out.push(command(
+            "VIEW",
+            "Plan".to_owned(),
+            "F3",
+            Cmd::Key(Key::F(3)),
+        ));
+        out.push(command(
+            "VIEW",
+            "History".to_owned(),
+            "F4",
+            Cmd::Key(Key::F(4)),
+        ));
+        out.push(command(
+            "VIEW",
+            "Help".to_owned(),
+            "F1",
+            Cmd::Key(Key::F(1)),
+        ));
+        if self.run.is_some() {
+            for (n, what) in [
+                (1, "everything"),
+                (2, "events only"),
+                (3, "run output only"),
+                (4, "verdicts only"),
+                (5, "warnings only"),
+            ] {
+                let key = char::from(b'0' + n);
+                out.push(command(
+                    "VIEW",
+                    format!("Console: show {what}"),
+                    &key.to_string(),
+                    Cmd::Key(Key::Char(key)),
+                ));
+            }
+        }
+        out.push(command(
+            "VIEW",
+            "Check the plans again".to_owned(),
+            "c",
+            Cmd::Key(Key::Char('c')),
+        ));
+        if !self.running() {
+            out.push(command(
+                "VIEW",
+                "Quit".to_owned(),
+                "q",
+                Cmd::Key(Key::Ctrl('c')),
+            ));
+        }
+        out
+    }
+
+    /// `ctrl+p`: the plan's files and actions.
+    fn targets(&self) -> Vec<Command> {
+        let plan = match (&self.run, &self.inspect) {
+            (Some(run), _) => run.plan(),
+            (None, Some(inspect)) => inspect.plan(),
+            _ => return Vec::new(),
+        };
+        let mut out = Vec::new();
+        for (t, task) in plan.tasks.iter().enumerate() {
+            for (s, step) in task.steps.iter().enumerate() {
+                for (a, action) in step.actions.iter().enumerate() {
+                    if matches!(action.kind, planrun_model::ActionKind::Note { .. }) {
+                        continue;
+                    }
+                    let group = if planrun_exec::handler::file_path(&action.kind).is_some() {
+                        "FILES"
+                    } else {
+                        "ACTIONS"
+                    };
+                    let number = step
+                        .number
+                        .map_or_else(|| "·".to_owned(), |n| n.to_string());
+                    let title = format!(
+                        "{} {}",
+                        self.g.get(crate::tree::kind_glyph(action)),
+                        crate::tree::label(plan, action)
+                    );
+                    out.push(Command {
+                        group,
+                        title,
+                        key: format!("{} step {number}", task.id.raw),
+                        cmd: Cmd::Select(crate::tree::Node::Action(t, s, a)),
+                    });
+                }
+            }
+        }
+        out.sort_by_key(|c| c.group != "FILES");
+        out
+    }
+
+    /// Does what a palette command says, as its key does it.
+    fn command(&mut self, cmd: Cmd) -> Vec<Effect> {
+        match cmd {
+            Cmd::Inspect(path) => self.open(path),
+            Cmd::Run(from) => self.start_run(from),
+            Cmd::Policy => {
+                if let Some(inspect) = self.inspect.as_mut() {
+                    self.view = View::Plan;
+                    inspect.picking = true;
+                }
+                Vec::new()
+            }
+            Cmd::Preview(entry) => {
+                self.view = View::History;
+                self.history_key_preview(entry)
+            }
+            Cmd::Key(Key::Ctrl('c')) => vec![Effect::Quit],
+            Cmd::Key(key) => self.key(key),
+            Cmd::Select(node) => {
+                self.view = View::Plan;
+                match (&mut self.run, &mut self.inspect) {
+                    (Some(run), _) => {
+                        run.tree.select(node);
+                        run.focus = 0;
+                    }
+                    (None, Some(inspect)) => {
+                        inspect.tree.select(node);
+                        inspect.focus = crate::inspect::Focus::Tree;
+                    }
+                    _ => {}
+                }
+                Vec::new()
+            }
+        }
     }
 
     /// Whether the runner is running.
@@ -605,15 +874,35 @@ impl App {
         if footer_rows == 2 {
             chrome::keys(buf, area, area.bottom() - 2, &keys, self.g);
         }
+        let active = if matches!(self.overlay, Some(Overlay::Help)) {
+            Nav::Help
+        } else {
+            self.nav()
+        };
         chrome::nav(
             buf,
             area,
             area.bottom() - 1,
-            self.nav(),
+            active,
             &self.ctx,
             &self.update,
             self.g,
         );
+        match &self.overlay {
+            Some(Overlay::Help) => crate::help::draw(buf, body, &keys, self.g),
+            Some(Overlay::Palette(p)) => {
+                p.draw(buf, body, self.g);
+                let keys = [
+                    ("↑↓".to_owned(), "select".to_owned()),
+                    ("enter".to_owned(), "run command".to_owned()),
+                    ("esc".to_owned(), "close".to_owned()),
+                ];
+                if footer_rows == 2 {
+                    chrome::keys(buf, area, area.bottom() - 2, &keys, self.g);
+                }
+            }
+            None => {}
+        }
     }
 
     fn nav(&self) -> Nav {

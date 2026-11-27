@@ -1,0 +1,76 @@
+---
+source: crates/planrun-tui/tests/palette.rs
+expression: screen(&mut core)
+---
+ 0  PLANRUN  greeter › plans                                                                                        ○ idle
+   0-0 fg/bg1, 1-7 fg/bg1 b, 8-9 fg/bg1, 10-16 fg2/bg1, 17-19 fg3/bg1, 20-24 fg/bg1 b, 25-112 fg/bg1, 113-114 fg3/bg1, 115-118 fg2/bg1, 119-119 fg/bg1
+ 1 ▎ PLANS  5 files in ./plans                                    / filter │  PLAN  README.md
+   0-71 fg3/bg1, 72-72 fg3/bg0, 73-119 fg3/bg1
+ 2                                                                         │
+   0-119 fg3/bg0
+ 3   PLAN                     FORMAT       TASKS CHECK       RUN           │ README.md · 17 lines · 12:34
+   0-119 fg3/bg0
+ 4 ▌ README.md
+   0-14 fg3/bg2, 15-104 fg/bg2, 105-119 fg3/bg0
+ 5   assay-style.m  › insp ass▏                                                                    1 of 10  a plan · 12:34
+   0-14 fg3/bg0, 15-16 fg/bg2, 17-17 act/bg2 b, 18-18 fg/bg2, 19-26 fg/bg2 b, 27-27 act/bg2, 28-95 fg/bg2, 96-102 fg3/bg2, 103-104 fg/bg2, 105-119 fg3/bg0
+ 6   before-after-──────────────────────────────────────────────────────────────────────────────────────────
+   0-14 fg3/bg0, 15-104 rule/bg2, 105-119 fg3/bg0
+ 7   devready-styl  PLANS                                                                                   n (no detecti…
+   0-14 fg3/bg0, 15-16 fg/bg2, 17-21 fg3/bg2 b, 22-104 fg/bg2, 105-119 fg3/bg0
+ 8   superpowers-s▌   Inspect assay-style.md                                                         enter
+   0-14 fg3/bg0, 15-15 act/bg1, 16-18 fg/bg1, 19-22 act/bg1 b, 23-25 fg/bg1, 26-29 act/bg1 b, 30-97 fg/bg1, 98-102 fg3/bg1, 103-104 fg/bg1, 105-119 fg3/bg0
+ 9                                                                                                          ──── ○ not run
+   0-14 fg3/bg0, 15-104 fg/bg2, 105-119 fg3/bg0
+10                                                                                                          this plan
+   0-14 fg3/bg0, 15-104 fg/bg2, 105-119 fg3/bg0
+11 
+   0-14 fg3/bg0, 15-104 fg/bg2, 105-119 fg3/bg0
+12                                                                                                          ──────────────
+   0-14 fg3/bg0, 15-104 fg/bg2, 105-119 fg3/bg0
+13                                                                                                          ns right
+   0-14 fg3/bg0, 15-104 fg/bg2, 105-119 fg3/bg0
+14                                                                                                          dry run
+   0-14 fg3/bg0, 15-104 fg/bg2, 105-119 fg3/bg0
+15 
+   0-14 fg3/bg0, 15-104 fg/bg2, 105-119 fg3/bg0
+16 
+   0-14 fg3/bg0, 15-104 fg/bg2, 105-119 fg3/bg0
+17                  commands come from a registry; each view adds its own
+   0-14 fg3/bg0, 15-16 fg/bg2, 17-69 fg3/bg2, 70-104 fg/bg2, 105-119 fg3/bg0
+18                                                                         │
+   0-119 fg3/bg0
+19                                                                         │
+   0-119 fg3/bg0
+20                                                                         │
+   0-119 fg3/bg0
+21                                                                         │
+   0-119 fg3/bg0
+22                                                                         │
+   0-119 fg3/bg0
+23                                                                         │
+   0-119 fg3/bg0
+24                                                                         │
+   0-119 fg3/bg0
+25                                                                         │
+   0-119 fg3/bg0
+26                                                                         │
+   0-119 fg3/bg0
+27                                                                         │
+   0-119 fg3/bg0
+28                                                                         │
+   0-119 fg3/bg0
+29                                                                         │
+   0-119 fg3/bg0
+30  ────────────────────────────────────────────────────────────────────── │
+   0-119 fg3/bg0
+31   check ✓ valid  ! warnings  ✕ errors  ◌ checking  grey ✓ stale         │
+   0-119 fg3/bg0
+32   background checks on start and on file change · c re-checks           │
+   0-119 fg3/bg0
+33                                                                         │
+   0-119 fg3/bg0
+34   ↑↓  select    enter  run command    esc  close
+   0-0 fg/bg1, 1-4 fg/bg2 b, 5-11 fg2/bg1, 12-14 fg/bg1, 15-21 fg/bg2 b, 22-33 fg2/bg1, 34-36 fg/bg1, 37-41 fg/bg2 b, 42-47 fg2/bg1, 48-119 fg/bg1
+35   F1 Help   F2 Plans   F3 Plan   F4 History     target C:\src\greeter  ·  plans ./plans                   planrun 0.1.0
+   0-0 fg/bg1, 1-9 fg3/bg1, 10-10 fg/bg1, 11-20 act/bg2 b, 21-21 fg/bg1, 22-30 fg3/bg1, 31-31 fg/bg1, 32-43 fg3/bg1, 44-47 fg/bg1, 48-54 fg3/bg1, 55-68 fg2/bg1, 69-79 fg3/bg1, 80-86 fg2/bg1, 87-105 fg/bg1, 106-118 fg3/bg1, 119-119 fg/bg1
