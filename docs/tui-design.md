@@ -1,6 +1,6 @@
 # planrun TUI — Design
 
-Status: adopted (r4). Its decisions are D84–D92 in docs/decisions.md; the changes outside
+Status: adopted (r4). Its decisions are D84–D94 in docs/decisions.md; the changes outside
 planrun-tui (§9) are P6b, the TUI itself P6c (docs/roadmap.md). Mockups: the "Planrun TUI —
 Design" canvas (https://claude.ai/artifact/2nYJNnJv2YeMu6VpVxmbij). Every artboard is a real cell
 grid (120 × 36, or 80 × 24).
@@ -47,6 +47,13 @@ docs/decisions.md holds them as D84–D92, with what P6b settled.
 - **D92 — Dependencies (D9).** `ratatui`, `crossterm` and `unicode-width`, in planrun-tui only.
   crossterm brings windows-sys, mio and signal-hook, which D64 and D73 kept out of planrun-exec.
   They stay out: planrun-exec's dependencies and its `unsafe` surface are unchanged.
+
+- **D93 — The TUI is tested in-process.** One loop core over any ratatui backend: the binary
+  gives it crossterm, the tests a `TestBackend`, scripted keys and the real runner on a
+  fixture copy. Snapshots are cell grids with style runs by token name.
+- **D94 — How `planrun tui` starts.** A terminal on stdin and stdout, or exit 2; the plans
+  directory defaults to `docs/plans` under the repository's root; only key presses count, and
+  one loop polls keys and drains the app's channel; times are UTC.
 
 Not in v1: **pause**. Asking under `--auto` turns Auto into Ask, a decision change the UI may not
 make. If wanted, it is its own decision with runner support: a flag read before each action,
@@ -158,7 +165,8 @@ A table of plan files, `PLAN · FORMAT · TASKS · CHECK · RUN`, with check and
 columns. The selected plan's detail shows the outline with a 16-cell coverage strip per task
 (action, absorbed, manifest, note, manual; a non-zero manual count is always at least one cell),
 the CHECK diagnostics, the journal STATUS, and a PREFLIGHT line saying it is not a background
-check. Keys: `enter` Inspect, `R` run, `c` re-check, `/` filter.
+check. Keys: `enter` Inspect, `R` opens Inspect and runs from there (a run is always preceded
+by a visible dry run and policy), `c` re-check, `/` filter.
 
 ### B/C. Plan view (F3)
 
@@ -173,8 +181,10 @@ check. Keys: `enter` Inspect, `R` run, `c` re-check, `/` filter.
   CONSOLE with columns `time · label · text`. Labels: `TASK`, `PRE`, `FILE`, `RUN`, `out`, `err`
   (warn, with a gutter mark), `VERIFY`, `COMMIT`, `EVENT` (status prose). Filters 1–5;
   `⇣ following` until you scroll; `f` resumes.
-- **Policy in Inspect:** `a` changes the assumed policy (auto classes, expected failures). The dry
-  run reruns; `R` uses it.
+- **Policy in Inspect:** `a` changes the assumed policy (auto classes, expected failures). The
+  tags are computed again from `Policy::decide`; the dry run is not run again, since it takes no
+  policy. `R` uses the assumed policy, once the dry run is there; `shift+R` runs from the
+  selected task.
 - **Proportions:** `<`/`>` resize the navigator, `+`/`-` move the right split. Kept per session.
 
 ### D. Decision dock
@@ -311,5 +321,5 @@ History, the resume preview, and the command palette (`ctrl+k`, `ctrl+p`).
   in planrun-exec, each with its tests; the CLI's behaviour and the journal format are unchanged.
 - **P6c — the TUI.** The `planrun-tui` crate and `planrun tui`: theme and glyphs, the shell,
   background work, Plans, the plan view (Inspect, then Run through the `Ui` impl and the journal
-  observer), the dock, History, the resume preview, the palette. Acceptance includes driving
-  the TUI against the greeter fixture through the same `e2e` seam as P5 (D82).
+  observer), the dock, History, the resume preview, the palette. Acceptance drives the TUI
+  against the greeter fixture in-process, with the real runner (D93).

@@ -1202,6 +1202,8 @@ k-th write), `commit-start` (after a Commit's `action-start`). It ends with `exi
 for the test machine to answer. A kill of `git commit` itself (HEAD moved, `action-end` missing)
 is tested in planrun-exec, where the observer can make the commit before it crashes.
 
+Amended by D93 (the TUI is tested in-process).
+
 ## D83 Releases, install scripts and `planrun update`
 
 planrun is installed and kept current from GitHub releases; `Renseck/planrun` is public, so no
@@ -1337,6 +1339,8 @@ Amends D15.
   Terminal with Cascadia Mono; each has an ASCII fallback, and `PLANRUN_ASCII=1` switches to them
   all. No Nerd Font, no wide or emoji glyphs.
 
+Amended by D94 (v1 renders 24-bit colour without detecting it).
+
 ## D90 The runner stays synchronous, on a worker thread
 
 Amends D15, D76 and D77.
@@ -1384,3 +1388,52 @@ Amends D9. `ratatui`, `crossterm` and `unicode-width`, in planrun-tui only. cros
 brings `windows-sys`, `mio` and `signal-hook`, which D64 and D73 keep out of planrun-exec; they
 stay out of it: planrun-exec's dependencies and its `unsafe` surface (`shell/kill.rs`) do not
 change.
+
+## D93 The TUI is tested in-process
+
+Amends D82 for the TUI.
+
+- The TUI cannot be driven through pipes: crossterm reads keys from the console (on Windows
+  `ReadConsoleInput`), so driving the binary would need a pseudo-console, which means a new
+  dependency or `unsafe` code outside `shell/kill.rs`. Instead, planrun-tui's loop is one core
+  (`driver::Core`) over any ratatui backend, fed keys, ticks and the messages of its threads.
+  The binary gives it crossterm's terminal and events; the tests a `TestBackend` and scripted
+  keys.
+- **Its acceptance** runs the real runner on a copy of the greeter fixture
+  (`tests/support/fixture.rs`) through that core: the synthetic assay plan is inspected, run,
+  answered in the dock and committed, and the journal and the tree are checked as P5's binary
+  test checks them. A crash is a panic from a journal observer, as in planrun-exec's resume
+  tests, and the resume preview and resume are driven from the journal it leaves.
+- **Snapshots are cell grids.** `grid::grid` prints each row's characters and then its style runs
+  by token name (`act/bg2 b`), so a snapshot reads against the design's artboards cell for
+  cell. Times come from a fixed clock, and the footer's target and plans labels are fixed.
+- What only a real terminal shows (the glyphs in Cascadia Mono, the keys, the `[o]` shell, Ctrl-C,
+  a resize, the terminal restored after a panic) is a manual check list in the crate's README.
+
+## D94 How `planrun tui` starts and reads keys
+
+Amends D89.
+
+- **A terminal on stdin and stdout**, or it stops before raw mode with exit code 2 and says
+  that `planrun run` is the line version.
+- **The repository is the current directory's** (D88). The plans directory is the argument,
+  relative to the current directory, or `docs/plans` under the repository's root; a missing
+  directory is shown in the Plans view, not refused. Its `*.md` files are listed, not
+  recursively; a file no format detects is listed as "not a plan".
+- **Keys:** only presses count (Windows reports releases too), and a held key's repeats only for
+  movement. One loop polls crossterm's events and drains the app's channel between polls: no
+  input thread, which would read the keys meant for the `[o]` shell. Ctrl-C is a key in raw mode
+  (D91). VS Code's terminal keeps `ctrl+k` and `ctrl+p` for itself unless
+  `terminal.integrated.sendKeybindingsToShell` is set; Windows Terminal passes them.
+- **Colour:** v1 renders 24-bit colour without looking at `COLORTERM` or `WT_SESSION`; the
+  detection comes with the 256-colour fallback.
+- **Times are UTC**, marked so where a date is shown: std has no time zone, and a time-zone crate
+  for one label is not worth a D9 line. The console shows the time since the run started.
+- **The plan files are checked in the background** on start, every two seconds when a file's
+  length or modification time changed, and on `c`.
+- **Interrupts** (D73) are installed once, before the terminal is set up, not at each run: the
+  `[o]` shell's `InterruptsIgnored` relies on them.
+- **A panic** on the render thread restores the terminal, then reports as Rust does. On any
+  other thread (the runner's, a background job's) it leaves the terminal alone and prints
+  nothing: the thread catches it, and its message comes back to the app as that work's failure
+  (a run that ended with an error, a job in its failed state).

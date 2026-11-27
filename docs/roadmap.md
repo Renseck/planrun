@@ -145,4 +145,4 @@ for CI.
   background work, Plans, the plan view (Inspect, then Run through its `Ui` and a journal
   observer), the dock with every `QuestionKind`, History, the resume preview and the command
   palette (`docs/tui-design.md` §11). Its acceptance drives the TUI against the greeter fixture
-  through the `e2e` seam (D82).
+  in-process, with the real runner (D93). Plan: `docs/plans/2026-11-27-p6c-tui.md`.
