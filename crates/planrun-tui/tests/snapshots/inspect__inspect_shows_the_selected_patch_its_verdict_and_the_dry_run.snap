@@ -1,0 +1,76 @@
+---
+source: crates/planrun-tui/tests/inspect.rs
+expression: screen(&mut core)
+---
+ 0  PLANRUN  greeter › assay-style.md › P1-T1 › ± src/lib.rs                      INSPECT   policy default  dry run ✓ 4 ok
+   0-0 fg/bg1, 1-7 fg/bg1 b, 8-9 fg/bg1, 10-16 fg2/bg1, 17-19 fg3/bg1, 20-33 fg2/bg1, 34-36 fg3/bg1, 37-41 fg2/bg1, 42-44 fg3/bg1, 45-56 fg/bg1 b, 57-77 fg/bg1, 78-86 meta/bg1 b, 87-95 fg3/bg1, 96-102 fg/bg1 b, 103-112 fg3/bg1, 113-114 ok/bg1, 115-118 fg2/bg1, 119-119 fg/bg1
+ 1 ▎ PLAN  2 tasks                     │  ACTION  2 of 2 in step 1                                       assay-style.md:54
+   0-0 act/bg1, 1-1 fg/bg1, 2-5 act/bg1 b, 6-7 fg/bg1, 8-14 fg3/bg1, 15-35 fg/bg1, 36-36 rule/bg0, 37-38 fg/bg1, 39-44 fg2/bg1 b, 45-46 fg/bg1, 47-62 fg3/bg1, 63-101 fg/bg1, 102-118 fg3/bg1, 119-119 fg/bg1
+ 2  ✓ ▾ P1-T1 the greet module         │
+   1-1 ok/bg0 b, 3-3 fg3/bg0 b, 5-26 fg/bg0 b, 36-36 rule/bg0
+ 3  ✓   1 write the files              │  ± APPLY PATCH  src/lib.rs
+   1-1 ok/bg0 b, 5-5 fg3/bg0 b, 7-21 fg2/bg0, 36-36 rule/bg0, 39-39 fg2/bg0 b, 41-51 fg/bg0 b, 54-63 fg/bg0 b
+ 4  ✓     + src/greet.rs          auto │
+   1-1 ok/bg0 b, 7-7 fg2/bg0 b, 9-20 fg2/bg0, 31-34 fg3/bg0, 36-36 rule/bg0
+ 5 ▌✓     ± src/lib.rs            auto │  class    Modify · in task scope (manifest: modify src/lib.rs)
+   0-0 act/bg2, 1-1 ok/bg2 b, 2-6 fg/bg2, 7-7 fg2/bg2 b, 8-8 fg/bg2, 9-18 fg2/bg2, 19-30 fg/bg2, 31-34 fg3/bg2, 35-35 fg/bg2, 36-36 rule/bg0, 39-43 fg3/bg0, 48-99 fg2/bg0
+ 6  ·   2 verify                       │  policy   runs without asking: a file action inside the task's scope
+   1-1 fg3/bg0 b, 5-5 fg3/bg0 b, 7-12 fg2/bg0, 36-36 rule/bg0, 39-44 fg3/bg0, 48-105 fg2/bg0
+ 7  ·     $ cargo test greet       ask │  dry run  ✓ aa80cf1 → 97bd92a · simulates cleanly
+   1-1 fg3/bg0 b, 7-7 fg2/bg0 b, 9-24 fg2/bg0, 32-34 fg2/bg0, 36-36 rule/bg0, 39-45 fg3/bg0, 48-48 ok/bg0, 50-86 fg2/bg0
+ 8  ·     $ cargo test; $gate = $… ask │
+   1-1 fg3/bg0 b, 7-7 fg2/bg0 b, 9-30 fg2/bg0, 32-34 fg2/bg0, 36-36 rule/bg0
+ 9  ·   3 commit                       │  src/lib.rs  +2 −1     PLANNED                                          unified
+   1-1 fg3/bg0 b, 5-5 fg3/bg0 b, 7-12 fg2/bg0, 36-36 rule/bg0, 38-38 fg/bg1, 39-48 fg/bg1 b, 49-50 fg/bg1, 51-55 fg2/bg1, 56-59 fg/bg1, 60-68 fg2/bg2 b, 69-109 fg/bg1, 110-116 fg3/bg1, 117-118 fg/bg1
+10  ·     ⊙ commit                gate │            @@ -1,8 +1,9 @@
+   1-1 fg3/bg0 b, 7-7 fg2/bg0 b, 9-14 fg2/bg0, 31-34 fg2/bg0, 36-36 rule/bg0, 49-63 fg3/bg0
+11  ✓ ▾ P1-T2 re-export greeting, re…  │     1    1   //! A tiny fixture crate for the planrun corpus.
+   1-1 ok/bg0 b, 3-3 fg3/bg0 b, 5-33 fg/bg0 b, 36-36 rule/bg0, 39-42 fg3/bg0, 44-47 fg3/bg0, 49-49 fg3/bg0, 51-98 fg2/bg0
+12  ·   ·                              │     2    2
+   1-1 fg3/bg0 b, 5-5 fg3/bg0 b, 36-36 rule/bg0, 39-42 fg3/bg0, 44-47 fg3/bg0, 49-49 fg3/bg0
+13  ·     ∗ docs/modules.txt      auto │          3 + pub mod greet;
+   1-1 fg3/bg0 b, 7-7 fg2/bg0 b, 9-24 fg2/bg0, 31-34 fg3/bg0, 36-36 rule/bg0, 38-38 fg/addbg, 39-42 fg3/addbg, 43-43 fg/addbg, 44-47 fg3/addbg, 48-48 fg/addbg, 49-49 ok/addbg b, 50-118 fg/addbg
+14  ✓   1 write the files              │     3    4   pub mod old;
+   1-1 ok/bg0 b, 5-5 fg3/bg0 b, 7-21 fg2/bg0, 36-36 rule/bg0, 39-42 fg3/bg0, 44-47 fg3/bg0, 49-49 fg3/bg0, 51-62 fg2/bg0
+15  ✓     ± src/lib.rs            auto │     4    5
+   1-1 ok/bg0 b, 7-7 fg2/bg0 b, 9-18 fg2/bg0, 31-34 fg3/bg0, 36-36 rule/bg0, 39-42 fg3/bg0, 44-47 fg3/bg0, 49-49 fg3/bg0
+16  ✓     − src/old.rs            auto │     5    6   /// The greeting for `name`.
+   1-1 ok/bg0 b, 7-7 fg2/bg0 b, 9-18 fg2/bg0, 31-34 fg3/bg0, 36-36 rule/bg0, 39-42 fg3/bg0, 44-47 fg3/bg0, 49-49 fg3/bg0, 51-78 fg2/bg0
+17  ·     ∗ docs/modules.txt      auto │     6    7   pub fn greeting(name: &str) -> String {
+   1-1 fg3/bg0 b, 7-7 fg2/bg0 b, 9-24 fg2/bg0, 31-34 fg3/bg0, 36-36 rule/bg0, 39-42 fg3/bg0, 44-47 fg3/bg0, 49-49 fg3/bg0, 51-89 fg2/bg0
+18  ·   2 verify                       │     7      -     old::legacy_greeting(name)
+   1-1 fg3/bg0 b, 5-5 fg3/bg0 b, 7-12 fg2/bg0, 36-36 rule/bg0, 38-38 fg/delbg, 39-42 fg3/delbg, 43-43 fg/delbg, 44-47 fg3/delbg, 48-48 fg/delbg, 49-49 err/delbg b, 50-118 fg/delbg
+19  ·     $ New-Item -ItemType Di… ask │  DRY RUN  advisory · preflight decides at run time                         exit 0
+   1-1 fg3/bg0 b, 7-7 fg2/bg0 b, 9-30 fg2/bg0, 32-34 fg2/bg0, 36-36 rule/bg0, 37-38 fg/bg1, 39-45 fg2/bg1 b, 46-47 fg/bg1, 48-87 fg3/bg1, 88-112 fg/bg1, 113-118 ok/bg1, 119-119 fg/bg1
+20  ·     $ cargo test; $gate = $… ask │  ✓        dirt       none in the paths the plan touches
+   1-1 fg3/bg0 b, 7-7 fg2/bg0 b, 9-30 fg2/bg0, 32-34 fg2/bg0, 36-36 rule/bg0, 39-39 ok/bg0 b, 48-51 fg3/bg0, 59-92 fg2/bg0
+21  ·   3 commit                       │  ✓ P1-T1  step 1     + src/greet.rs  create, simulates
+   1-1 fg3/bg0 b, 5-5 fg3/bg0 b, 7-12 fg2/bg0, 36-36 rule/bg0, 39-39 ok/bg0 b, 41-45 meta/bg0, 48-53 fg3/bg0, 59-91 fg2/bg0
+22  ·     ⊙ commit                gate │  ✓ P1-T1  step 1     ± src/lib.rs  aa80cf1 → 97bd92a, simulates
+   1-1 fg3/bg0 b, 7-7 fg2/bg0 b, 9-14 fg2/bg0, 31-34 fg2/bg0, 36-36 rule/bg0, 39-39 ok/bg0 b, 41-45 meta/bg0, 48-53 fg3/bg0, 59-100 fg2/bg0
+23                                     │  · P1-T1  step 2     $ cargo test greet  would ask (Build)
+   36-36 rule/bg0, 39-39 fg3/bg0 b, 41-45 meta/bg0, 48-53 fg3/bg0, 59-95 fg2/bg0
+24                                     │  · P1-T1  step 2     $ cargo test; $gate = $LASTEX…  would ask (Build)
+   36-36 rule/bg0, 39-39 fg3/bg0 b, 41-45 meta/bg0, 48-53 fg3/bg0, 59-107 fg2/bg0
+25                                     │  · P1-T1  step 3     ⊙ commit  would ask (Modify)
+   36-36 rule/bg0, 39-39 fg3/bg0 b, 41-45 meta/bg0, 48-53 fg3/bg0, 59-86 fg2/bg0
+26                                     │  · P1-T2  step ·     ∗ docs/modules.txt  not checked
+   36-36 rule/bg0, 39-39 fg3/bg0 b, 41-45 meta/bg0, 48-53 fg3/bg0, 59-89 fg2/bg0
+27                                     │  ✓ P1-T2  step 1     ± src/lib.rs  97bd92a → 6b269fc, simulates
+   36-36 rule/bg0, 39-39 ok/bg0 b, 41-45 meta/bg0, 48-53 fg3/bg0, 59-100 fg2/bg0
+28                                     │  ✓ P1-T2  step 1     − src/old.rs  delete, simulates
+   36-36 rule/bg0, 39-39 ok/bg0 b, 41-45 meta/bg0, 48-53 fg3/bg0, 59-89 fg2/bg0
+29                                     │  · P1-T2  step 1     ∗ docs/modules.txt  not checked
+   36-36 rule/bg0, 39-39 fg3/bg0 b, 41-45 meta/bg0, 48-53 fg3/bg0, 59-89 fg2/bg0
+30                                     │  · P1-T2  step 2     $ New-Item -ItemType Director…  would ask (Modify)
+   36-36 rule/bg0, 39-39 fg3/bg0 b, 41-45 meta/bg0, 48-53 fg3/bg0, 59-108 fg2/bg0
+31                                     │  · P1-T2  step 2     $ cargo test; $gate = $LASTEX…  would ask (Build)
+   36-36 rule/bg0, 39-39 fg3/bg0 b, 41-45 meta/bg0, 48-53 fg3/bg0, 59-107 fg2/bg0
+32                                     │  · P1-T2  step 3     ⊙ commit  would ask (Modify)
+   36-36 rule/bg0, 39-39 fg3/bg0 b, 41-45 meta/bg0, 48-53 fg3/bg0, 59-86 fg2/bg0
+33                                     │
+   36-36 rule/bg0
+34   R  run with this policy    shift+R  from this task    a  policy…    enter  fold    tab  panel    esc  plans
+   0-0 fg/bg1, 1-3 fg/bg2 b, 4-24 fg2/bg1, 25-27 fg/bg1, 28-36 fg/bg2 b, 37-51 fg2/bg1, 52-54 fg/bg1, 55-57 fg/bg2 b, 58-65 fg2/bg1, 66-68 fg/bg1, 69-75 fg/bg2 b, 76-80 fg2/bg1, 81-83 fg/bg1, 84-88 fg/bg2 b, 89-94 fg2/bg1, 95-97 fg/bg1, 98-102 fg/bg2 b, 103-108 fg2/bg1, 109-119 fg/bg1
+35   F1 Help   F2 Plans   F3 Plan   F4 History     target C:\src\greeter  ·  plans ./plans                   planrun 0.1.0
+   0-0 fg/bg1, 1-9 fg3/bg1, 10-10 fg/bg1, 11-20 fg3/bg1, 21-21 fg/bg1, 22-30 act/bg2 b, 31-31 fg/bg1, 32-43 fg3/bg1, 44-47 fg/bg1, 48-54 fg3/bg1, 55-68 fg2/bg1, 69-79 fg3/bg1, 80-86 fg2/bg1, 87-105 fg/bg1, 106-118 fg3/bg1, 119-119 fg/bg1

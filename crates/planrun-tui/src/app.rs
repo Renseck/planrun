@@ -11,7 +11,8 @@ use ratatui::style::Style;
 use crate::chrome::{self, MIN, Nav};
 use crate::draw::fill;
 use crate::glyph::{Glyph, Glyphs};
-use crate::jobs::{Context, Done, Job, UpdateCheck, UpdateState};
+use crate::inspect::{Did, Inspect};
+use crate::jobs::{Bg, Context, Done, Job, UpdateCheck, UpdateState};
 use crate::keys::Key;
 use crate::plans::{self, Labels, Plans};
 use crate::theme::{Token, base, on};
@@ -36,6 +37,8 @@ const POLL_MS: u64 = 2000;
 pub enum View {
     /// F2.
     Plans,
+    /// F3: the plan view.
+    Plan,
 }
 
 /// What the app asks the driver to do.
@@ -59,6 +62,7 @@ pub struct App {
     pub(crate) clock: Clock,
     pub(crate) view: View,
     pub(crate) plans: Plans,
+    pub(crate) inspect: Option<Inspect>,
     pub(crate) update: UpdateState,
     pub(crate) update_check: Option<UpdateCheck>,
     /// A run of another planrun holds the lock, with `lock.pid`'s pid (D90).
@@ -77,6 +81,7 @@ impl App {
             clock,
             view: View::Plans,
             plans: Plans::default(),
+            inspect: None,
             update: UpdateState::Unchecked,
             update_check: update,
             live: None,
@@ -104,6 +109,11 @@ impl App {
     /// What the update check found.
     pub fn update(&self) -> &UpdateState {
         &self.update
+    }
+
+    /// The plan view in Inspect, when a plan is open.
+    pub fn inspect(&self) -> Option<&Inspect> {
+        self.inspect.as_ref()
     }
 
     /// The jobs to start with.
@@ -155,6 +165,22 @@ impl App {
                 self.update = state;
                 Vec::new()
             }
+            Done::DryRun {
+                path,
+                fingerprint,
+                result,
+            } => {
+                let Some(inspect) = self.inspect.as_mut() else {
+                    return Vec::new();
+                };
+                if inspect.path == path && *inspect.plan().source.fingerprint == *fingerprint {
+                    inspect.dry = match result {
+                        Ok(dry) => Bg::Current(dry),
+                        Err(e) => Bg::Failed(e),
+                    };
+                }
+                Vec::new()
+            }
         }
     }
 
@@ -165,17 +191,53 @@ impl App {
                 self.view = View::Plans;
                 return Vec::new();
             }
+            Key::F(3) if self.inspect.is_some() => {
+                self.view = View::Plan;
+                return Vec::new();
+            }
             Key::Ctrl('c') if self.view == View::Plans => return vec![Effect::Quit],
             _ => {}
         }
         match self.view {
             View::Plans => self.plans_key(key),
+            View::Plan => self.plan_key(key),
         }
+    }
+
+    fn plan_key(&mut self, key: Key) -> Vec<Effect> {
+        let Some(inspect) = self.inspect.as_mut() else {
+            self.view = View::Plans;
+            return Vec::new();
+        };
+        match inspect.key(key) {
+            Did::Back => self.view = View::Plans,
+            Did::Unused if key == Key::Char('q') => self.view = View::Plans,
+            _ => {}
+        }
+        Vec::new()
+    }
+
+    /// Opens `path` in Inspect and starts its dry run.
+    fn open(&mut self, path: std::path::PathBuf) -> Vec<Effect> {
+        let Some(parsed) = self.plans.parsed(&path) else {
+            return Vec::new();
+        };
+        self.view = View::Plan;
+        let same = self
+            .inspect
+            .as_ref()
+            .is_some_and(|i| i.path == path && Arc::ptr_eq(&i.parsed, &parsed));
+        if same {
+            return Vec::new();
+        }
+        self.inspect = Some(Inspect::new(path.clone(), parsed.clone()));
+        vec![Effect::Job(Job::DryRun { path, parsed })]
     }
 
     fn plans_key(&mut self, key: Key) -> Vec<Effect> {
         match self.plans.key(key) {
             plans::Outcome::Check(jobs) => jobs.into_iter().map(Effect::Job).collect(),
+            plans::Outcome::Inspect(path) | plans::Outcome::Run(path) => self.open(path),
             plans::Outcome::Unused if key == Key::Char('q') => vec![Effect::Quit],
             _ => Vec::new(),
         }
@@ -203,15 +265,24 @@ impl App {
             area.width,
             area.height - 1 - footer_rows,
         );
-        let (crumbs, keys) = match self.view {
-            View::Plans => (
-                vec![self.ctx.repo.clone(), "plans".to_owned()],
-                self.plans.footer(),
-            ),
+        let mut crumbs = vec![self.ctx.repo.clone()];
+        let (keys, state) = match (self.view, &self.inspect) {
+            (View::Plan, Some(inspect)) => {
+                crumbs.extend(inspect.crumbs(self.g));
+                (inspect.footer(), inspect.state(self.g))
+            }
+            _ => {
+                crumbs.push("plans".to_owned());
+                (self.plans.footer(), self.state())
+            }
         };
-        chrome::header(buf, area, &crumbs, &self.state(), self.g);
-        match self.view {
-            View::Plans => self.plans.draw(buf, body, &self.labels(), self.g),
+        chrome::header(buf, area, &crumbs, &state, self.g);
+        match (self.view, &self.inspect) {
+            (View::Plan, Some(inspect)) => {
+                let rel = self.labels().relative(&inspect.path);
+                inspect.draw(buf, body, &rel, self.g);
+            }
+            _ => self.plans.draw(buf, body, &self.labels(), self.g),
         }
         if footer_rows == 2 {
             chrome::keys(buf, area, area.bottom() - 2, &keys, self.g);
@@ -230,6 +301,7 @@ impl App {
     fn nav(&self) -> Nav {
         match self.view {
             View::Plans => Nav::Plans,
+            View::Plan => Nav::Plan,
         }
     }
 

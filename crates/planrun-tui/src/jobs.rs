@@ -10,7 +10,9 @@ use std::time::UNIX_EPOCH;
 
 use planrun_exec::journal::{self, End, Line, Record};
 use planrun_exec::lock;
+use planrun_exec::preflight::{self, DryRun};
 use planrun_exec::runner::resume::analyse;
+use planrun_exec::workspace::Workspace;
 use planrun_parse::{Parsed, Registry, Severity, parse_plan, source};
 
 /// What the TUI knows about the repository and itself, shared with every job.
@@ -194,6 +196,13 @@ pub enum Job {
     Live,
     /// `planrun update --check`.
     Update(UpdateCheck),
+    /// The dry run of a plan (D55), for Inspect.
+    DryRun {
+        /// The plan file.
+        path: PathBuf,
+        /// Its parsed plan.
+        parsed: Arc<Parsed>,
+    },
 }
 
 /// What a job found.
@@ -214,6 +223,15 @@ pub enum Done {
     Live(Result<Option<Option<u32>>, String>),
     /// The update check.
     Update(UpdateState),
+    /// A plan's dry run.
+    DryRun {
+        /// The plan file.
+        path: PathBuf,
+        /// The fingerprint of the plan it ran on.
+        fingerprint: String,
+        /// The report, or why it could not run.
+        result: Result<DryRun, String>,
+    },
 }
 
 /// What a job sends when it panicked: its own failed state, with the panic's message (§2).
@@ -245,6 +263,15 @@ impl Job {
             }
             Job::Live => Box::new(|e| Done::Live(Err(e))),
             Job::Update(_) => Box::new(|_| Done::Update(UpdateState::Failed)),
+            Job::DryRun { path, parsed } => {
+                let path = path.clone();
+                let fingerprint = parsed.plan.source.fingerprint.to_string();
+                Box::new(move |e| Done::DryRun {
+                    path,
+                    fingerprint,
+                    result: Err(e),
+                })
+            }
         }
     }
 
@@ -258,6 +285,17 @@ impl Job {
             }
             Job::Live => Done::Live(live(ctx)),
             Job::Update(check) => Done::Update(check()),
+            Job::DryRun { path, parsed } => {
+                let plan = &parsed.plan;
+                let result = Workspace::open(&ctx.root, ctx.env.clone())
+                    .and_then(|ws| preflight::dry_run(&ws, plan))
+                    .map_err(|e| e.to_string());
+                Done::DryRun {
+                    path,
+                    fingerprint: plan.source.fingerprint.to_string(),
+                    result,
+                }
+            }
         }
     }
 }

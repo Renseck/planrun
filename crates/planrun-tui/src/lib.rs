@@ -7,15 +7,18 @@
 
 pub mod app;
 pub mod chrome;
+pub mod diff;
 pub mod draw;
 pub mod driver;
 pub mod glyph;
 pub mod grid;
+pub mod inspect;
 pub mod jobs;
 pub mod keys;
 pub mod plans;
 pub mod terminal;
 pub mod text;
 pub mod theme;
+pub mod tree;
 
 pub use terminal::{Host, run};
