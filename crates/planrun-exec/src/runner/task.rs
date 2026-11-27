@@ -7,12 +7,13 @@ use super::gate::Gate;
 use super::resume::Past;
 use super::{Answer, Flow, Result, RunError, Runner, Typed, describe, is_file_action, task_paths};
 use crate::finding::{Finding, Severity};
-use crate::git::StatusEntry;
+use crate::git::{GitError, StatusEntry};
 use crate::journal::{Outcome, PathBlob, Record};
 use crate::policy::Decision;
 use crate::preflight;
 use crate::transaction::{self, CommitCause};
 use crate::ui::{Choice, Position, Question, QuestionKind, YES_OR_QUIT};
+use crate::workspace::Workspace;
 
 /// The state of the task being run.
 pub(crate) struct TaskRun {
@@ -571,45 +572,14 @@ impl Runner<'_> {
         Ok(expect)
     }
 
-    /// Why a commit script did not commit what it should (D79): HEAD did not move, moved by
-    /// other than one commit on `before`, or its tree does not hold `expect`.
+    /// Why a commit script did not commit what it should (D79); see [`commit_problem`].
     pub(crate) fn commit_problem(
         &self,
         before: Option<&str>,
         expect: &[PathBlob],
     ) -> Result<Option<String>> {
-        let git = self.ws.git();
-        let head = git.head()?;
-        let Some(now) = head.commit.as_deref() else {
-            return Ok(Some("there is no commit at HEAD".to_owned()));
-        };
-        if Some(now) == before {
-            return Ok(Some(
-                "the commit script ran, but HEAD did not move".to_owned(),
-            ));
-        }
-        if git.parent(now)?.as_deref() != before {
-            return Ok(Some(
-                "HEAD moved, but not by one commit on top of the one before".to_owned(),
-            ));
-        }
-        let paths: Vec<&RepoPath> = expect.iter().map(|e| &e.path).collect();
-        let held = git.tree_blobs(now, &paths)?;
-        let wrong: Vec<&str> = expect
-            .iter()
-            .zip(&held)
-            .filter(|(e, h)| e.blob != **h)
-            .map(|(e, _)| e.path.as_str())
-            .collect();
-        if wrong.is_empty() {
-            return Ok(None);
-        }
-        Ok(Some(format!(
-            "the commit does not hold the task's files as they were: {}",
-            wrong.join(", ")
-        )))
+        Ok(commit_problem(self.ws, before, expect)?)
     }
-
     /// After a commit: paths it changed outside the task's, reported loudly (D80).
     pub(crate) fn commit_outside(&mut self, task: &Task, before: Option<&str>) -> Result<()> {
         let head = self.head()?;
@@ -655,4 +625,43 @@ fn generated(task: &Task, index: usize) -> Vec<(RepoPath, Position)> {
 
 fn first_line(text: &str) -> &str {
     text.lines().next().unwrap_or("")
+}
+
+/// Why a commit script did not commit what it should (D79): HEAD did not move, moved by other
+/// than one commit on `before`, or its tree does not hold `expect`. Reads git only.
+pub(crate) fn commit_problem(
+    ws: &Workspace,
+    before: Option<&str>,
+    expect: &[PathBlob],
+) -> std::result::Result<Option<String>, GitError> {
+    let git = ws.git();
+    let head = git.head()?;
+    let Some(now) = head.commit.as_deref() else {
+        return Ok(Some("there is no commit at HEAD".to_owned()));
+    };
+    if Some(now) == before {
+        return Ok(Some(
+            "the commit script ran, but HEAD did not move".to_owned(),
+        ));
+    }
+    if git.parent(now)?.as_deref() != before {
+        return Ok(Some(
+            "HEAD moved, but not by one commit on top of the one before".to_owned(),
+        ));
+    }
+    let paths: Vec<&RepoPath> = expect.iter().map(|e| &e.path).collect();
+    let held = git.tree_blobs(now, &paths)?;
+    let wrong: Vec<&str> = expect
+        .iter()
+        .zip(&held)
+        .filter(|(e, h)| e.blob != **h)
+        .map(|(e, _)| e.path.as_str())
+        .collect();
+    if wrong.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(format!(
+        "the commit does not hold the task's files as they were: {}",
+        wrong.join(", ")
+    )))
 }

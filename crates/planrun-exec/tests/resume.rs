@@ -13,9 +13,13 @@ use std::time::Duration;
 
 use fixture::Fixture;
 use ir::{Ir, PATCH_T1, PATCH_T2};
+use planrun_exec::DoneState;
+use planrun_exec::done::Seen;
 use planrun_exec::journal::{self, End, Journal, Observer, Record, Seam};
+use planrun_exec::lock;
 use planrun_exec::policy::{Policy, PolicyClass};
-use planrun_exec::runner::resume::analyse;
+use planrun_exec::runner::preview::{Preview, preview};
+use planrun_exec::runner::resume::{HeadVerdict, analyse};
 use planrun_exec::runner::{Finished, RunConfig, Runner};
 use planrun_exec::shell::{OutLine, SessionConfig};
 use planrun_exec::ui::{Choice, Position, Question, QuestionKind, Reply, Ui};
@@ -291,6 +295,136 @@ fn a_crash_between_two_writes_is_unknown_and_restore_completes_it() {
     let all = records(&f);
     assert_eq!(count(&all, "step-restored"), 1);
     assert_done(&f);
+}
+
+#[test]
+fn the_preview_reads_what_resume_will_find_and_writes_nothing() {
+    let f = Fixture::greeter(false);
+    let mut ir = Ir::default();
+    let plan = assay(&mut ir);
+    let first_write = |s: &Seam<'_>| matches!(s, Seam::Wrote(1));
+    let (first, _) = go(&f, &plan, AUTO, vec![], crash_at(first_write), false);
+    assert!(first.is_none());
+    let path = f.outside().join("journal.jsonl");
+    let journal_before = std::fs::read(&path).unwrap_or_else(|e| panic!("{e}"));
+    let tree_before = f.snapshot();
+    let (seen, analysis) = preview_of(&f, &plan);
+    assert!(!seen.live && !seen.plan_changed && !seen.index_lock);
+    assert_eq!(
+        (&seen.now, &seen.head),
+        (&analysis.head, &HeadVerdict::Unchanged)
+    );
+    assert!(seen.again.is_empty(), "{:?}", seen.again);
+    assert!(
+        seen.resume_dirt.is_empty(),
+        "an Unknown step's paths are never resume-dirt: {:?}",
+        seen.resume_dirt
+    );
+    let [step] = &seen.steps[..] else {
+        panic!("{:?}", seen.steps);
+    };
+    assert_eq!((step.at.task.as_str(), step.at.step), ("P1-T1", 0));
+    assert_eq!(step.disk.state, DoneState::Unknown);
+    let paths: Vec<(&str, Seen)> = step
+        .disk
+        .paths
+        .iter()
+        .map(|(p, s)| (p.as_str(), *s))
+        .collect();
+    assert_eq!(
+        paths,
+        [("src/greet.rs", Seen::Post), ("src/lib.rs", Seen::Pre)]
+    );
+    assert!(step.restorable);
+    assert!(step.temps.is_empty(), "{:?}", step.temps);
+    assert_eq!(
+        f.snapshot(),
+        tree_before,
+        "the preview wrote to the repository"
+    );
+    let journal_after = std::fs::read(&path).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(
+        journal_after, journal_before,
+        "the preview wrote to the journal"
+    );
+}
+
+/// The preview of the fixture's journal, with the analysis it was made from.
+fn preview_of(f: &Fixture, plan: &Plan) -> (Preview, planrun_exec::runner::resume::Analysis) {
+    let ws = Workspace::open(f.path(), f.env()).unwrap_or_else(|e| panic!("{e}"));
+    let lines = journal::read(&f.outside().join("journal.jsonl")).unwrap_or_else(|e| panic!("{e}"));
+    let analysis = analyse(&lines).unwrap_or_else(|| panic!("nothing to resume"));
+    let seen = preview(&ws, plan, &analysis).unwrap_or_else(|e| panic!("{e}"));
+    (seen, analysis)
+}
+
+#[test]
+fn the_preview_names_what_resume_will_ask_and_sees_a_live_run() {
+    let f = Fixture::greeter(false);
+    let mut ir = Ir::default();
+    let m = ir.manifest(&[
+        ("src/greet.rs", ChangeKind::Create, W),
+        ("a.txt", ChangeKind::Create, W),
+        ("src/lib.rs", ChangeKind::Modify, W),
+    ]);
+    let steps = vec![
+        vec![ir.write("src/greet.rs", "pub fn greeting() {}\n", WriteMode::Create)],
+        vec![ir.script("Add-Content -Path a.txt -Value line")],
+        vec![ir.manual("look at it by hand")],
+        vec![ir.write("src/lib.rs", "pub mod greet;\n", WriteMode::Overwrite)],
+    ];
+    let task = ir.task("T1", m, steps);
+    let plan = ir.plan(vec![task]);
+    let at_manual = |s: &Seam<'_>| matches!(s, Seam::Appended(Record::ActionStart { kind, .. }) if kind == "manual");
+    let (first, _) = go(&f, &plan, AUTO, vec![], crash_at(at_manual), false);
+    assert!(first.is_none());
+    f.write("src/lib.rs", b"// mine\n");
+    let journal_before =
+        std::fs::read(f.outside().join("journal.jsonl")).unwrap_or_else(|e| panic!("{e}"));
+    let tree_before = f.snapshot();
+    let (seen, _) = preview_of(&f, &plan);
+    assert_eq!(seen.head, HeadVerdict::Unchanged);
+    let again: Vec<(usize, bool)> = seen.again.iter().map(|a| (a.at.step, a.running)).collect();
+    assert_eq!(again, [(1, false)], "the Modify script that ran asks again");
+    let dirt: Vec<&str> = seen.resume_dirt.iter().map(|p| p.as_str()).collect();
+    assert_eq!(
+        dirt,
+        ["src/lib.rs"],
+        "the verified step's path is not asked about"
+    );
+    assert_eq!(
+        f.snapshot(),
+        tree_before,
+        "the preview wrote to the repository"
+    );
+    let journal_after =
+        std::fs::read(f.outside().join("journal.jsonl")).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(
+        journal_after, journal_before,
+        "the preview wrote to the journal"
+    );
+
+    f.git(&["commit", "-q", "--allow-empty", "-m", "by hand"]);
+    let (seen, analysis) = preview_of(&f, &plan);
+    let HeadVerdict::MovedByRunning { at, kind, recorded } = &seen.head else {
+        panic!("{:?}", seen.head);
+    };
+    assert_eq!(
+        (at.step, kind.as_str(), recorded),
+        (2, "manual", &analysis.head)
+    );
+    let again: Vec<(usize, bool)> = seen.again.iter().map(|a| (a.at.step, a.running)).collect();
+    assert_eq!(
+        again,
+        [(1, false)],
+        "a moved HEAD leaves the script's question as it was"
+    );
+
+    let git_dir = f.path().join(".git");
+    let run = lock::acquire(&journal::dir(&git_dir)).unwrap_or_else(|e| panic!("{e}"));
+    assert!(preview_of(&f, &plan).0.live);
+    drop(run);
+    assert!(!preview_of(&f, &plan).0.live);
 }
 
 #[test]

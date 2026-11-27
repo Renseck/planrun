@@ -8,6 +8,7 @@
 //! P4's [`Policy`] decides; the runner prompts (D69) and never turns one decision into another.
 
 mod gate;
+pub mod preview;
 pub mod resume;
 mod script;
 mod sessions;

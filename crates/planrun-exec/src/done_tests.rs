@@ -148,6 +148,8 @@ fn only_the_temp_files_a_step_names_are_removed() {
     let named = format!("src/{}", step.writes[1].temp);
     f.write(&named, b"half");
     f.write("src/.planrun-0123456789abcdef.tmp", b"not this run's");
+    assert_eq!(temps(&ws, &step), vec![named.clone()]);
+    assert!(f.read(&named).is_some(), "temps only reads");
     assert_eq!(remove_temps(&ws, &step), vec![named.clone()]);
     assert!(f.read(&named).is_none());
     assert!(f.read("src/.planrun-0123456789abcdef.tmp").is_some());

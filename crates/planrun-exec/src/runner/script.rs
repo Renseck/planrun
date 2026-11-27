@@ -5,13 +5,13 @@
 use planrun_model::{Action, Script, ScriptIntent};
 
 use super::gate::Attempt;
-use super::resume::Past;
+use super::resume::{Again, again};
 use super::sessions::{NotRun, name};
 use super::task::TaskRun;
 use super::{Answer, Flow, Result, RunError, Runner, Typed, canonical, describe};
 use crate::expect::{self, Aligned, Confirm, Mismatch, Reason, Verdict};
 use crate::journal::{Outcome, PathBlob, Record};
-use crate::policy::{Decision, PolicyClass, Skip};
+use crate::policy::{Decision, Skip};
 use crate::shell::{RunStatus, ScriptRun};
 use crate::ui::{Choice, Position, Question, QuestionKind, RUN_SKIP_OR_QUIT};
 
@@ -143,36 +143,32 @@ impl Runner<'_> {
         let Some(past) = self.take_past(pos.task, (pos.step, pos.action)) else {
             return Ok(Replayed::Again);
         };
-        let ended_ok = matches!(
-            past,
-            Past::Ended(Outcome::Passed | Outcome::Confirmed | Outcome::Accepted)
-        );
-        if commit && ended_ok {
-            self.ui.status(&format!(
-                "  L{line:<5} {}: made before the interruption",
-                describe(action)
-            ));
-            return Ok(Replayed::Done);
-        }
-        let running = matches!(past, Past::Running { .. });
-        let why = match past {
-            Past::Ended(Outcome::Kept) => return Ok(Replayed::Keep),
-            Past::Ended(Outcome::SkippedPolicy) => return Ok(Replayed::Again),
-            Past::Running { .. } => {
-                "was running when planrun was interrupted; it may have done part of its work"
+        let body = self.plan.source.resolve(&script.body);
+        let class = self.classifier.explain(script.shell, body).class;
+        let running = match again(&past, commit, class) {
+            Again::Done => {
+                self.ui.status(&format!(
+                    "  L{line:<5} {}: made before the interruption",
+                    describe(action)
+                ));
+                return Ok(Replayed::Done);
             }
-            Past::Ended(_) => {
-                let body = self.plan.source.resolve(&script.body);
-                let class = self.classifier.explain(script.shell, body).class;
-                if class < PolicyClass::Modify {
+            Again::Keep => return Ok(Replayed::Keep),
+            Again::Runs { announce } => {
+                if announce {
                     self.ui.status(&format!(
                         "  L{line:<5} {}: ran before the interruption; it runs again",
                         describe(action)
                     ));
-                    return Ok(Replayed::Again);
                 }
-                "ran before the interruption"
+                return Ok(Replayed::Again);
             }
+            Again::Asks { running } => running,
+        };
+        let why = if running {
+            "was running when planrun was interrupted; it may have done part of its work"
+        } else {
+            "ran before the interruption"
         };
         let question = Question {
             kind: QuestionKind::Again { running },

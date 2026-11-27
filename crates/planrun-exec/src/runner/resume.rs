@@ -14,16 +14,19 @@
 
 use std::collections::HashMap;
 
-use planrun_model::RepoPath;
+use planrun_model::{RepoPath, Task};
 
+use super::task::commit_problem;
 use super::{Answer, Flow, Result, Runner, Typed, task_paths};
 use crate::DoneState;
 use crate::done::{Seen, remove_temps, restorable, restore_step, step_state};
-use crate::git::Head;
+use crate::git::{GitError, Head};
 use crate::journal::{At, End, Line, Outcome, PathBlob, Record};
+use crate::policy::PolicyClass;
 use crate::preflight::Resumed;
 use crate::transaction::StepRecord;
 use crate::ui::{Choice, Question, QuestionKind, YES_OR_QUIT};
+use crate::workspace::Workspace;
 
 /// What the run record of the chain says.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,6 +105,128 @@ impl Analysis {
             .find(|(_, p)| matches!(p, Past::Running { .. }))
             .map(|(at, p)| (at, p))
     }
+}
+
+/// What resume makes of HEAD against the journal (D77, D79, D80).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeadVerdict {
+    /// HEAD is what the journal last recorded.
+    Unchanged,
+    /// HEAD moved by one commit on the HEAD before the Commit that was running, and holds what
+    /// that Commit was to hold: it is done.
+    CommitMade {
+        /// The Commit.
+        at: At,
+    },
+    /// HEAD moved by one commit while `at` was running: the user decides (keep or retry).
+    MovedByRunning {
+        /// The action that was running.
+        at: At,
+        /// Its kind as journaled (`script`, `commit`, `manual`).
+        kind: String,
+        /// HEAD before it.
+        recorded: Head,
+    },
+    /// HEAD moved otherwise: resume stops.
+    Moved,
+}
+
+/// What resume makes of HEAD being `now` (D77): the one judgement resume and the preview share.
+/// Reads git only.
+pub fn head_verdict(
+    ws: &Workspace,
+    analysis: &Analysis,
+    now: &Head,
+) -> std::result::Result<HeadVerdict, GitError> {
+    if *now == analysis.head {
+        return Ok(HeadVerdict::Unchanged);
+    }
+    let Some((at, Past::Running { kind, head, expect })) = analysis.running() else {
+        return Ok(HeadVerdict::Moved);
+    };
+    let Some(commit) = now.commit.as_deref() else {
+        return Ok(HeadVerdict::Moved);
+    };
+    let on_top = ws.git().parent(commit)?.as_deref() == head.commit.as_deref();
+    if !on_top || now.reference != head.reference {
+        return Ok(HeadVerdict::Moved);
+    }
+    if kind == "commit" && commit_problem(ws, head.commit.as_deref(), expect)?.is_none() {
+        return Ok(HeadVerdict::CommitMade { at: at.clone() });
+    }
+    Ok(HeadVerdict::MovedByRunning {
+        at: at.clone(),
+        kind: kind.clone(),
+        recorded: head.clone(),
+    })
+}
+
+/// What resume does with a script or commit that has a journaled past (D77).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Again {
+    /// A Commit that ended well: it is done.
+    Done,
+    /// The user kept its result before: it is not run again.
+    Keep,
+    /// It runs again under its decision; `announce` says so first (a Read or Build script that
+    /// ran).
+    Runs { announce: bool },
+    /// It asks "run again or keep"; `running` when it was running, not ended.
+    Asks { running: bool },
+}
+
+/// What resume does with a script of class `class` whose journal says `past` (D77): the one
+/// rule resume and the preview share.
+pub(crate) fn again(past: &Past, commit: bool, class: PolicyClass) -> Again {
+    let ended_ok = matches!(
+        past,
+        Past::Ended(Outcome::Passed | Outcome::Confirmed | Outcome::Accepted)
+    );
+    if commit && ended_ok {
+        return Again::Done;
+    }
+    match past {
+        Past::Ended(Outcome::Kept) => Again::Keep,
+        Past::Ended(Outcome::SkippedPolicy) => Again::Runs { announce: false },
+        Past::Running { .. } => Again::Asks { running: true },
+        Past::Ended(_) if class < PolicyClass::Modify => Again::Runs { announce: true },
+        Past::Ended(_) => Again::Asks { running: false },
+    }
+}
+
+/// What preflight leaves out of the resumed task (D77): every path of the task and of its
+/// prepared steps may have been written by the interrupted run; the paths and actions of the
+/// steps in `done` (one flag per prepared step) are verified. Resume and the preview share it.
+pub(crate) fn resumed_for(task: &Task, prepared: &[Prepared], done: &[bool]) -> Resumed {
+    let mut resumed = Resumed {
+        done: Vec::new(),
+        own: task_paths(task),
+        verified: Vec::new(),
+    };
+    for (p, &done) in prepared.iter().zip(done) {
+        for w in &p.step.writes {
+            if !resumed.own.contains(&w.path) {
+                resumed.own.push(w.path.clone());
+            }
+        }
+        if !done {
+            continue;
+        }
+        for w in &p.step.writes {
+            if !resumed.verified.contains(&w.path) {
+                resumed.verified.push(w.path.clone());
+            }
+        }
+        let step = &task.steps[p.at.step];
+        let group = step.actions[p.at.action..]
+            .iter()
+            .take_while(|a| super::is_file_action(a))
+            .count();
+        resumed
+            .done
+            .extend((p.at.action..p.at.action + group).map(|a| (p.at.step, a)));
+    }
+    resumed
 }
 
 /// Reads the journal's last chain. `None` when the journal has no run.
@@ -327,45 +452,37 @@ impl Runner<'_> {
     /// `action-end`, or `head-seen` for a retry), so a crash after it resumes from it.
     fn check_head(&mut self, analysis: &Analysis, replay: &mut Replay) -> Result<Flow> {
         let now = self.head()?;
-        if now == analysis.head {
-            if let Some((at, Past::Running { kind, .. })) = analysis.running()
-                && kind == "commit"
-            {
-                replay.past.remove(&key(at));
+        let (at, kind, head) = match head_verdict(self.ws, analysis, &now)? {
+            HeadVerdict::Unchanged => {
+                if let Some((at, Past::Running { kind, .. })) = analysis.running()
+                    && kind == "commit"
+                {
+                    replay.past.remove(&key(at));
+                }
+                return Ok(Flow::Go);
             }
-            return Ok(Flow::Go);
-        }
-        let stop = Flow::Stop(format!(
-            "HEAD is {} ({}), but the journal last recorded {} ({}): something else changed \
-             the repository",
-            now.commit.as_deref().unwrap_or("none"),
-            now.reference.as_deref().unwrap_or("detached"),
-            analysis.head.commit.as_deref().unwrap_or("none"),
-            analysis.head.reference.as_deref().unwrap_or("detached"),
-        ));
-        let Some((at, Past::Running { kind, head, expect })) = analysis.running() else {
-            return Ok(stop);
+            HeadVerdict::Moved => {
+                return Ok(Flow::Stop(format!(
+                    "HEAD is {} ({}), but the journal last recorded {} ({}): something else \
+                     changed the repository",
+                    now.commit.as_deref().unwrap_or("none"),
+                    now.reference.as_deref().unwrap_or("detached"),
+                    analysis.head.commit.as_deref().unwrap_or("none"),
+                    analysis.head.reference.as_deref().unwrap_or("detached"),
+                )));
+            }
+            HeadVerdict::CommitMade { at } => {
+                self.ui.status(&format!(
+                    "  the commit of {} was made before the interruption",
+                    at.task
+                ));
+                self.accepted(&at, Outcome::Passed, &now)?;
+                replay.commit_done = Some(key(&at));
+                return Ok(Flow::Go);
+            }
+            HeadVerdict::MovedByRunning { at, kind, recorded } => (at, kind, recorded),
         };
-        let Some(commit) = now.commit.as_deref() else {
-            return Ok(stop);
-        };
-        let on_top = self.ws.git().parent(commit)?.as_deref() == head.commit.as_deref();
-        if !on_top || now.reference != head.reference {
-            return Ok(stop);
-        }
-        if kind == "commit"
-            && self
-                .commit_problem(head.commit.as_deref(), expect)?
-                .is_none()
-        {
-            self.ui.status(&format!(
-                "  the commit of {} was made before the interruption",
-                at.task
-            ));
-            self.accepted(at, Outcome::Passed, &now)?;
-            replay.commit_done = Some(key(at));
-            return Ok(Flow::Go);
-        }
+        let at = &at;
         let question = Question {
             kind: QuestionKind::HeadMoved {
                 action: at.clone(),
@@ -432,21 +549,12 @@ impl Runner<'_> {
         // Any path of the task may have been changed by the interrupted run, by a step or by a
         // script: its dirt is a warning, and its manifest checks are left out. Dirt outside the
         // verified steps that a remaining file action writes over is asked about (D77).
-        let mut resumed = Resumed {
-            done: Vec::new(),
-            own: task_paths(task),
-            verified: Vec::new(),
-        };
+        let mut done_flags = Vec::new();
         for p in &prepared {
             for removed in remove_temps(self.ws, &p.step) {
                 self.ui.status(&format!(
                     "  removed a temp file of the interrupted run: {removed}"
                 ));
-            }
-            for w in &p.step.writes {
-                if !resumed.own.contains(&w.path) {
-                    resumed.own.push(w.path.clone());
-                }
             }
             let found = step_state(self.ws, &p.step)?;
             let done = match found.state {
@@ -457,27 +565,15 @@ impl Runner<'_> {
                     Err(why) => return Ok(Err(why)),
                 },
             };
+            done_flags.push(done);
             if !done {
                 continue;
             }
-            for w in &p.step.writes {
-                if !resumed.verified.contains(&w.path) {
-                    resumed.verified.push(w.path.clone());
-                }
-            }
-            let step = &task.steps[p.at.step];
-            let group = step.actions[p.at.action..]
-                .iter()
-                .take_while(|a| super::is_file_action(a))
-                .count();
-            resumed
-                .done
-                .extend((p.at.action..p.at.action + group).map(|a| (p.at.step, a)));
             if let Some(r) = self.replay.as_mut() {
                 r.done_groups.push(key(&p.at));
             }
         }
-        Ok(Ok(resumed))
+        Ok(Ok(resumed_for(task, &prepared, &done_flags)))
     }
 
     /// A step that is neither done nor undone on disk (D14): restore it from its pre-images

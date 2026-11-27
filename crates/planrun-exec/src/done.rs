@@ -4,6 +4,7 @@
 //! have left behind.
 
 use std::fs;
+use std::path::PathBuf;
 
 use planrun_model::RepoPath;
 
@@ -166,7 +167,25 @@ pub fn restore_step(ws: &Workspace, step: &StepRecord) -> Vec<RepoPath> {
 /// write and the rename, D77). Nothing is searched for by pattern. Returns what it removed, as
 /// repository-relative paths.
 pub fn remove_temps(ws: &Workspace, step: &StepRecord) -> Vec<String> {
-    let mut removed = Vec::new();
+    temp_files(ws, step)
+        .into_iter()
+        .filter(|(_, full)| fs::remove_file(full).is_ok())
+        .map(|(rel, _)| rel)
+        .collect()
+}
+
+/// The writer's temp files `step` names that exist, as repository-relative paths: what
+/// [`remove_temps`] would remove. Reads only.
+pub fn temps(ws: &Workspace, step: &StepRecord) -> Vec<String> {
+    temp_files(ws, step)
+        .into_iter()
+        .map(|(rel, _)| rel)
+        .collect()
+}
+
+/// The temp files of `step` that exist: the repository-relative path and the full one.
+fn temp_files(ws: &Workspace, step: &StepRecord) -> Vec<(String, PathBuf)> {
+    let mut found = Vec::new();
     for record in &step.writes {
         let rel = match record.path.dir() {
             Some(dir) => format!("{dir}/{}", record.temp),
@@ -178,12 +197,11 @@ pub fn remove_temps(ws: &Workspace, step: &StepRecord) -> Vec<String> {
         let Ok(resolved) = ws.resolve(&path) else {
             continue;
         };
-        let is_file = fs::symlink_metadata(&resolved.full).is_ok_and(|m| m.is_file());
-        if is_file && fs::remove_file(&resolved.full).is_ok() {
-            removed.push(rel);
+        if fs::symlink_metadata(&resolved.full).is_ok_and(|m| m.is_file()) {
+            found.push((rel, resolved.full));
         }
     }
-    removed
+    found
 }
 
 #[cfg(test)]
