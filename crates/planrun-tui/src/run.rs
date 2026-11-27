@@ -176,6 +176,8 @@ pub struct Run {
     pub inspector: Inspector,
     /// Ctrl-C was pressed: the dock asks whether to end planrun (D91).
     pub ending: bool,
+    /// The spinner's frame.
+    pub frame: u8,
 }
 
 /// What the upper right panel shows while a run is on.
@@ -230,6 +232,7 @@ impl Run {
             focus: 0,
             inspector: Inspector::Changes,
             ending: false,
+            frame: 0,
         }
     }
 
@@ -1181,7 +1184,7 @@ impl Run {
                 })
                 .max();
             let mut pen = Pen::new(buf, area.x + 2, y, area.right(), g);
-            pen.glyph(Glyph::Spin(0), bold(Token::Act)).gap(1);
+            pen.glyph(Glyph::Spin(self.frame), bold(Token::Act)).gap(1);
             let what = match running {
                 Some(_) => "running".to_owned(),
                 None => "working".to_owned(),

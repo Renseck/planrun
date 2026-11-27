@@ -199,6 +199,9 @@ impl App {
     pub fn tick(&mut self) -> Vec<Effect> {
         let now = self.now();
         self.frame = u8::try_from((now / 250) % 4).unwrap_or(0);
+        if let Some(run) = self.run.as_mut() {
+            run.frame = self.frame;
+        }
         if now < self.next_poll {
             return Vec::new();
         }
@@ -813,7 +816,16 @@ impl App {
         let area = buf.area;
         fill(buf, area, base());
         if area.width < MIN.0 || area.height < MIN.1 {
-            chrome::too_small(buf, area, self.g);
+            // A dock that opens while the terminal is too small is still answerable: the
+            // notice turns into the dock alone (§11).
+            match self
+                .run
+                .as_ref()
+                .and_then(|r| r.dock.as_ref().map(|d| (r, d)))
+            {
+                Some((run, dock)) => dock.draw(buf, area, run.plan(), true, self.g),
+                None => chrome::too_small(buf, area, self.g),
+            }
             return;
         }
         let footer_rows = if area.height >= 30 { 2 } else { 1 };
@@ -954,3 +966,7 @@ pub fn assumed_from(auto: &[String], expected: bool) -> Assumed {
     let auto = planrun_exec::policy::Policy::parse_auto(&auto.join(",")).unwrap_or_default();
     Assumed { auto, expected }
 }
+
+#[cfg(test)]
+#[path = "app_tests.rs"]
+mod tests;
