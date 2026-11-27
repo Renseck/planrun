@@ -1,44 +1,57 @@
 # planrun P6b — The TUI's prerequisites
 
-**Goal:** Everything the TUI (P6c) needs before its own crate exists, and nothing of the TUI itself. First the design and its decisions: `docs/tui-design.md` (the reviewed spec, r4), D84–D92 in docs/decisions.md amending D15, and P6b and P6c in the roadmap. Then the six changes in planrun-exec that the design's §9 lists, each with its tests: a journal with any number of observers, `shell::end_now`, typed effects in the dry-run report, the matcher's alignment, `QuestionKind`, and the read-only resume preview. Last, the architecture, extending and CLAUDE.md lines for them. The CLI's behaviour, its output and the journal format do not change. Spec: `docs/superpowers/specs/2026-11-26-tui-design.md` (r4), which P6b-T1 moves to `docs/tui-design.md`.
+**Goal:** Everything the TUI (P6c) needs before its own crate exists, and nothing of the TUI itself. First the design and its decisions: `docs/tui-design.md` (the reviewed spec, r4, with this plan's review rulings), D84–D92 in docs/decisions.md amending D15, and P6b and P6c in the roadmap. Then the changes in planrun-exec that the design's §9 lists, each with its tests: a journal with any number of observers, `shell::end_now`, typed effects in the dry-run report, the matcher's alignment, `QuestionKind` with explicit typed words, a liveness lock, and the read-only resume preview. Last, the architecture, extending and CLAUDE.md lines for them. The CLI's behaviour, its output and the journal format do not change. Spec: the r4 TUI design, which P6b-T1 writes as `docs/tui-design.md`.
 
-- **P6b-T1** (docs): `docs/tui-design.md`, D84–D92 with amended-by lines in D9, D15, D73, D74 and D76, and the roadmap's P6b and P6c.
+- **P6b-T1** (docs): `docs/tui-design.md`, D84–D92 with amended-by lines in D9, D15, D73, D74, D76 and D77, and the roadmap's P6b and P6c.
 - **P6b-T2** (planrun-exec): `Journal::observe` adds an observer; every observer sees every seam (§9 item 1, D90).
 - **P6b-T3** (planrun-exec): `shell::end_now`, Ctrl-C for a UI that reads it as a key (§9 item 5, D91).
 - **P6b-T4** (planrun-exec): `handler::Effect` in the dry-run report's `Outcome::Ok` and `WouldAsk` (§9 item 6, D84).
 - **P6b-T5** (planrun-exec): `expect::align`, the expected lines against the output (§9 item 3, D86).
-- **P6b-T6** (planrun-exec, planrun-cli): `QuestionKind`, the question with what the run found (§9 item 2, D86); the two broken `resume-dirt` strings of the P5→P6 handover's item 5.
-- **P6b-T7** (planrun-exec): `runner::preview::preview`, what resume would find, read only (§9 item 4, D85).
-- **P6b-T8** (docs): architecture.md §6.3, §6.4, §6.6 and §7, extending.md §7, CLAUDE.md's layout.
+- **P6b-T6** (planrun-exec, planrun-cli): `QuestionKind`, the question with what the run found, and `Question.typed` as the words a typed question accepts (§9 item 2, D86); the two broken `resume-dirt` strings of the P5→P6 handover's item 5.
+- **P6b-T7** (planrun-exec): `lock.live` and `lock::live`, a live run seen without trying the run lock (§9 item 7, D90).
+- **P6b-T8** (planrun-exec): `runner::preview::preview`, what resume would find, read only, through the judgements resume itself uses (§9 item 4, D85).
+- **P6b-T9** (docs): architecture.md §6.3, §6.4, §6.6 and §7, extending.md §7, CLAUDE.md's layout.
 
-**Base:** `1abe6f5` (`Properly name the autocrlf value`); there fmt, clippy (with and without `e2e`), `cargo test` with `PLANRUN_REQUIRE_SHELLS=1` (27 `test result: ok` lines, 280 tests) and the `e2e` test pass. After P6b-T8: 27 lines, 287 tests. Execute from the commit of this plan. Gate per task: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo clippy -p planrun-cli --all-targets --features e2e -- -D warnings`, `cargo test`, `cargo test -p planrun-cli --features e2e --test run`, with `PLANRUN_REQUIRE_SHELLS=1` (D82).
+**Base:** `1abe6f5` (`Properly name the autocrlf value`); there fmt, clippy (with and without `e2e`), `cargo test` with `PLANRUN_REQUIRE_SHELLS=1` (27 `test result: ok` lines, 280 tests) and the `e2e` test pass. After P6b-T9: 27 lines, 291 tests. Execute from the commit of this plan. Gate per task: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo clippy -p planrun-cli --all-targets --features e2e -- -D warnings`, `cargo test`, `cargo test -p planrun-cli --features e2e --test run`, with `PLANRUN_REQUIRE_SHELLS=1` (D82).
 
-**Shell and environment:** PowerShell 7 on Windows; Rust 1.95.0 (stable); git on `PATH`; pwsh 7 and Git for Windows (D63). No new crate: D92 records the TUI's crates for P6c, and this plan adds none.
+**Shell and environment:** PowerShell 7 on Windows; Rust 1.95.0 (stable; `File::lock` and `File::try_lock` need 1.89); git on `PATH`; pwsh 7 and Git for Windows (D63). No new crate: D92 records the TUI's crates for P6c, and this plan adds none.
 
-**Before P6b-T1:** this plan committed, and a clean `git status --porcelain`. **Remove the untracked spec copy first** (`Remove-Item docs/superpowers/specs/2026-11-26-tui-design.md`): P6b-T1 writes it as `docs/tui-design.md`, as the spec's §11 says, and an untracked file outside a task's paths is asked about before every commit (D80). To run the plan with planrun itself, run a copy outside `target/`, since every gate builds `target/debug/planrun.exe`: `cargo build --release`, `Copy-Item target/release/planrun.exe $env:TEMP\planrun-p6b.exe`, then `& $env:TEMP\planrun-p6b.exe run docs/plans/2026-11-26-p6b-tui-prerequisites.md --auto read,build,modify`. Every commit asks to confirm its prose expectation: **answer `y`, not `q`** (the P5→P6 handover's item 10). The real plans stay in `tests/corpus/local/` (D16); this plan quotes none of them, and it changes nothing in planrun-parse.
+**Before P6b-T1:** this plan committed, and a clean `git status --porcelain`; the untracked spec copy `docs/superpowers/specs/2026-11-26-tui-design.md` is gone (P6b-T1 writes the design as `docs/tui-design.md`, as the spec's §11 says, and an untracked file outside a task's paths is asked about before every commit, D80). To run the plan with planrun itself, run a copy outside `target/`, since every gate builds `target/debug/planrun.exe`: `cargo build --release`, `Copy-Item target/release/planrun.exe $env:TEMP\planrun-p6b.exe`, then `& $env:TEMP\planrun-p6b.exe run docs/plans/2026-11-26-p6b-tui-prerequisites.md --auto read,build,modify`. Every commit asks to confirm its prose expectation: **answer `y`, not `q`** (the P5→P6 handover's item 10). The real plans stay in `tests/corpus/local/` (D16); this plan quotes none of them, and it changes nothing in planrun-parse.
 
 **How this plan was verified:** every task was built in a scratch clone of `1abe6f5` outside this repository (`core.autocrlf=false`), one commit per task. At each commit the gate passes, and so do the task's targeted commands; the summary lines below come from those runs. Also at each commit: `cargo clippy -p planrun-exec --all-targets --target x86_64-unknown-linux-gnu -- -D warnings`, for the Unix half of `end_now` (P6b-T3), which this machine compiles but cannot run. The plan was generated from that history (full contents from `git show`, exact diffs from `git diff`, blob ids from `git rev-parse`), `planrun check` passes on it, and it was replayed by planrun on a fresh clone with `core.autocrlf=true`: every commit step committed, `git status --porcelain` was empty after each, and the replay's final tree is the scratch tree.
 
+## Review rulings
+
+From the designer's review of the first version of this plan (`e7be88a`), as decided by Rens; each is in the tasks below.
+
+1. **R1, a liveness lock** (P6b-T7, D90 amending D77). A run takes `lock` as before (a try), then `lock.live` with a blocking `File::lock`, and holds both; `lock::live` is one try on `lock.live`, let go at once. A probe never makes a run fail, only wait; `lock.pid` is shown, never trusted. Taking `lock` first is what keeps a second run failing at once with "locked" rather than waiting for the first run to end; the cost is one gap, stated in D90: a probe in the instant between a starting run's two locks sees no live run. Its tests: live while a run holds it, not after; the probe creates nothing; a run that starts while a probe holds `lock.live` waits and succeeds.
+2. **R2, typed answers are explicit** (P6b-T6). `Question.typed` is `Option<&'static [&'static str]>`: `RUN_SKIP_OR_QUIT` (`yes`, `skip`, `quit`) for a Destructive script, `YES_OR_QUIT` for the commit gate and for accepting a step as done, `None` for a question of choices. `typed_yes` reads `skip` from that list instead of taking a flag, so the words shown and the words acted on are one list. `LineUi`'s output does not change. Test: `a_typed_question_lists_the_words_it_accepts`.
+3. **R3, the mismatch carries its output** (P6b-T6): `QuestionKind::Mismatch::output` is the block's `OutLine`s, which `Aligned::output` indexes; the payload test checks the matched line's text.
+4. **R4, a complete resume preview** (P6b-T8). Its HEAD verdict is `resume::head_verdict`, now the function `check_head` itself calls (`Unchanged`, `CommitMade`, `MovedByRunning` with the action, its kind and the HEAD before it, `Moved`); the scripts that ask again come from `again`, the rule `replayed` now calls; the `resume-dirt` paths come from `preflight_resumed` itself, which is read only (`git status --no-optional-locks` and the virtual tree), fed by `resumed_for`, which `replay_steps` now calls; `live` is R1's probe. To share them, `commit_problem` became a free function over the workspace. **One change to the ruling:** an Unknown step counts as done for the `resume-dirt` list, not as not done. Its paths are never asked about by resume: `[r]` puts them back as they were, and `[a]` verifies them. Counting it as not done would list paths that resume never asks about (the first preview test checks that the list is empty after a crash between two writes). Both preview tests check that the repository (`.git` included) and the journal are unchanged.
+5. **S1, resume's questions name their place** (P6b-T6): `unknown` and `accept-done` carry the step's journal `At`. **Extended to `head-moved`**, which had `at: None` too and did not say which action moved HEAD: it carries the action's `At`. Test: the `unknown` question in `a_crash_between_two_writes_is_unknown_and_restore_completes_it`.
+6. **S2** (P6b-T1): `docs/tui-design.md` §1 says what D89 says, 24-bit only in v1, with the 256-colour fallback and `NO_COLOR` designed in §4 and deferred (§11). P6b-T1 also brings §2 (the lock and preview rows, the background work), §3 (the header's other runs), §6.E, §6.F and §9 (item 7) in line with R1 and R4.
+7. **M1:** the `expect_tests.rs` move goes into the P6b→P6c handover (After execution, step 3).
+8. **M2:** `end_now_child`'s doc comment says it returns at once, and counts as a passed test, in every run but its own.
+
 ## Stated decisions made while building
 
-1. **D84–D92 are the spec's TD1–TD9, in order** (TD*n* is D(83+*n*)), so a citation in the design and in the code reads the same. D84 also records the typed dry-run report (§9 item 6) and D86 the matcher's alignment (§9 item 3), the two §9 items without a TD of their own. `docs/tui-design.md` is the spec with its TD numbers replaced and its status line updated; nothing else in it changed.
-2. **§9's order is not the plan's.** `QuestionKind` (§9 item 2) comes after the alignment (item 3), because its `mismatch` variant carries the alignment; the observers, `end_now` and the typed report come first, as the smallest changes.
-3. **A `QuestionKind` payload holds what the run found, never what the plan says.** The plan's facts (the action, its path, its `PathOrigin`, a Manual's reason and text) are reached through `Question.at`, so `unscoped`, `manual` and `accept-done` have no payload. `Question.text` stays, so `LineUi` and the line prompts' output do not change.
+1. **D84–D92 are the spec's TD1–TD9, in order** (TD*n* is D(83+*n*)), so a citation in the design and in the code reads the same. D84 also records the typed dry-run report (§9 item 6), D86 the matcher's alignment (§9 item 3) and D90 the liveness lock (§9 item 7, added by the review). `docs/tui-design.md` is the spec with its TD numbers replaced, its status line updated and the review's changes (ruling 6).
+2. **§9's order is not the plan's.** `QuestionKind` comes after the alignment, because its `mismatch` variant carries it; the liveness lock comes before the preview, which uses it; the observers, `end_now` and the typed report come first, as the smallest changes.
+3. **A `QuestionKind` payload holds what the run found, never what the plan says.** The plan's facts (the action, its path, its `PathOrigin`, a Manual's reason and text) are reached through `Question.at`, so `unscoped` and `manual` have no payload. `Question.text` stays, so `LineUi` and the line prompts' output do not change.
 4. **`expect::align` is a function of its own, not a field of `Verdict`.** `check` and its callers stay as they are; the runner calls `align` only when there is a mismatch, and the expected block is matched a second time then (a few lines against the output already in memory). `check` and `align` share one matcher (`aligned`), so they cannot disagree.
 5. **The session notice keeps its reason and the earlier tasks as they were when it was set** (`Notice` in runner/mod.rs), so the `session` question's payload and its text say the same thing even if a task ends between the two.
 6. **`Simulated.detail: String` became `Simulated.effect: Effect`** (handler.rs), since `Outcome::Ok` took the handler's text. `Effect`'s `Display` prints the old text, so `planrun run --dry-run` prints what it printed (its snapshot is unchanged), and so does `tests/simulate.rs`.
 7. **The P5→P6 handover's item 5 is fixed in P6b-T6**, because P6b-T6 rewrites one of the two strings: both `resume-dirt` strings get their `\` line continuation back. A search of the source for runs of three or more spaces inside string literals found no other (a table header in render.rs and test inputs in planrun-parse are meant).
-8. **`end_now`'s test runs it in a child process**: the test binary starts itself with an environment variable set, and the child test (`end_now_child`, which returns at once without the variable) starts a pwsh session whose block starts a grandchild, then calls `end_now(7)`. The parent checks the exit code and that the grandchild is gone. On Windows that tests the job objects; the Unix path (`kill_registered`) is compiled and linted for Linux here, and runs in CI on `ubuntu-latest`.
-9. **The preview is `runner/preview.rs`**, not part of resume.rs (already 578 lines), and reads through `done`: `step_state`, `restorable` and a new `done::temps`, the read-only half of `remove_temps`. It holds no lock; its test checks that the repository (`.git` included) and the journal are byte for byte what they were.
-10. **expect.rs passes 400 lines** (465) with its new test. CLAUDE.md moves tests to `<module>_tests.rs` "once a file passes ~400 lines"; that move is mechanical and left out of this plan.
-11. **The docs come in two tasks**, as in P5: P6b-T1 records the decisions before the code, P6b-T8 describes the code after it.
-12. **Open for P6c, not settled here:** the spec's §2 says another run is seen from `lock.pid`, "readable while held". It is, but planrun never removes `lock.pid` (`lock.rs`), so a process id in it does not mean a run is in progress, and D90 rules out trying the lock. D90 leaves how the TUI tells a held lock from a stale `lock.pid` to P6c.
+8. **`end_now`'s test runs it in a child process**: the test binary starts itself with an environment variable set, and the child test (`end_now_child`) starts a pwsh session whose block starts a grandchild, then calls `end_now(7)`. The parent checks the exit code and that the grandchild is gone. On Windows that tests the job objects; the Unix path (`kill_registered`) is compiled and linted for Linux here, and runs in CI on `ubuntu-latest`.
+9. **The preview is `runner/preview.rs`**, not part of resume.rs, and holds no judgement of its own: where resume judges, it calls the same function (ruling 4). `done::temps` is the read-only half of `remove_temps`.
+10. **expect.rs passes 400 lines** (465) with its new test. CLAUDE.md moves tests to `<module>_tests.rs` "once a file passes ~400 lines"; that move is mechanical and left out of this plan (ruling 7).
+11. **The docs come in two tasks**, as in P5: P6b-T1 records the decisions before the code, P6b-T9 describes the code after it.
 
 ## Tasks
 
 ### P6b-T1: the TUI's design and decisions
 
-**Goal:** The design in the repository and its decisions agreed in writing before any code: `docs/tui-design.md` (the r4 spec, its TD numbers replaced by D84–D92), D84–D92 at the end of docs/decisions.md, amended-by lines in D15 (the TUI), D9 (the TUI's crates, planrun-tui only), D73 (`end_now`), D74 (`QuestionKind`) and D76 (any number of observers), and P6b and P6c in the roadmap.
+**Goal:** The design in the repository and its decisions agreed in writing before any code: `docs/tui-design.md` (the r4 spec, its TD numbers replaced by D84–D92, and the review's changes to §1, §2, §3, §6.E, §6.F and §9), D84–D92 at the end of docs/decisions.md, amended-by lines in D15 (the TUI), D9 (the TUI's crates, planrun-tui only), D73 (`end_now`), D74 (`QuestionKind`), D76 (any number of observers) and D77 (`lock.live`), and P6b and P6c in the roadmap.
 
 **Files**
 
@@ -54,7 +67,7 @@ File `docs/decisions.md` (exact diff; save the block as `$env:TEMP\p6b-t1-docs-d
 
 ```diff
 diff --git a/docs/decisions.md b/docs/decisions.md
-index d9d86c5..3a3f5d2 100644
+index d9d86c5..eda85c1 100644
 --- a/docs/decisions.md
 +++ b/docs/decisions.md
 @@ -68,16 +68,19 @@ Each dependency is justified here; add none without a line.
@@ -117,7 +130,16 @@ index d9d86c5..3a3f5d2 100644
  ## D77 Resume, and one planrun per repository
  
  Amends D14 and D57.
-@@ -1234,3 +1244,127 @@ step needs a token.
+@@ -1112,6 +1122,8 @@ Amends D14 and D57.
+   `status` and `--dry-run` take no lock. Its limit: on Unix, after a SIGKILL of planrun, a
+   session's descendants can outlive the lock (D73).
+ 
++Amended by D90 (`lock.live`: a live run is seen without trying the lock).
++
+ ## D78 Step transactions in a real run
+ 
+ Amends D53. Settles the P3 open items on the gap between prepare and commit, file modes, a git
+@@ -1234,3 +1246,141 @@ step needs a token.
  - **Cleanup.** Every planrun start removes `planrun.old[.exe]` and `planrun.new[.exe]` beside its
    executable, best effort and silently: one or two file removals, no process. On Windows the
    `.old` of the update just made stays until the next start, because it is still running.
@@ -148,10 +170,14 @@ index d9d86c5..3a3f5d2 100644
 +- A question opens in a dock over the console's region and leaves the plan tree and the change
 +  inspector visible. There are no centred modals.
 +- **The resume preview** is a read-only full view, built from `analyse` and
-+  `runner::preview::preview`: the plan's fingerprint against the journal's, `.git/index.lock`,
-+  HEAD, and each prepared step of the interrupted task as it is on disk (Done, NotDone or Unknown,
-+  whether it could be restored, the writer's temp files). It takes no lock and writes nothing,
-+  and it shows when it was read. Every question in it is labelled "asked when resume reaches it":
++  `runner::preview::preview`: whether a run is live (D90), the plan's fingerprint against the
++  journal's, `.git/index.lock`, resume's own verdict on HEAD (unchanged, moved by the action that
++  was running, or moved so that resume stops; computed by the function resume uses), each
++  prepared step of the interrupted task as it is on disk (Done, NotDone or Unknown, whether it
++  could be restored, the writer's temp files), the scripts that will ask "run again or keep",
++  and the paths resume will ask about as `resume-dirt` (never an Unknown step's: restoring puts
++  them back, accepting verifies them).
++  It takes no lock and writes nothing, and it shows when it was read. Every question in it is labelled "asked when resume reaches it":
 +  `Runner::resume` takes the lock, checks everything again against the disk as it is then, and
 +  asks in the dock, each answer journaled when asked (D74, D77). Answering in the preview would
 +  be a decision of its own, with the runner checking that the state still matches: not now.
@@ -163,12 +189,18 @@ index d9d86c5..3a3f5d2 100644
 +- `Question.kind` is an enum, `QuestionKind`, one variant per question the runner asks, with what
 +  the run knows about it that the plan does not say as its payload: the decision (`run`), the
 +  classifier's reasons (`typed-yes`), the matcher's reasons and `errored` (`confirm`), the status,
-+  the mismatches, the expected lines aligned to the output, the commit problem and whether the
-+  session is dead (`mismatch`), the dirty paths (`dirt`, `resume-dirt`), the shell and directory
-+  (`outside`), why a session is new and the earlier tasks (`session`), the gate's reasons
-+  (`gate`), the changed paths (`changed`), whether the script was running (`again`), each path's
-+  state and whether the step can be restored (`unknown`), and both HEADs (`head-moved`). What the
-+  plan says is reached through `Question.at`.
++  the mismatches, the block's output lines, the expected lines aligned to them, the commit
++  problem and whether the session is dead (`mismatch`), the dirty paths (`dirt`,
++  `resume-dirt`), the shell and directory (`outside`), why a session is new and the earlier
++  tasks (`session`), the gate's reasons (`gate`), the changed paths (`changed`), whether the
++  script was running (`again`), the step's journal place with each path's state and whether it
++  can be restored (`unknown`, and the place for `accept-done`), and the running action's place
++  with both HEADs (`head-moved`). What the plan says is reached through `Question.at`; resume's
++  questions name their step or action by its journal place, since they have no `at`.
++- **Typed answers are explicit.** `Question.typed` is the list of words a typed question
++  accepts (`yes`, `skip`, `quit` for a Destructive script; `yes`, `quit` for the commit gate and
++  for accepting a step as done), and `None` for a question of choices. The runner reads it back
++  to decide what a word does, so the list and the behaviour cannot drift.
 +- `QuestionKind::name()` is the journal name (`run`, `typed-yes`, …): the journal format does not
 +  change.
 +- A UI matches on it exhaustively, so the compiler finds a question it does not show. Its keys
@@ -204,7 +236,7 @@ index d9d86c5..3a3f5d2 100644
 +
 +## D90 The runner stays synchronous, on a worker thread
 +
-+Amends D15 and D76.
++Amends D15, D76 and D77.
 +
 +- The runner runs on a worker thread; the render thread owns the terminal and never waits on git,
 +  a shell or the network. The runner reaches the terminal only through blocking round trips:
@@ -217,12 +249,16 @@ index d9d86c5..3a3f5d2 100644
 +  in the order they were added, so the TUI's and the `e2e` seam's (D82) coexist. `Ui::status` is
 +  shown as prose and never parsed; `Ui::output` carries each output line with its stream.
 +- **Background work** (plan checks, `update --check`, `git status --porcelain
-+  --no-optional-locks`, journal scans, the lock) runs on threads; each result carries the
-+  fingerprint of its input. Background checks never replace preflight.
-+- **Another planrun** is never detected by trying the lock: a try would make a concurrent
-+  `planrun run` fail (D77). `lock.pid` alone is not enough either: it stays when the holder ends,
-+  so a process id in it does not mean a run is in progress. How the TUI tells a held lock from a
-+  stale `lock.pid` is settled with the TUI (P6c).
++  --no-optional-locks`, journal scans, the liveness probe) runs on threads; each result carries
++  the fingerprint of its input. Background checks never replace preflight.
++- **A live run is seen through a second lock, `<git-dir>/planrun/lock.live`.** A run takes
++  `lock` as before (a try: held means "another planrun is running", D77), then `lock.live` with a
++  blocking lock, and holds both until it ends; the operating system releases them however it
++  ends. `lock::live` probes with a try on `lock.live` only and lets go at once: a run starting
++  while a probe holds it waits a moment, never fails. A successful try means no run is live;
++  `lock.pid` is then only shown, never trusted (it stays when its run ends). The one gap: a probe
++  in the instant between a starting run's two locks sees no live run. Never probe `lock` itself:
++  a try there would make a starting run fail.
 +
 +## D91 Ctrl-C in the TUI ends planrun, as it does on the line prompts
 +
@@ -440,8 +476,9 @@ docs/decisions.md holds them as D84–D92, with what P6b settled.
   one it doesn't offer never is.
 - **D87 — Phases are not a navigator level** (D5). Plans is a table of plan files.
 - **D88 — Workspaces are deferred.** `planrun tui [<plans-dir>]` runs from the target repository.
-- **D89 — Colour.** 24-bit, a 256-colour fallback, monochrome under `NO_COLOR`. The glyph set is
-  pinned by a test and a manual check (§5).
+- **D89 — Colour.** 24-bit only in v1; the 256-colour fallback and monochrome under `NO_COLOR`
+  are designed (§4) and come in the polish phase (§11). The glyph set is pinned by a test and a
+  manual check (§5).
 - **D90 — The runner stays synchronous on a worker thread.** The render thread owns the terminal;
   the runner reaches it only through blocking round trips: `ask`, `shell`, `view` and `diff`
   (§2).
@@ -472,8 +509,8 @@ journaled as the decision it produced.
 | mismatch alignment (expected line ↔ output line) | `expect::check` | return the alignment; today `Mismatch::Line` (expect.rs:48) holds only the unmatched line |
 | Inspect: per-action verdicts | `dry_run` (preflight.rs:126) returns `DryRun { start: Vec<Finding>, tasks: Vec<TaskReport> }`, with a per-action `Outcome` (Ok / WouldAsk / Failed / Depends / NotRun / NotChecked / Waits / Shown) | type `Outcome::Ok` and `WouldAsk` (blob ids, the decision) instead of `String`; `planrun-cli/src/dry_run.rs` formats them as today |
 | Inspect: class and policy column | `DefaultClassifier::explain` + `Policy::decide`, both pure, called by the TUI | none |
-| resume preview | `analyse` (resume.rs:108, pure, journal only) | new read-only disk probe in planrun-exec: Done / NotDone / Unknown per prepared step, no writes, no lock |
-| a run in progress elsewhere | `<git-dir>/planrun/lock`, `lock.pid` readable while held (D77) | none. Never `try_lock` to probe: it would make a concurrent `planrun run` fail |
+| resume preview | `analyse` (resume.rs:108, pure, journal only) | `runner::preview::preview`: whether a run is live, resume's own HEAD verdict, Done / NotDone / Unknown per prepared step, the scripts that ask again, the `resume-dirt` paths; no writes, no lock |
+| a run in progress elsewhere | `lock::live`: a try on `<git-dir>/planrun/lock.live`, which a run holds with a blocking lock after taking `lock` (D90) | the second lock. Never try `lock` itself: it would make a starting `planrun run` fail. `lock.pid` is only shown, never trusted |
 
 No parallel Event stream: the journal plus `status`, `output` and `Question` cover it.
 
@@ -485,7 +522,7 @@ No parallel Event stream: the journal plus `status`, `output` and `Question` cov
   itself; the inspector shows the action or diff and the dock stays open.
 
 **Background work** (threads plus a channel): plan checks, `update --check`, `git status
---porcelain --no-optional-locks`, journal scans, the lock-pid check. Each result carries the
+--porcelain --no-optional-locks`, journal scans, the liveness probe. Each result carries the
 fingerprint of its input and has five states: running, current, stale, unavailable, failed.
 Background checks never replace preflight.
 
@@ -499,8 +536,9 @@ row h-1    footer 2      F1 Help F2 Plans F3 Plan F4 History · target · plans 
 ```
 
 - **Header state:** `○ idle`, ` INSPECT  policy default`, ` RUN  ◉ executing`, `◆ waiting for you`,
-  `✕ stopped`. Other runs: `· running in pid 4812` (fg2) when another process holds the lock,
-  `· 1 interrupted run` (warn) only when the lock is free and a journal has no run-end.
+  `✕ stopped`. Other runs: `· running in pid 4812` (fg2) when `lock::live` says a run is live
+  (the pid from `lock.pid`, shown only), `· 1 interrupted run` (warn) only when no run is live
+  and a journal has no run-end.
 - **Update indicator:** pinned bottom-right. `planrun 0.1.0` (fg3) when up to date or unchecked,
   `↑ 0.2.0 available` (meta), `update check failed` (fg3). Never green or red.
 - Below 30 rows the footer is one line.
@@ -622,18 +660,21 @@ for each one; the compiler catches a missing one.
 ### E. History (F4)
 
 Runs from `<git-dir>/planrun/*.jsonl` (journals set aside by `--restart` included), grouped by
-date. The end of a run: its `run-end` record; or "running in pid N" when the lock is held; or
-"killed" only when the lock is free and there is no `run-end`. `R` opens F.
+date. The end of a run: its `run-end` record; or "running in pid N" when `lock::live` says a run is
+live; or "killed" only when no run is live and there is no `run-end`. `R` opens F.
 
 ### F. Resume preview
 
 A read-only full view, built from `analyse` plus the read-only disk probe. It holds no lock and
 writes nothing, and it shows when its snapshot was taken (`g` refreshes it).
 
-- **journal against repository:** fingerprint, `index.lock`, the lock, HEAD;
-- **what resume will do:** the task that runs again, each prepared step's state, and scripts that
-  ran before;
-- **your files:** resume-dirt and untracked files.
+- **journal against repository:** whether a run is live, the fingerprint, `index.lock`, and
+  resume's own verdict on HEAD (unchanged, moved by the action that was running, or moved so
+  that resume stops);
+- **what resume will do:** the task that runs again, each prepared step's state, and the scripts
+  that will ask "run again or keep" (and whether each was running);
+- **your files:** the `resume-dirt` paths (never an Unknown step's: restoring puts them back,
+  accepting verifies them) and untracked files.
 
 Every question is labelled "asked when resume reaches it". `enter` starts `Runner::resume`, which
 takes the lock, checks everything again against the disk at that moment, and asks its questions
@@ -685,9 +726,11 @@ All in planrun-exec, all small, none of them changes a decision:
 2. `QuestionKind`: an enum replacing `kind: &'static str`, with each kind's detail as payload and
    `name()` for the journal (D86). This replaces the doc-comment fix.
 3. `expect::check` returns the expected ↔ output alignment.
-4. A read-only disk probe for the resume preview, beside `analyse`.
+4. The resume preview, beside `analyse`: read only, with resume's own HEAD verdict, the step
+   states, the scripts that ask again and the `resume-dirt` paths.
 5. `shell::end_now(code) -> !`, with the Unix group-kill loop factored out of `on_signal` (D91).
 6. Typed `Outcome::Ok` and `Outcome::WouldAsk` in the dry-run report; the CLI's output is unchanged.
+7. `lock.live` and `lock::live`, so a live run is seen without trying the run lock (D90).
 
 ## 10. Open questions
 
@@ -754,9 +797,9 @@ Only the task's paths are staged, only when the gate's exit code above was 0, an
 if ($gate -eq 0) {
   git add -- docs/decisions.md docs/roadmap.md docs/tui-design.md
   $verified = [ordered]@{
-      'docs/decisions.md' = '3a3f5d2436b7bf270ce4aaf15bbf4f542588d44c'
+      'docs/decisions.md' = 'eda85c121068e9bb7cd90396384ea1d5afc7b206'
       'docs/roadmap.md' = 'c2e658809358d7a866722b118c608864f7e41cc7'
-      'docs/tui-design.md' = 'f9dc75b8c8fbd4c621d456fab8e4f8c6fb70bcd2'
+      'docs/tui-design.md' = 'c9511fb72da440bf4bae19246afaa7ad229657bf'
   }
   $differ = @($verified.Keys | Where-Object { (git rev-parse ":$_") -ne $verified[$_] })
   if ($differ.Count -eq 0) { git commit -m "P6b-T1: the TUI's design and decisions" }
@@ -1328,10 +1371,10 @@ File `crates/planrun-exec/tests/shell.rs` (exact diff; save the block as `$env:T
 
 ```diff
 diff --git a/crates/planrun-exec/tests/shell.rs b/crates/planrun-exec/tests/shell.rs
-index 1339124..4731739 100644
+index 1339124..30a7857 100644
 --- a/crates/planrun-exec/tests/shell.rs
 +++ b/crates/planrun-exec/tests/shell.rs
-@@ -425,6 +425,87 @@ fn a_timeout_kills_the_whole_tree() {
+@@ -425,6 +425,88 @@ fn a_timeout_kills_the_whole_tree() {
      }
  }
  
@@ -1341,7 +1384,8 @@ index 1339124..4731739 100644
 +const END_NOW_CHILD: &str = "PLANRUN_TEST_END_NOW_CHILD";
 +
 +/// Runs only as the child of [`end_now_kills_every_session_tree`]: starts a pwsh session whose
-+/// block starts a grandchild and sleeps, then calls `end_now` while the block runs.
++/// block starts a grandchild and sleeps, then calls `end_now` while the block runs. In every
++/// other run it returns at once and counts as one passed test.
 +#[test]
 +fn end_now_child() {
 +    let Some(spec) = std::env::var_os(END_NOW_CHILD) else {
@@ -1462,7 +1506,7 @@ if ($gate -eq 0) {
   $verified = [ordered]@{
       'crates/planrun-exec/src/shell/kill.rs' = '5b34fead499812406a3adf9beaaf5a95997c45cb'
       'crates/planrun-exec/src/shell/mod.rs' = '1efec934afcb61d633e36d35a36702222d8b1f28'
-      'crates/planrun-exec/tests/shell.rs' = '47317390455ddac28596b1c4740e82d37ebb670f'
+      'crates/planrun-exec/tests/shell.rs' = '30a78574072d54852d10bd25ed797100cfcc822b'
   }
   $differ = @($verified.Keys | Where-Object { (git rev-parse ":$_") -ne $verified[$_] })
   if ($differ.Count -eq 0) { git commit -m "P6b-T3: shell::end_now" }
@@ -2255,7 +2299,7 @@ Expected: the commit, then no output from `git status --porcelain`. A line namin
 
 ### P6b-T6: QuestionKind
 
-**Goal:** `Question.kind` becomes `QuestionKind`: one variant per question the runner asks, carrying what the run found (the decision, the classifier's reasons, the matcher's reasons, mismatches and alignment, the commit problem, dirty paths, the session's directory, the gate's reasons, changed paths, step states, both HEADs), with `name()` for the journal, which does not change (D86). The line UI and the scripted test UIs read `name()`. The two `resume-dirt` strings get their line continuation back (handover item 5).
+**Goal:** `Question.kind` becomes `QuestionKind`: one variant per question the runner asks, carrying what the run found (the decision, the classifier's reasons, the matcher's reasons, mismatches, the block's output and the alignment into it, the commit problem, dirty paths, the session's directory, the gate's reasons, changed paths, the step's or action's journal place with step states or both HEADs), with `name()` for the journal, which does not change (D86). `Question.typed` becomes the words a typed question accepts (review ruling 2). The line UI and the scripted test UIs read `name()`. The two `resume-dirt` strings get their line continuation back (handover item 5).
 
 **Files**
 
@@ -2366,14 +2410,14 @@ impl Ui for LineUi<'_> {
             self.print(line);
         }
         loop {
-            if !question.typed {
+            if question.typed.is_none() {
                 self.print(&prompt(&question.choices));
             }
             let _ = io::stdout().flush();
             let Some(line) = self.read_line() else {
                 return Reply::Stop("stdin closed before an answer".to_owned());
             };
-            if question.typed {
+            if question.typed.is_some() {
                 return Reply::Typed(line);
             }
             let found = question.choices.iter().find(|c| c.key() == line.trim());
@@ -2470,7 +2514,7 @@ File `crates/planrun-exec/src/runner/mod.rs` (exact diff; save the block as `$en
 
 ```diff
 diff --git a/crates/planrun-exec/src/runner/mod.rs b/crates/planrun-exec/src/runner/mod.rs
-index e292f97..cf33617 100644
+index e292f97..646fda7 100644
 --- a/crates/planrun-exec/src/runner/mod.rs
 +++ b/crates/planrun-exec/src/runner/mod.rs
 @@ -23,7 +23,7 @@ use crate::handler::{HandlerSet, file_path};
@@ -2527,7 +2571,7 @@ index e292f97..cf33617 100644
      }
  
      /// Asks `question` until it gets a choice or a typed line: `[v]`, `[d]` and `[o]` are
-@@ -265,7 +256,7 @@ impl<'r> Runner<'r> {
+@@ -265,14 +256,15 @@ impl<'r> Runner<'r> {
          let at = question.at.map(|p| self.at(p));
          self.append(Record::Answer {
              at,
@@ -2536,7 +2580,18 @@ index e292f97..cf33617 100644
              answer: answer.to_owned(),
          })
      }
-@@ -290,13 +281,16 @@ impl<'r> Runner<'r> {
+ 
+-    /// Asks for a typed `yes` (D74): exactly `yes` agrees, `quit` stops, `skip` skips when
+-    /// `skippable`; anything else does not run and asks again.
+-    fn typed_yes(&mut self, question: Question, skippable: bool) -> Result<Typed> {
++    /// Asks for a typed `yes` (D74): exactly `yes` agrees, `quit` stops, `skip` skips when the
++    /// question's words offer it; anything else does not run and asks again.
++    fn typed_yes(&mut self, question: Question) -> Result<Typed> {
++        let skippable = question.typed.is_some_and(|words| words.contains(&"skip"));
+         loop {
+             match self.ask(question.clone())? {
+                 Answer::Typed(line) if line == "yes" => return Ok(Typed::Yes),
+@@ -290,15 +282,18 @@ impl<'r> Runner<'r> {
  
      /// Asks the pending session notice, if any; it is acknowledged even with `--auto` (D81).
      fn acknowledge_notice(&mut self, at: Option<Position>) -> Result<Flow> {
@@ -2554,9 +2609,12 @@ index e292f97..cf33617 100644
              at,
 -            text,
              choices: vec![Choice::Continue, Choice::Shell, Choice::Quit],
-             typed: false,
+-            typed: false,
++            typed: None,
          };
-@@ -308,6 +302,31 @@ impl<'r> Runner<'r> {
+         Ok(match self.ask(question)? {
+             Answer::Choice(Choice::Continue) => Flow::Go,
+@@ -308,6 +303,31 @@ impl<'r> Runner<'r> {
      }
  }
  
@@ -2599,7 +2657,7 @@ File `crates/planrun-exec/src/runner/resume.rs` (exact diff; save the block as `
 
 ```diff
 diff --git a/crates/planrun-exec/src/runner/resume.rs b/crates/planrun-exec/src/runner/resume.rs
-index d3f468b..42f21c7 100644
+index d3f468b..16ccb8b 100644
 --- a/crates/planrun-exec/src/runner/resume.rs
 +++ b/crates/planrun-exec/src/runner/resume.rs
 @@ -23,7 +23,7 @@ use crate::git::Head;
@@ -2607,7 +2665,7 @@ index d3f468b..42f21c7 100644
  use crate::preflight::Resumed;
  use crate::transaction::StepRecord;
 -use crate::ui::{Choice, Question};
-+use crate::ui::{Choice, Question, QuestionKind};
++use crate::ui::{Choice, Question, QuestionKind, YES_OR_QUIT};
  
  /// What the run record of the chain says.
  #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2620,39 +2678,66 @@ index d3f468b..42f21c7 100644
          if analysis.interrupted.is_some() {
              self.replay = Some(replay);
          }
-@@ -367,7 +367,10 @@ impl Runner<'_> {
+@@ -367,7 +367,11 @@ impl Runner<'_> {
              return Ok(Flow::Go);
          }
          let question = Question {
 -            kind: "head-moved",
 +            kind: QuestionKind::HeadMoved {
++                action: at.clone(),
 +                recorded: head.clone(),
 +                now: now.clone(),
 +            },
              at: None,
              text: vec![
                  format!(
-@@ -499,7 +502,10 @@ impl Runner<'_> {
+@@ -381,7 +385,7 @@ impl Runner<'_> {
+             ],
+             // No `[o]`: it journals HEAD as seen (D80), which would pass this check unanswered.
+             choices: vec![Choice::Keep, Choice::Retry, Choice::Diff, Choice::Quit],
+-            typed: false,
++            typed: None,
+         };
+         Ok(match self.ask(question)? {
+             Answer::Choice(Choice::Keep) => {
+@@ -499,11 +503,15 @@ impl Runner<'_> {
          }
          choices.extend([Choice::Accept, Choice::Diff, Choice::Shell, Choice::Quit]);
          let question = Question {
 -            kind: "unknown",
 +            kind: QuestionKind::Unknown {
++                step: at.clone(),
 +                paths: paths.to_vec(),
 +                restorable: can_restore,
 +            },
              at: None,
              text,
              choices,
-@@ -519,7 +525,7 @@ impl Runner<'_> {
+-            typed: false,
++            typed: None,
+         };
+         match self.ask(question)? {
+             Answer::Choice(Choice::Restore) => {
+@@ -519,16 +527,16 @@ impl Runner<'_> {
              }
              Answer::Choice(Choice::Accept) => {
                  let question = Question {
 -                    kind: "accept-done",
-+                    kind: QuestionKind::AcceptDone,
++                    kind: QuestionKind::AcceptDone { step: at.clone() },
                      at: None,
                      text: vec![
                          "accepting the step as done overrides the disk check".to_owned(),
+                         "type `yes` to accept it, or `quit`".to_owned(),
+                     ],
+                     choices: Vec::new(),
+-                    typed: true,
++                    typed: Some(YES_OR_QUIT),
+                 };
+-                match self.typed_yes(question, false)? {
++                match self.typed_yes(question)? {
+                     Typed::Yes => {
+                         self.append(Record::StepAccepted { at: at.clone() })?;
+                         Ok(Ok(true))
 ```
 
 ```powershell
@@ -2664,7 +2749,7 @@ File `crates/planrun-exec/src/runner/script.rs` (exact diff; save the block as `
 
 ```diff
 diff --git a/crates/planrun-exec/src/runner/script.rs b/crates/planrun-exec/src/runner/script.rs
-index 927aec1..a0c6868 100644
+index 927aec1..7225c5b 100644
 --- a/crates/planrun-exec/src/runner/script.rs
 +++ b/crates/planrun-exec/src/runner/script.rs
 @@ -9,19 +9,24 @@ use super::resume::Past;
@@ -2677,7 +2762,7 @@ index 927aec1..a0c6868 100644
  use crate::policy::{Decision, PolicyClass, Skip};
  use crate::shell::{RunStatus, ScriptRun};
 -use crate::ui::{Choice, Position, Question};
-+use crate::ui::{Choice, Position, Question, QuestionKind};
++use crate::ui::{Choice, Position, Question, QuestionKind, RUN_SKIP_OR_QUIT};
  
  /// What the matcher, and for a commit HEAD, concluded.
  enum Judged {
@@ -2714,7 +2799,16 @@ index 927aec1..a0c6868 100644
              at: Some(pos),
              text: vec![
                  format!("L{line} {} {why}", describe(action)),
-@@ -262,7 +268,9 @@ impl Runner<'_> {
+@@ -184,7 +190,7 @@ impl Runner<'_> {
+                 Choice::Shell,
+                 Choice::Quit,
+             ],
+-            typed: false,
++            typed: None,
+         };
+         Ok(match self.ask(question)? {
+             Answer::Choice(Choice::Retry) => Replayed::Again,
+@@ -262,13 +268,15 @@ impl Runner<'_> {
                  text.extend(found.reasons.iter().map(|r| format!("  because: {r}")));
                  text.push("type `yes` to run it, `skip` to skip it, `quit` to stop".to_owned());
                  let question = Question {
@@ -2725,6 +2819,14 @@ index 927aec1..a0c6868 100644
                      at: Some(pos),
                      text,
                      choices: Vec::new(),
+-                    typed: true,
++                    typed: Some(RUN_SKIP_OR_QUIT),
+                 };
+-                Ok(match self.typed_yes(question, true)? {
++                Ok(match self.typed_yes(question)? {
+                     Typed::Yes => Permit::Run,
+                     Typed::Skip => Permit::Skip,
+                     Typed::Quit => Permit::Stop("quit".to_owned()),
 @@ -283,7 +291,7 @@ impl Runner<'_> {
                  let mut text = vec![format!("{head} ({class})")];
                  text.extend(body.lines().take(6).map(|l| format!("  | {l}")));
@@ -2734,6 +2836,15 @@ index 927aec1..a0c6868 100644
                      at: Some(pos),
                      text,
                      choices: vec![
+@@ -294,7 +302,7 @@ impl Runner<'_> {
+                         Choice::Shell,
+                         Choice::Quit,
+                     ],
+-                    typed: false,
++                    typed: None,
+                 };
+                 Ok(match self.ask(question)? {
+                     Answer::Choice(Choice::Run) => Permit::Run,
 @@ -313,7 +321,7 @@ impl Runner<'_> {
          if let Some(restart) = self.sessions.starts(script.shell) {
              if restart && self.notice.is_none() {
@@ -2755,6 +2866,15 @@ index 927aec1..a0c6868 100644
              at: Some(pos),
              text: vec![format!(
                  "the {} session's working directory is {}, outside the repository; the next \
+@@ -342,7 +353,7 @@ impl Runner<'_> {
+                 cwd.display()
+             )],
+             choices: vec![Choice::Continue, Choice::View, Choice::Shell, Choice::Quit],
+-            typed: false,
++            typed: None,
+         };
+         Ok(match self.ask(question)? {
+             Answer::Choice(Choice::Continue) => Flow::Go,
 @@ -388,21 +399,22 @@ impl Runner<'_> {
              ran.status,
              RunStatus::SessionEnded(_) | RunStatus::TimedOut | RunStatus::Broken(_)
@@ -2812,6 +2932,15 @@ index 927aec1..a0c6868 100644
                      at: Some(pos),
                      text,
                      choices: vec![
+@@ -466,7 +481,7 @@ impl Runner<'_> {
+                         Choice::Shell,
+                         Choice::Quit,
+                     ],
+-                    typed: false,
++                    typed: None,
+                 };
+                 Ok(match self.ask(question)? {
+                     Answer::Choice(Choice::Yes) => Resolved::Outcome(Outcome::Confirmed),
 @@ -475,9 +490,15 @@ impl Runner<'_> {
                      _ => Resolved::Stop("quit".to_owned()),
                  })
@@ -2830,7 +2959,7 @@ index 927aec1..a0c6868 100644
                  let mut choices = if dead {
                      text.push(format!(
                          "the {} session is gone; retry starts a new one",
-@@ -489,7 +510,13 @@ impl Runner<'_> {
+@@ -489,11 +510,18 @@ impl Runner<'_> {
                  };
                  choices.extend([Choice::View, Choice::Diff, Choice::Shell, Choice::Quit]);
                  let question = Question {
@@ -2838,6 +2967,7 @@ index 927aec1..a0c6868 100644
 +                    kind: QuestionKind::Mismatch {
 +                        status: ran.status.clone(),
 +                        mismatches,
++                        output: ran.lines.clone(),
 +                        aligned,
 +                        commit,
 +                        dead,
@@ -2845,6 +2975,11 @@ index 927aec1..a0c6868 100644
                      at: Some(pos),
                      text,
                      choices,
+-                    typed: false,
++                    typed: None,
+                 };
+                 match self.ask(question)? {
+                     Answer::Choice(Choice::Accept) => Ok(Resolved::Outcome(Outcome::Accepted)),
 ```
 
 ```powershell
@@ -2856,7 +2991,7 @@ File `crates/planrun-exec/src/runner/task.rs` (exact diff; save the block as `$e
 
 ```diff
 diff --git a/crates/planrun-exec/src/runner/task.rs b/crates/planrun-exec/src/runner/task.rs
-index c9cae89..08b958e 100644
+index c9cae89..eb33bb2 100644
 --- a/crates/planrun-exec/src/runner/task.rs
 +++ b/crates/planrun-exec/src/runner/task.rs
 @@ -7,11 +7,12 @@ use super::gate::Gate;
@@ -2869,11 +3004,11 @@ index c9cae89..08b958e 100644
  use crate::preflight;
  use crate::transaction::{self, CommitCause};
 -use crate::ui::{Choice, Position, Question};
-+use crate::ui::{Choice, Position, Question, QuestionKind};
++use crate::ui::{Choice, Position, Question, QuestionKind, YES_OR_QUIT};
  
  /// The state of the task being run.
  pub(crate) struct TaskRun {
-@@ -110,23 +111,23 @@ impl Runner<'_> {
+@@ -110,27 +111,27 @@ impl Runner<'_> {
      /// made and that a remaining file action writes over. They may be the user's, so they are
      /// asked about once, whatever `--auto` says.
      fn resume_dirt(&mut self, found: &[Finding]) -> Result<Flow> {
@@ -2903,6 +3038,11 @@ index c9cae89..08b958e 100644
              at: None,
              text,
              choices: vec![Choice::Continue, Choice::Diff, Choice::Shell, Choice::Quit],
+-            typed: false,
++            typed: None,
+         };
+         Ok(match self.ask(question)? {
+             Answer::Choice(Choice::Continue) => Flow::Go,
 @@ -196,7 +197,7 @@ impl Runner<'_> {
                  continue;
              }
@@ -2912,6 +3052,15 @@ index c9cae89..08b958e 100644
                  at: Some(here),
                  text: vec![format!(
                      "L{} {} ({:?}): not in the task's files (D50)",
+@@ -212,7 +213,7 @@ impl Runner<'_> {
+                     Choice::Shell,
+                     Choice::Quit,
+                 ],
+-                typed: false,
++                typed: None,
+             };
+             match self.ask(question)? {
+                 Answer::Choice(Choice::Run) => chosen.push(action),
 @@ -265,7 +266,9 @@ impl Runner<'_> {
                  CommitCause::Changed(paths) => {
                      let names: Vec<&str> = paths.iter().map(RepoPath::as_str).collect();
@@ -2923,6 +3072,15 @@ index c9cae89..08b958e 100644
                          at: Some(pos),
                          text: vec![
                              format!("changed since the step was prepared: {}", names.join(", ")),
+@@ -277,7 +280,7 @@ impl Runner<'_> {
+                             Choice::Shell,
+                             Choice::Quit,
+                         ],
+-                        typed: false,
++                        typed: None,
+                     };
+                     match self.ask(question)? {
+                         Answer::Choice(Choice::PrepareAgain) => continue,
 @@ -331,7 +334,7 @@ impl Runner<'_> {
          )];
          lines.extend(self.plan.text(text).lines().map(|l| format!("  {l}")));
@@ -2932,7 +3090,16 @@ index c9cae89..08b958e 100644
              at: Some(pos),
              text: lines,
              choices: vec![
-@@ -445,7 +448,9 @@ impl Runner<'_> {
+@@ -341,7 +344,7 @@ impl Runner<'_> {
+                 Choice::Shell,
+                 Choice::Quit,
+             ],
+-            typed: false,
++            typed: None,
+         };
+         match self.ask(question)? {
+             Answer::Choice(Choice::Continue) => {}
+@@ -445,13 +448,15 @@ impl Runner<'_> {
          text.extend(reasons.iter().map(|r| format!("  {r}")));
          text.push("type `yes` to commit anyway, or `quit`".to_owned());
          let question = Question {
@@ -2943,6 +3110,14 @@ index c9cae89..08b958e 100644
              at: Some(pos),
              text,
              choices: Vec::new(),
+-            typed: true,
++            typed: Some(YES_OR_QUIT),
+         };
+-        match self.typed_yes(question, false)? {
++        match self.typed_yes(question)? {
+             Typed::Yes => {
+                 self.append(Record::GateOverride {
+                     task: task.id.raw.to_string(),
 @@ -491,13 +496,12 @@ impl Runner<'_> {
      /// Dirt outside the task's paths before a commit (D80): listed and asked about.
      fn outside_dirt(&mut self, pos: Position) -> Result<Flow> {
@@ -2958,7 +3133,7 @@ index c9cae89..08b958e 100644
              .collect();
          if outside.is_empty() {
              return Ok(Flow::Go);
-@@ -507,9 +511,9 @@ impl Runner<'_> {
+@@ -507,13 +511,13 @@ impl Runner<'_> {
               would take them:",
              outside.len()
          )];
@@ -2970,6 +3145,11 @@ index c9cae89..08b958e 100644
              at: Some(pos),
              text,
              choices: vec![Choice::Continue, Choice::Diff, Choice::Shell, Choice::Quit],
+-            typed: false,
++            typed: None,
+         };
+         Ok(match self.ask(question)? {
+             Answer::Choice(Choice::Continue) => Flow::Go,
 ```
 
 ```powershell
@@ -2992,8 +3172,15 @@ use planrun_model::{RepoPath, Shell};
 use crate::done::Seen;
 use crate::expect::{Aligned, Mismatch, Reason};
 use crate::git::{Head, StatusEntry};
+use crate::journal::At;
 use crate::policy::Decision;
 use crate::shell::{OutLine, RunStatus};
+
+/// The words a Destructive script's typed question accepts (D74).
+pub const RUN_SKIP_OR_QUIT: &[&str] = &["yes", "skip", "quit"];
+
+/// The words the commit gate's and an accept-as-done typed question accept (D75, D77).
+pub const YES_OR_QUIT: &[&str] = &["yes", "quit"];
 
 /// An action's place in the plan, for the UI to show it: positions from 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3080,7 +3267,8 @@ impl Choice {
 }
 
 /// Which question it is, with what the run knows about it that the plan does not say (D86).
-/// What the plan says (the action, its text, its path) is reached through [`Question::at`].
+/// What the plan says (the action, its text, its path) is reached through [`Question::at`];
+/// resume's questions, which have no `at`, name their step or action by its journal place.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QuestionKind {
     /// `run`: a script whose decision asks (D69).
@@ -3109,7 +3297,10 @@ pub enum QuestionKind {
         status: RunStatus,
         /// What the matcher found.
         mismatches: Vec<Mismatch>,
-        /// The expected summary lines against the output (empty when the plan states none).
+        /// The block's output, both streams, as the matcher saw it.
+        output: Vec<OutLine>,
+        /// The expected summary lines against `output`, whose lines [`Aligned::output`]
+        /// indexes (empty when the plan states none).
         aligned: Vec<Aligned>,
         /// For a commit, why it does not count as made (D79).
         commit: Option<String>,
@@ -3154,15 +3345,22 @@ pub enum QuestionKind {
     },
     /// `unknown`: resume found a step neither as before nor as planned (D77).
     Unknown {
+        /// The step, as the journal names it (its first action).
+        step: At,
         /// Each path of the step as it is now.
         paths: Vec<(RepoPath, Seen)>,
         /// Every pre-image is there, so `[r]` can restore it (D57).
         restorable: bool,
     },
     /// `accept-done`: accepting an unknown step as done (D77).
-    AcceptDone,
+    AcceptDone {
+        /// The step, as the journal names it.
+        step: At,
+    },
     /// `head-moved`: HEAD moved by one commit while an action was running (D77).
     HeadMoved {
+        /// The action that was running, as the journal names it.
+        action: At,
         /// HEAD before the action.
         recorded: Head,
         /// HEAD now.
@@ -3193,7 +3391,7 @@ impl QuestionKind {
             QuestionKind::Changed { .. } => "changed",
             QuestionKind::Again { .. } => "again",
             QuestionKind::Unknown { .. } => "unknown",
-            QuestionKind::AcceptDone => "accept-done",
+            QuestionKind::AcceptDone { .. } => "accept-done",
             QuestionKind::HeadMoved { .. } => "head-moved",
             QuestionKind::ResumeDirt { .. } => "resume-dirt",
         }
@@ -3211,8 +3409,9 @@ pub struct Question {
     pub text: Vec<String>,
     /// The answers offered, in order. Empty with `typed`.
     pub choices: Vec<Choice>,
-    /// The answer is a typed line: only `yes` exactly agrees (D74).
-    pub typed: bool,
+    /// For a typed question, the words it accepts, each exactly as written (D74, D86); `None`
+    /// for a question of choices. The runner acts on these words and no other.
+    pub typed: Option<&'static [&'static str]>,
 }
 
 /// What the UI read.
@@ -3249,49 +3448,19 @@ File `crates/planrun-exec/tests/resume.rs` (exact diff; save the block as `$env:
 
 ```diff
 diff --git a/crates/planrun-exec/tests/resume.rs b/crates/planrun-exec/tests/resume.rs
-index 021a60e..96c4900 100644
+index 021a60e..22476fe 100644
 --- a/crates/planrun-exec/tests/resume.rs
 +++ b/crates/planrun-exec/tests/resume.rs
-@@ -40,11 +40,11 @@ impl Ui for Scripted {
-         self.shown.push(format!("| {}", line.text));
-     }
-     fn ask(&mut self, question: &Question) -> Reply {
--        self.asked.push(question.kind.to_owned());
-+        self.asked.push(question.kind.name().to_owned());
-         self.shown.extend(question.text.iter().cloned());
-         self.answers
-             .pop_front()
--            .unwrap_or_else(|| Reply::Stop(format!("no answer for `{}`", question.kind)))
-+            .unwrap_or_else(|| Reply::Stop(format!("no answer for `{}`", question.kind.name())))
-     }
-     fn view(&mut self, _at: Position) {}
-     fn diff(&mut self) {}
-```
-
-```powershell
-git apply --whitespace=nowarn "$env:TEMP\p6b-t6-tests-resume-rs.patch"
-Remove-Item "$env:TEMP\p6b-t6-tests-resume-rs.patch"
-```
-
-File `crates/planrun-exec/tests/runner.rs` (exact diff; save the block as `$env:TEMP\p6b-t6-tests-runner-rs.patch`, outside the repository, then apply it):
-
-```diff
-diff --git a/crates/planrun-exec/tests/runner.rs b/crates/planrun-exec/tests/runner.rs
-index 84f382c..86889c8 100644
---- a/crates/planrun-exec/tests/runner.rs
-+++ b/crates/planrun-exec/tests/runner.rs
-@@ -15,8 +15,8 @@ use ir::{Ir, PATCH_T1, PATCH_T2};
- use planrun_exec::journal::{self, End, Journal, Outcome, Record};
- use planrun_exec::policy::{Policy, PolicyClass};
+@@ -18,7 +18,7 @@ use planrun_exec::policy::{Policy, PolicyClass};
+ use planrun_exec::runner::resume::analyse;
  use planrun_exec::runner::{Finished, RunConfig, Runner};
--use planrun_exec::shell::{OutLine, SessionConfig};
+ use planrun_exec::shell::{OutLine, SessionConfig};
 -use planrun_exec::ui::{Choice, Position, Question, Reply, Ui};
-+use planrun_exec::shell::{OutLine, RunStatus, SessionConfig};
 +use planrun_exec::ui::{Choice, Position, Question, QuestionKind, Reply, Ui};
  use planrun_exec::workspace::Workspace;
  use planrun_model::{
-     Action, ActionKind, ChangeKind, ExitExpect, Expectation, PathOrigin, Plan, ScriptIntent, Shell,
-@@ -28,6 +28,7 @@ use planrun_model::{
+     Action, ActionKind, ChangeKind, ExitExpect, Expectation, PathOrigin, Plan, ScriptIntent,
+@@ -29,6 +29,7 @@ use planrun_model::{
  struct Scripted {
      answers: VecDeque<Reply>,
      asked: Vec<String>,
@@ -3299,7 +3468,7 @@ index 84f382c..86889c8 100644
      shown: Vec<String>,
  }
  
-@@ -48,11 +49,12 @@ impl Ui for Scripted {
+@@ -40,11 +41,12 @@ impl Ui for Scripted {
          self.shown.push(format!("| {}", line.text));
      }
      fn ask(&mut self, question: &Question) -> Reply {
@@ -3314,7 +3483,73 @@ index 84f382c..86889c8 100644
      }
      fn view(&mut self, _at: Position) {}
      fn diff(&mut self) {}
-@@ -361,6 +363,71 @@ fn a_commit_that_does_not_move_head_is_a_mismatch() {
+@@ -279,6 +281,13 @@ fn a_crash_between_two_writes_is_unknown_and_restore_completes_it() {
+         ui.shown
+     );
+     assert_eq!(ui.asked, ["unknown", "session"]);
++    let QuestionKind::Unknown { step, .. } = &ui.kinds[0] else {
++        panic!("{:?}", ui.kinds);
++    };
++    assert_eq!(
++        (step.task.as_str(), step.step, step.action),
++        ("P1-T1", 0, 0)
++    );
+     let all = records(&f);
+     assert_eq!(count(&all, "step-restored"), 1);
+     assert_done(&f);
+```
+
+```powershell
+git apply --whitespace=nowarn "$env:TEMP\p6b-t6-tests-resume-rs.patch"
+Remove-Item "$env:TEMP\p6b-t6-tests-resume-rs.patch"
+```
+
+File `crates/planrun-exec/tests/runner.rs` (exact diff; save the block as `$env:TEMP\p6b-t6-tests-runner-rs.patch`, outside the repository, then apply it):
+
+```diff
+diff --git a/crates/planrun-exec/tests/runner.rs b/crates/planrun-exec/tests/runner.rs
+index 84f382c..6056d87 100644
+--- a/crates/planrun-exec/tests/runner.rs
++++ b/crates/planrun-exec/tests/runner.rs
+@@ -15,8 +15,10 @@ use ir::{Ir, PATCH_T1, PATCH_T2};
+ use planrun_exec::journal::{self, End, Journal, Outcome, Record};
+ use planrun_exec::policy::{Policy, PolicyClass};
+ use planrun_exec::runner::{Finished, RunConfig, Runner};
+-use planrun_exec::shell::{OutLine, SessionConfig};
+-use planrun_exec::ui::{Choice, Position, Question, Reply, Ui};
++use planrun_exec::shell::{OutLine, RunStatus, SessionConfig};
++use planrun_exec::ui::{
++    Choice, Position, Question, QuestionKind, RUN_SKIP_OR_QUIT, Reply, Ui, YES_OR_QUIT,
++};
+ use planrun_exec::workspace::Workspace;
+ use planrun_model::{
+     Action, ActionKind, ChangeKind, ExitExpect, Expectation, PathOrigin, Plan, ScriptIntent, Shell,
+@@ -28,6 +30,8 @@ use planrun_model::{
+ struct Scripted {
+     answers: VecDeque<Reply>,
+     asked: Vec<String>,
++    kinds: Vec<QuestionKind>,
++    words: Vec<Option<&'static [&'static str]>>,
+     shown: Vec<String>,
+ }
+ 
+@@ -48,11 +52,13 @@ impl Ui for Scripted {
+         self.shown.push(format!("| {}", line.text));
+     }
+     fn ask(&mut self, question: &Question) -> Reply {
+-        self.asked.push(question.kind.to_owned());
++        self.asked.push(question.kind.name().to_owned());
++        self.kinds.push(question.kind.clone());
++        self.words.push(question.typed);
+         self.shown.extend(question.text.iter().cloned());
+         self.answers
+             .pop_front()
+-            .unwrap_or_else(|| Reply::Stop(format!("no answer for `{}`", question.kind)))
++            .unwrap_or_else(|| Reply::Stop(format!("no answer for `{}`", question.kind.name())))
+     }
+     fn view(&mut self, _at: Position) {}
+     fn diff(&mut self) {}
+@@ -361,6 +367,118 @@ fn a_commit_that_does_not_move_head_is_a_mismatch() {
      );
  }
  
@@ -3342,6 +3577,7 @@ index 84f382c..86889c8 100644
 +        QuestionKind::Mismatch {
 +            status,
 +            mismatches,
++            output,
 +            aligned,
 +            commit,
 +            dead,
@@ -3352,8 +3588,16 @@ index 84f382c..86889c8 100644
 +    };
 +    assert_eq!(*status, RunStatus::Exited(0));
 +    assert_eq!(mismatches.len(), 1, "{mismatches:?}");
-+    let shown: Vec<(usize, Option<usize>)> = aligned.iter().map(|a| (a.number, a.output)).collect();
-+    assert_eq!(shown, [(1, Some(0)), (2, None)]);
++    let shown: Vec<(usize, Option<&str>)> = aligned
++        .iter()
++        .map(|a| {
++            (
++                a.number,
++                a.output.map(|i| output[i].text.trim_end_matches('\r')),
++            )
++        })
++        .collect();
++    assert_eq!(shown, [(1, Some("ok: 3")), (2, None)]);
 +    assert_eq!((commit, *dead), (&None, false));
 +
 +    let f = Fixture::greeter(false);
@@ -3383,6 +3627,44 @@ index 84f382c..86889c8 100644
 +    );
 +}
 +
++#[test]
++fn a_typed_question_lists_the_words_it_accepts() {
++    let f = Fixture::greeter(false);
++    let mut ir = Ir::default();
++    let failing = ir.script("git rev-parse -q --verify refs/heads/none");
++    let failing = expecting(
++        failing,
++        ExitExpect::Success,
++        ScriptIntent::Gate,
++        false,
++        &mut ir,
++    );
++    let steps = vec![
++        vec![ir.script("git push --dry-run")],
++        vec![failing],
++        vec![ir.commit("git commit -q --allow-empty -m 'T1'")],
++    ];
++    let plan = one(&mut ir, planrun_model::Manifest::default(), steps);
++    let answers = vec![
++        typed("skip"),
++        choice(Choice::Accept),
++        typed("skip"),
++        typed("quit"),
++    ];
++    let (finished, ui, _) = run(&f, &plan, AUTO, answers);
++    assert_eq!(finished.end, End::Stopped, "{:?}", ui.shown);
++    assert_eq!(ui.asked, ["typed-yes", "mismatch", "gate", "gate"]);
++    assert_eq!(
++        ui.words,
++        [
++            Some(RUN_SKIP_OR_QUIT),
++            None,
++            Some(YES_OR_QUIT),
++            Some(YES_OR_QUIT)
++        ]
++    );
++}
++
  #[test]
  fn a_dead_session_offers_retry_and_the_new_session_is_announced() {
      let f = Fixture::greeter(false);
@@ -3395,7 +3677,7 @@ Remove-Item "$env:TEMP\p6b-t6-tests-runner-rs.patch"
 
 **Step 2 — verify**
 
-Targeted: the runner and resume tests, with a new one on the payloads:
+Targeted: the runner and resume tests, with new ones on the payloads and the typed words:
 
 ```powershell
 $env:PLANRUN_REQUIRE_SHELLS = '1'; cargo test -p planrun-exec --test runner --test resume
@@ -3405,7 +3687,7 @@ Expected (exit code 0; summary lines):
 
 ```text
 test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in …s
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in …s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in …s
 ```
 
 Gate:
@@ -3428,15 +3710,15 @@ Only the task's paths are staged, only when the gate's exit code above was 0, an
 if ($gate -eq 0) {
   git add -- crates/planrun-cli/src/ui.rs crates/planrun-exec/src/preflight.rs crates/planrun-exec/src/runner/mod.rs crates/planrun-exec/src/runner/resume.rs crates/planrun-exec/src/runner/script.rs crates/planrun-exec/src/runner/task.rs crates/planrun-exec/src/ui.rs crates/planrun-exec/tests/resume.rs crates/planrun-exec/tests/runner.rs
   $verified = [ordered]@{
-      'crates/planrun-cli/src/ui.rs' = 'd27c9943ee4031fbbc43e3cb8694285664eb491c'
+      'crates/planrun-cli/src/ui.rs' = '1868d70714288cdd9f5b1ee86b12b3fdf7fb2ade'
       'crates/planrun-exec/src/preflight.rs' = '436d8a351aedb22c7c5e30e6015014b31e9a2414'
-      'crates/planrun-exec/src/runner/mod.rs' = 'cf33617f5bf48e66a23cb5febfe3afb243ea5a96'
-      'crates/planrun-exec/src/runner/resume.rs' = '42f21c7d0f581532ea3708022d28b99bcd3393ee'
-      'crates/planrun-exec/src/runner/script.rs' = 'a0c68687a1c5bfbd8ffcf73f9e4d409f738bfca2'
-      'crates/planrun-exec/src/runner/task.rs' = '08b958e3780ec46f70d689fd12b52bae5745b9d6'
-      'crates/planrun-exec/src/ui.rs' = '2263a994dfb863af94f736b597f945abe5c385a3'
-      'crates/planrun-exec/tests/resume.rs' = '96c490097c02adade24c89e3c7bb259238b69f57'
-      'crates/planrun-exec/tests/runner.rs' = '86889c871cf96d04eaa38a1a353212512db25b21'
+      'crates/planrun-exec/src/runner/mod.rs' = '646fda7f74dc2553aa3f655c5a16fe0831033480'
+      'crates/planrun-exec/src/runner/resume.rs' = '16ccb8bddc7bc9b4b28608357563220d17cfc8c9'
+      'crates/planrun-exec/src/runner/script.rs' = '7225c5b149f4535eeb9d9b5e4e6edccea580c0e0'
+      'crates/planrun-exec/src/runner/task.rs' = 'eb33bb23f8cf9ba00005e904aaba063aecfc2f15'
+      'crates/planrun-exec/src/ui.rs' = 'c6201657f4b238c86ffc0289793a42d5b4f26a07'
+      'crates/planrun-exec/tests/resume.rs' = '22476fe5903d521b3b55b6c82f9902bba0bcaab3'
+      'crates/planrun-exec/tests/runner.rs' = '6056d8761ee244f0bb6d99d9dffe21dd071a18f7'
   }
   $differ = @($verified.Keys | Where-Object { (git rev-parse ":$_") -ne $verified[$_] })
   if ($differ.Count -eq 0) { git commit -m "P6b-T6: QuestionKind" }
@@ -3447,9 +3729,227 @@ git status --porcelain
 
 Expected: the commit, then no output from `git status --porcelain`. A line naming files instead of the commit means those files differ from the verified tree.
 
-### P6b-T7: the resume preview
+### P6b-T7: the liveness lock
 
-**Goal:** `runner::preview::preview` reads what resume would find (the plan's fingerprint against the journal's, `.git/index.lock`, HEAD, and each prepared step of the interrupted task on disk, with whether it can be restored and its temp files) without the run lock and without writing anything, for the TUI's resume preview (D85). `done::temps` is the read-only half of `remove_temps`.
+**Goal:** A run holds `<git-dir>/planrun/lock.live` besides `lock`, taken with a blocking lock once `lock` is held, and `lock::live` sees a run in progress with one try on `lock.live`, let go at once, creating nothing (D90, review ruling 1). `lock::holder` reads `lock.pid` for messages only.
+
+**Files**
+
+- Modify `crates/planrun-exec/src/lock.rs`
+
+**Step 1 — write the files**
+
+File `crates/planrun-exec/src/lock.rs` (full contents):
+
+```rust
+//! One planrun per repository (decisions D77, D90): `<git-dir>/planrun/lock`, held with
+//! `File::try_lock` for the whole run, prompts included, by every plan's run and resume. The
+//! operating system releases it when the process ends, however it ends, so there is no stale
+//! lock. The holder's process id goes into `lock.pid` for the message only: on Windows a locked
+//! file cannot be read by another process, and the file stays when its run ends.
+//!
+//! A run also holds `lock.live`, taken with a blocking `File::lock` once `lock` is held, so that
+//! [`live`] can see a run in progress without trying `lock`: a try there would make a starting
+//! run fail, while a probe that holds `lock.live` for a moment only makes it wait.
+
+use std::fs::{self, File, OpenOptions, TryLockError};
+use std::io;
+use std::path::Path;
+
+/// The held lock; dropping it releases it.
+#[derive(Debug)]
+pub struct RunLock {
+    _file: File,
+    _live: File,
+}
+
+/// Why the lock was not taken.
+#[derive(Debug, thiserror::Error)]
+pub enum LockError {
+    /// Another planrun holds it.
+    #[error("another planrun is running in this repository{}", pid_note(.pid))]
+    Held {
+        /// The holder's process id, as it wrote it.
+        pid: Option<u32>,
+    },
+    /// The lock file could not be made or locked.
+    #[error("the run lock: {0}")]
+    Io(#[from] io::Error),
+}
+
+fn pid_note(pid: &Option<u32>) -> String {
+    pid.map(|p| format!(" (process {p})")).unwrap_or_default()
+}
+
+fn open(dir: &Path, name: &str) -> io::Result<File> {
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(dir.join(name))
+}
+
+/// Takes the lock in `dir` (`<git-dir>/planrun`), creating the directory, or says who holds it.
+/// Once `lock` is held, `lock.live` is taken too, waiting while a [`live`] probe holds it.
+pub fn acquire(dir: &Path) -> Result<RunLock, LockError> {
+    fs::create_dir_all(dir)?;
+    let file = open(dir, "lock")?;
+    match file.try_lock() {
+        Ok(()) => {
+            let live = open(dir, "lock.live")?;
+            live.lock()?;
+            fs::write(dir.join("lock.pid"), std::process::id().to_string())?;
+            Ok(RunLock {
+                _file: file,
+                _live: live,
+            })
+        }
+        Err(TryLockError::WouldBlock) => Err(LockError::Held { pid: holder(dir) }),
+        Err(TryLockError::Error(e)) => Err(LockError::Io(e)),
+    }
+}
+
+/// Whether a run holds the lock in `dir` now (D90): one try on `lock.live`, let go at once.
+/// Creates and writes nothing; `false` when there is no `lock.live` yet. A run that is between
+/// taking `lock` and `lock.live` is not seen.
+pub fn live(dir: &Path) -> io::Result<bool> {
+    let file = match OpenOptions::new().read(true).open(dir.join("lock.live")) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    match file.try_lock() {
+        Ok(()) => Ok(false),
+        Err(TryLockError::WouldBlock) => Ok(true),
+        Err(TryLockError::Error(e)) => Err(e),
+    }
+}
+
+/// The process id in `lock.pid`, for a message: it may name a run that has ended.
+pub fn holder(dir: &Path) -> Option<u32> {
+    fs::read_to_string(dir.join("lock.pid"))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use super::*;
+
+    /// A fresh directory under the OS temp directory, not made yet.
+    fn temp(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("planrun-lock-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn a_second_holder_is_refused_until_the_first_lets_go() {
+        let dir = temp("second");
+        let first = acquire(&dir).unwrap_or_else(|e| panic!("{e}"));
+        match acquire(&dir) {
+            Err(LockError::Held { pid }) => assert_eq!(pid, Some(std::process::id())),
+            other => panic!("{other:?}"),
+        }
+        drop(first);
+        let again = acquire(&dir).unwrap_or_else(|e| panic!("{e}"));
+        drop(again);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_run_is_live_while_it_holds_the_lock_and_the_probe_writes_nothing() {
+        let dir = temp("live");
+        assert!(!live(&dir).unwrap_or_else(|e| panic!("{e}")));
+        assert!(!dir.exists(), "the probe created the directory");
+        let run = acquire(&dir).unwrap_or_else(|e| panic!("{e}"));
+        assert!(live(&dir).unwrap_or_else(|e| panic!("{e}")));
+        drop(run);
+        assert!(!live(&dir).unwrap_or_else(|e| panic!("{e}")));
+        assert_eq!(
+            holder(&dir),
+            Some(std::process::id()),
+            "lock.pid stays, shown only"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_run_that_starts_while_a_probe_holds_lock_live_waits_and_succeeds() {
+        let dir = temp("wait");
+        fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+        let probe = open(&dir, "lock.live").unwrap_or_else(|e| panic!("{e}"));
+        probe.try_lock().unwrap_or_else(|e| panic!("{e}"));
+        let held = Duration::from_millis(300);
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(held);
+            drop(probe);
+        });
+        let start = Instant::now();
+        let run = acquire(&dir).unwrap_or_else(|e| panic!("{e}"));
+        assert!(
+            start.elapsed() >= held / 2,
+            "acquire did not wait for the probe"
+        );
+        release
+            .join()
+            .unwrap_or_else(|_| panic!("the probe thread panicked"));
+        drop(run);
+        let _ = fs::remove_dir_all(dir);
+    }
+}
+```
+
+**Step 2 — verify**
+
+Targeted: the lock's unit tests:
+
+```powershell
+cargo test -p planrun-exec --lib lock::tests
+```
+
+Expected (exit code 0; summary lines):
+
+```text
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 52 filtered out; finished in …s
+```
+
+Gate:
+
+```powershell
+$env:PLANRUN_REQUIRE_SHELLS = '1'; cargo fmt --check; if ($LASTEXITCODE -eq 0) { cargo clippy --all-targets -- -D warnings }; if ($LASTEXITCODE -eq 0) { cargo clippy -p planrun-cli --all-targets --features e2e -- -D warnings }; if ($LASTEXITCODE -eq 0) { cargo test }; if ($LASTEXITCODE -eq 0) { cargo test -p planrun-cli --features e2e --test run }; $gate = $LASTEXITCODE; "gate exit code: $gate"
+```
+
+Expected (exit code 0; summary lines):
+
+```text
+gate exit code: 0
+```
+
+**Step 3 — commit**
+
+Only the task's paths are staged, only when the gate's exit code above was 0, and only when every staged file is the verified one:
+
+```powershell
+if ($gate -eq 0) {
+  git add -- crates/planrun-exec/src/lock.rs
+  $verified = [ordered]@{
+      'crates/planrun-exec/src/lock.rs' = '86f8827fec45096354d37fddaff4b7d8a73f96fb'
+  }
+  $differ = @($verified.Keys | Where-Object { (git rev-parse ":$_") -ne $verified[$_] })
+  if ($differ.Count -eq 0) { git commit -m "P6b-T7: the liveness lock" }
+  else { "staged files differ from the verified tree: $($differ -join ', ')" }
+} else { "the gate failed (exit code $gate): fix the task before committing" }
+git status --porcelain
+```
+
+Expected: the commit, then no output from `git status --porcelain`. A line naming files instead of the commit means those files differ from the verified tree.
+
+### P6b-T8: the resume preview
+
+**Goal:** `runner::preview::preview` reads what resume would find (whether a run is live, the plan's fingerprint against the journal's, `.git/index.lock`, resume's verdict on HEAD, each prepared step of the interrupted task on disk with whether it can be restored and its temp files, the scripts that will ask again, the `resume-dirt` paths) without the run lock and without writing anything, for the TUI's resume preview (D85, review ruling 4). Resume's judgements become functions both call: `head_verdict`, `again`, `resumed_for` and `commit_problem`. `done::temps` is the read-only half of `remove_temps`.
 
 **Files**
 
@@ -3457,9 +3957,12 @@ Expected: the commit, then no output from `git status --porcelain`. A line namin
 - Modify `crates/planrun-exec/src/done_tests.rs`
 - Modify `crates/planrun-exec/src/runner/mod.rs`
 - Create `crates/planrun-exec/src/runner/preview.rs`
+- Modify `crates/planrun-exec/src/runner/resume.rs`
+- Modify `crates/planrun-exec/src/runner/script.rs`
+- Modify `crates/planrun-exec/src/runner/task.rs`
 - Modify `crates/planrun-exec/tests/resume.rs`
 
-Over 300 lines, so they come as exact diffs: `crates/planrun-exec/src/runner/mod.rs`, `crates/planrun-exec/tests/resume.rs`.
+Over 300 lines, so they come as exact diffs: `crates/planrun-exec/src/runner/mod.rs`, `crates/planrun-exec/src/runner/resume.rs`, `crates/planrun-exec/src/runner/script.rs`, `crates/planrun-exec/src/runner/task.rs`, `crates/planrun-exec/tests/resume.rs`.
 
 **Step 1 — write the files**
 
@@ -3889,11 +4392,11 @@ fn an_executable_file_stays_executable_and_its_mode_counts() {
 }
 ```
 
-File `crates/planrun-exec/src/runner/mod.rs` (exact diff; save the block as `$env:TEMP\p6b-t7-runner-mod-rs.patch`, outside the repository, then apply it):
+File `crates/planrun-exec/src/runner/mod.rs` (exact diff; save the block as `$env:TEMP\p6b-t8-runner-mod-rs.patch`, outside the repository, then apply it):
 
 ```diff
 diff --git a/crates/planrun-exec/src/runner/mod.rs b/crates/planrun-exec/src/runner/mod.rs
-index cf33617..c9be293 100644
+index 646fda7..8eaaa7a 100644
 --- a/crates/planrun-exec/src/runner/mod.rs
 +++ b/crates/planrun-exec/src/runner/mod.rs
 @@ -8,6 +8,7 @@
@@ -3907,8 +4410,8 @@ index cf33617..c9be293 100644
 ```
 
 ```powershell
-git apply --whitespace=nowarn "$env:TEMP\p6b-t7-runner-mod-rs.patch"
-Remove-Item "$env:TEMP\p6b-t7-runner-mod-rs.patch"
+git apply --whitespace=nowarn "$env:TEMP\p6b-t8-runner-mod-rs.patch"
+Remove-Item "$env:TEMP\p6b-t8-runner-mod-rs.patch"
 ```
 
 File `crates/planrun-exec/src/runner/preview.rs` (full contents):
@@ -3917,29 +4420,43 @@ File `crates/planrun-exec/src/runner/preview.rs` (full contents):
 //! The resume preview (decisions D77, D85): what [`Runner::resume`](super::Runner::resume)
 //! will find, read without the run lock and without writing anything, for a UI to show before
 //! the user resumes. It decides nothing: resume takes the lock, checks everything again against
-//! the disk as it is then, and asks its own questions.
+//! the disk as it is then, and asks its own questions. Where resume judges, the preview calls
+//! the same function: [`head_verdict`], `again`, `resumed_for` and
+//! [`preflight_resumed`](crate::preflight::preflight_resumed).
 
-use planrun_model::Plan;
+use planrun_model::{ActionKind, Plan, RepoPath};
 
-use super::resume::Analysis;
+use super::resume::{Again, Analysis, HeadVerdict, Past, again, head_verdict, resumed_for};
 use crate::DoneState;
 use crate::done::{StepOnDisk, restorable, step_state, temps};
 use crate::git::Head;
-use crate::journal::At;
+use crate::journal::{self, At};
+use crate::lock;
+use crate::policy::DefaultClassifier;
+use crate::preflight::preflight_resumed;
 use crate::workspace::{Workspace, WorkspaceError};
 
 /// What resume would find now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Preview {
+    /// A run holds the repository's lock now (D90): resume would be refused.
+    pub live: bool,
     /// The plan's fingerprint is not the journal's: resume would stop.
     pub plan_changed: bool,
     /// `.git/index.lock` exists: resume would stop.
     pub index_lock: bool,
-    /// HEAD now. Resume stops when it is not [`Analysis::head`], unless the action that was
-    /// running moved it by one commit (D77).
-    pub head: Head,
+    /// HEAD now.
+    pub now: Head,
+    /// What resume makes of it (D77).
+    pub head: HeadVerdict,
     /// The interrupted task's prepared steps, in the journal's order, as they are on disk.
     pub steps: Vec<StepPreview>,
+    /// The scripts and commits that will ask "run again or keep" (D77).
+    pub again: Vec<AgainPreview>,
+    /// The paths resume will ask about as `resume-dirt` (D77). An Unknown step counts as done
+    /// here: its paths are never asked about, since `[r]` puts them back and `[a]` verifies
+    /// them.
+    pub resume_dirt: Vec<RepoPath>,
 }
 
 /// One prepared step as it is now.
@@ -3956,6 +4473,15 @@ pub struct StepPreview {
     pub temps: Vec<String>,
 }
 
+/// A script or commit that will ask "run again or keep".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgainPreview {
+    /// Where.
+    pub at: At,
+    /// It was running when planrun was interrupted, not ended.
+    pub running: bool,
+}
+
 /// Reads what resuming `analysis` on `plan` in `ws` would find: git and the disk are read,
 /// nothing is written, and no lock is taken.
 pub fn preview(
@@ -3964,6 +4490,9 @@ pub fn preview(
     analysis: &Analysis,
 ) -> Result<Preview, WorkspaceError> {
     let git = ws.git();
+    let git_dir = git.git_dir()?;
+    let now = git.head()?;
+    let head = head_verdict(ws, analysis, &now)?;
     let mut steps = Vec::new();
     for prepared in &analysis.prepared {
         let disk = step_state(ws, &prepared.step)?;
@@ -3975,35 +4504,605 @@ pub fn preview(
             temps: temps(ws, &prepared.step),
         });
     }
+    let task = analysis
+        .interrupted
+        .as_deref()
+        .and_then(|id| plan.tasks.iter().find(|t| &*t.id.raw == id));
+    let mut again_list = Vec::new();
+    let mut resume_dirt = Vec::new();
+    if let Some(task) = task {
+        again_list = asks_again(plan, task, analysis, &head);
+        let done: Vec<bool> = steps
+            .iter()
+            .map(|s| s.disk.state != DoneState::NotDone)
+            .collect();
+        let resumed = resumed_for(task, &analysis.prepared, &done);
+        resume_dirt = preflight_resumed(ws, plan, task, &resumed)?
+            .into_iter()
+            .filter(|f| f.code == "resume-dirt")
+            .filter_map(|f| f.path)
+            .collect();
+    }
+    let lock_dir = journal::dir(&git_dir);
+    let live = lock::live(&lock_dir).map_err(|source| WorkspaceError::Io {
+        path: lock_dir.join("lock.live").display().to_string(),
+        source,
+    })?;
     Ok(Preview {
+        live,
         plan_changed: analysis.run.fingerprint != *plan.source.fingerprint,
-        index_lock: git.git_dir()?.join("index.lock").exists(),
-        head: git.head()?,
+        index_lock: git_dir.join("index.lock").exists(),
+        now,
+        head,
         steps,
+        again: again_list,
+        resume_dirt,
     })
+}
+
+/// The scripts and commits of the interrupted task that will ask "run again or keep". An action
+/// that was running is left to the HEAD verdict when HEAD moved while it ran, and so is a
+/// Commit that was running (resume runs it again or finds it made).
+fn asks_again(
+    plan: &Plan,
+    task: &planrun_model::Task,
+    analysis: &Analysis,
+    head: &HeadVerdict,
+) -> Vec<AgainPreview> {
+    let mut found = Vec::new();
+    for (at, past) in &analysis.past {
+        let Some(action) = task
+            .steps
+            .get(at.step)
+            .and_then(|s| s.actions.get(at.action))
+        else {
+            continue;
+        };
+        let (script, commit) = match &action.kind {
+            ActionKind::RunScript(s) => (s, false),
+            ActionKind::Commit(s) => (s, true),
+            _ => continue,
+        };
+        let moved_it = matches!(head, HeadVerdict::MovedByRunning { at: a, .. } if a == at);
+        if matches!(past, Past::Running { .. }) && (commit || moved_it) {
+            continue;
+        }
+        let body = plan.source.resolve(&script.body);
+        let class = DefaultClassifier.explain(script.shell, body).class;
+        if let Again::Asks { running } = again(past, commit, class) {
+            found.push(AgainPreview {
+                at: at.clone(),
+                running,
+            });
+        }
+    }
+    found
 }
 ```
 
-File `crates/planrun-exec/tests/resume.rs` (exact diff; save the block as `$env:TEMP\p6b-t7-tests-resume-rs.patch`, outside the repository, then apply it):
+File `crates/planrun-exec/src/runner/resume.rs` (exact diff; save the block as `$env:TEMP\p6b-t8-runner-resume-rs.patch`, outside the repository, then apply it):
+
+```diff
+diff --git a/crates/planrun-exec/src/runner/resume.rs b/crates/planrun-exec/src/runner/resume.rs
+index 16ccb8b..393af50 100644
+--- a/crates/planrun-exec/src/runner/resume.rs
++++ b/crates/planrun-exec/src/runner/resume.rs
+@@ -14,16 +14,19 @@
+ 
+ use std::collections::HashMap;
+ 
+-use planrun_model::RepoPath;
++use planrun_model::{RepoPath, Task};
+ 
++use super::task::commit_problem;
+ use super::{Answer, Flow, Result, Runner, Typed, task_paths};
+ use crate::DoneState;
+ use crate::done::{Seen, remove_temps, restorable, restore_step, step_state};
+-use crate::git::Head;
++use crate::git::{GitError, Head};
+ use crate::journal::{At, End, Line, Outcome, PathBlob, Record};
++use crate::policy::PolicyClass;
+ use crate::preflight::Resumed;
+ use crate::transaction::StepRecord;
+ use crate::ui::{Choice, Question, QuestionKind, YES_OR_QUIT};
++use crate::workspace::Workspace;
+ 
+ /// What the run record of the chain says.
+ #[derive(Debug, Clone, PartialEq, Eq)]
+@@ -104,6 +107,128 @@ impl Analysis {
+     }
+ }
+ 
++/// What resume makes of HEAD against the journal (D77, D79, D80).
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub enum HeadVerdict {
++    /// HEAD is what the journal last recorded.
++    Unchanged,
++    /// HEAD moved by one commit on the HEAD before the Commit that was running, and holds what
++    /// that Commit was to hold: it is done.
++    CommitMade {
++        /// The Commit.
++        at: At,
++    },
++    /// HEAD moved by one commit while `at` was running: the user decides (keep or retry).
++    MovedByRunning {
++        /// The action that was running.
++        at: At,
++        /// Its kind as journaled (`script`, `commit`, `manual`).
++        kind: String,
++        /// HEAD before it.
++        recorded: Head,
++    },
++    /// HEAD moved otherwise: resume stops.
++    Moved,
++}
++
++/// What resume makes of HEAD being `now` (D77): the one judgement resume and the preview share.
++/// Reads git only.
++pub fn head_verdict(
++    ws: &Workspace,
++    analysis: &Analysis,
++    now: &Head,
++) -> std::result::Result<HeadVerdict, GitError> {
++    if *now == analysis.head {
++        return Ok(HeadVerdict::Unchanged);
++    }
++    let Some((at, Past::Running { kind, head, expect })) = analysis.running() else {
++        return Ok(HeadVerdict::Moved);
++    };
++    let Some(commit) = now.commit.as_deref() else {
++        return Ok(HeadVerdict::Moved);
++    };
++    let on_top = ws.git().parent(commit)?.as_deref() == head.commit.as_deref();
++    if !on_top || now.reference != head.reference {
++        return Ok(HeadVerdict::Moved);
++    }
++    if kind == "commit" && commit_problem(ws, head.commit.as_deref(), expect)?.is_none() {
++        return Ok(HeadVerdict::CommitMade { at: at.clone() });
++    }
++    Ok(HeadVerdict::MovedByRunning {
++        at: at.clone(),
++        kind: kind.clone(),
++        recorded: head.clone(),
++    })
++}
++
++/// What resume does with a script or commit that has a journaled past (D77).
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub(crate) enum Again {
++    /// A Commit that ended well: it is done.
++    Done,
++    /// The user kept its result before: it is not run again.
++    Keep,
++    /// It runs again under its decision; `announce` says so first (a Read or Build script that
++    /// ran).
++    Runs { announce: bool },
++    /// It asks "run again or keep"; `running` when it was running, not ended.
++    Asks { running: bool },
++}
++
++/// What resume does with a script of class `class` whose journal says `past` (D77): the one
++/// rule resume and the preview share.
++pub(crate) fn again(past: &Past, commit: bool, class: PolicyClass) -> Again {
++    let ended_ok = matches!(
++        past,
++        Past::Ended(Outcome::Passed | Outcome::Confirmed | Outcome::Accepted)
++    );
++    if commit && ended_ok {
++        return Again::Done;
++    }
++    match past {
++        Past::Ended(Outcome::Kept) => Again::Keep,
++        Past::Ended(Outcome::SkippedPolicy) => Again::Runs { announce: false },
++        Past::Running { .. } => Again::Asks { running: true },
++        Past::Ended(_) if class < PolicyClass::Modify => Again::Runs { announce: true },
++        Past::Ended(_) => Again::Asks { running: false },
++    }
++}
++
++/// What preflight leaves out of the resumed task (D77): every path of the task and of its
++/// prepared steps may have been written by the interrupted run; the paths and actions of the
++/// steps in `done` (one flag per prepared step) are verified. Resume and the preview share it.
++pub(crate) fn resumed_for(task: &Task, prepared: &[Prepared], done: &[bool]) -> Resumed {
++    let mut resumed = Resumed {
++        done: Vec::new(),
++        own: task_paths(task),
++        verified: Vec::new(),
++    };
++    for (p, &done) in prepared.iter().zip(done) {
++        for w in &p.step.writes {
++            if !resumed.own.contains(&w.path) {
++                resumed.own.push(w.path.clone());
++            }
++        }
++        if !done {
++            continue;
++        }
++        for w in &p.step.writes {
++            if !resumed.verified.contains(&w.path) {
++                resumed.verified.push(w.path.clone());
++            }
++        }
++        let step = &task.steps[p.at.step];
++        let group = step.actions[p.at.action..]
++            .iter()
++            .take_while(|a| super::is_file_action(a))
++            .count();
++        resumed
++            .done
++            .extend((p.at.action..p.at.action + group).map(|a| (p.at.step, a)));
++    }
++    resumed
++}
++
+ /// Reads the journal's last chain. `None` when the journal has no run.
+ pub fn analyse(lines: &[Line]) -> Option<Analysis> {
+     let start = lines
+@@ -327,45 +452,37 @@ impl Runner<'_> {
+     /// `action-end`, or `head-seen` for a retry), so a crash after it resumes from it.
+     fn check_head(&mut self, analysis: &Analysis, replay: &mut Replay) -> Result<Flow> {
+         let now = self.head()?;
+-        if now == analysis.head {
+-            if let Some((at, Past::Running { kind, .. })) = analysis.running()
+-                && kind == "commit"
+-            {
+-                replay.past.remove(&key(at));
++        let (at, kind, head) = match head_verdict(self.ws, analysis, &now)? {
++            HeadVerdict::Unchanged => {
++                if let Some((at, Past::Running { kind, .. })) = analysis.running()
++                    && kind == "commit"
++                {
++                    replay.past.remove(&key(at));
++                }
++                return Ok(Flow::Go);
+             }
+-            return Ok(Flow::Go);
+-        }
+-        let stop = Flow::Stop(format!(
+-            "HEAD is {} ({}), but the journal last recorded {} ({}): something else changed \
+-             the repository",
+-            now.commit.as_deref().unwrap_or("none"),
+-            now.reference.as_deref().unwrap_or("detached"),
+-            analysis.head.commit.as_deref().unwrap_or("none"),
+-            analysis.head.reference.as_deref().unwrap_or("detached"),
+-        ));
+-        let Some((at, Past::Running { kind, head, expect })) = analysis.running() else {
+-            return Ok(stop);
+-        };
+-        let Some(commit) = now.commit.as_deref() else {
+-            return Ok(stop);
++            HeadVerdict::Moved => {
++                return Ok(Flow::Stop(format!(
++                    "HEAD is {} ({}), but the journal last recorded {} ({}): something else \
++                     changed the repository",
++                    now.commit.as_deref().unwrap_or("none"),
++                    now.reference.as_deref().unwrap_or("detached"),
++                    analysis.head.commit.as_deref().unwrap_or("none"),
++                    analysis.head.reference.as_deref().unwrap_or("detached"),
++                )));
++            }
++            HeadVerdict::CommitMade { at } => {
++                self.ui.status(&format!(
++                    "  the commit of {} was made before the interruption",
++                    at.task
++                ));
++                self.accepted(&at, Outcome::Passed, &now)?;
++                replay.commit_done = Some(key(&at));
++                return Ok(Flow::Go);
++            }
++            HeadVerdict::MovedByRunning { at, kind, recorded } => (at, kind, recorded),
+         };
+-        let on_top = self.ws.git().parent(commit)?.as_deref() == head.commit.as_deref();
+-        if !on_top || now.reference != head.reference {
+-            return Ok(stop);
+-        }
+-        if kind == "commit"
+-            && self
+-                .commit_problem(head.commit.as_deref(), expect)?
+-                .is_none()
+-        {
+-            self.ui.status(&format!(
+-                "  the commit of {} was made before the interruption",
+-                at.task
+-            ));
+-            self.accepted(at, Outcome::Passed, &now)?;
+-            replay.commit_done = Some(key(at));
+-            return Ok(Flow::Go);
+-        }
++        let at = &at;
+         let question = Question {
+             kind: QuestionKind::HeadMoved {
+                 action: at.clone(),
+@@ -432,22 +549,13 @@ impl Runner<'_> {
+         // Any path of the task may have been changed by the interrupted run, by a step or by a
+         // script: its dirt is a warning, and its manifest checks are left out. Dirt outside the
+         // verified steps that a remaining file action writes over is asked about (D77).
+-        let mut resumed = Resumed {
+-            done: Vec::new(),
+-            own: task_paths(task),
+-            verified: Vec::new(),
+-        };
++        let mut done_flags = Vec::new();
+         for p in &prepared {
+             for removed in remove_temps(self.ws, &p.step) {
+                 self.ui.status(&format!(
+                     "  removed a temp file of the interrupted run: {removed}"
+                 ));
+             }
+-            for w in &p.step.writes {
+-                if !resumed.own.contains(&w.path) {
+-                    resumed.own.push(w.path.clone());
+-                }
+-            }
+             let found = step_state(self.ws, &p.step)?;
+             let done = match found.state {
+                 DoneState::Done => true,
+@@ -457,27 +565,15 @@ impl Runner<'_> {
+                     Err(why) => return Ok(Err(why)),
+                 },
+             };
++            done_flags.push(done);
+             if !done {
+                 continue;
+             }
+-            for w in &p.step.writes {
+-                if !resumed.verified.contains(&w.path) {
+-                    resumed.verified.push(w.path.clone());
+-                }
+-            }
+-            let step = &task.steps[p.at.step];
+-            let group = step.actions[p.at.action..]
+-                .iter()
+-                .take_while(|a| super::is_file_action(a))
+-                .count();
+-            resumed
+-                .done
+-                .extend((p.at.action..p.at.action + group).map(|a| (p.at.step, a)));
+             if let Some(r) = self.replay.as_mut() {
+                 r.done_groups.push(key(&p.at));
+             }
+         }
+-        Ok(Ok(resumed))
++        Ok(Ok(resumed_for(task, &prepared, &done_flags)))
+     }
+ 
+     /// A step that is neither done nor undone on disk (D14): restore it from its pre-images
+```
+
+```powershell
+git apply --whitespace=nowarn "$env:TEMP\p6b-t8-runner-resume-rs.patch"
+Remove-Item "$env:TEMP\p6b-t8-runner-resume-rs.patch"
+```
+
+File `crates/planrun-exec/src/runner/script.rs` (exact diff; save the block as `$env:TEMP\p6b-t8-runner-script-rs.patch`, outside the repository, then apply it):
+
+```diff
+diff --git a/crates/planrun-exec/src/runner/script.rs b/crates/planrun-exec/src/runner/script.rs
+index 7225c5b..690ba50 100644
+--- a/crates/planrun-exec/src/runner/script.rs
++++ b/crates/planrun-exec/src/runner/script.rs
+@@ -5,13 +5,13 @@
+ use planrun_model::{Action, Script, ScriptIntent};
+ 
+ use super::gate::Attempt;
+-use super::resume::Past;
++use super::resume::{Again, again};
+ use super::sessions::{NotRun, name};
+ use super::task::TaskRun;
+ use super::{Answer, Flow, Result, RunError, Runner, Typed, canonical, describe};
+ use crate::expect::{self, Aligned, Confirm, Mismatch, Reason, Verdict};
+ use crate::journal::{Outcome, PathBlob, Record};
+-use crate::policy::{Decision, PolicyClass, Skip};
++use crate::policy::{Decision, Skip};
+ use crate::shell::{RunStatus, ScriptRun};
+ use crate::ui::{Choice, Position, Question, QuestionKind, RUN_SKIP_OR_QUIT};
+ 
+@@ -143,36 +143,32 @@ impl Runner<'_> {
+         let Some(past) = self.take_past(pos.task, (pos.step, pos.action)) else {
+             return Ok(Replayed::Again);
+         };
+-        let ended_ok = matches!(
+-            past,
+-            Past::Ended(Outcome::Passed | Outcome::Confirmed | Outcome::Accepted)
+-        );
+-        if commit && ended_ok {
+-            self.ui.status(&format!(
+-                "  L{line:<5} {}: made before the interruption",
+-                describe(action)
+-            ));
+-            return Ok(Replayed::Done);
+-        }
+-        let running = matches!(past, Past::Running { .. });
+-        let why = match past {
+-            Past::Ended(Outcome::Kept) => return Ok(Replayed::Keep),
+-            Past::Ended(Outcome::SkippedPolicy) => return Ok(Replayed::Again),
+-            Past::Running { .. } => {
+-                "was running when planrun was interrupted; it may have done part of its work"
++        let body = self.plan.source.resolve(&script.body);
++        let class = self.classifier.explain(script.shell, body).class;
++        let running = match again(&past, commit, class) {
++            Again::Done => {
++                self.ui.status(&format!(
++                    "  L{line:<5} {}: made before the interruption",
++                    describe(action)
++                ));
++                return Ok(Replayed::Done);
+             }
+-            Past::Ended(_) => {
+-                let body = self.plan.source.resolve(&script.body);
+-                let class = self.classifier.explain(script.shell, body).class;
+-                if class < PolicyClass::Modify {
++            Again::Keep => return Ok(Replayed::Keep),
++            Again::Runs { announce } => {
++                if announce {
+                     self.ui.status(&format!(
+                         "  L{line:<5} {}: ran before the interruption; it runs again",
+                         describe(action)
+                     ));
+-                    return Ok(Replayed::Again);
+                 }
+-                "ran before the interruption"
++                return Ok(Replayed::Again);
+             }
++            Again::Asks { running } => running,
++        };
++        let why = if running {
++            "was running when planrun was interrupted; it may have done part of its work"
++        } else {
++            "ran before the interruption"
+         };
+         let question = Question {
+             kind: QuestionKind::Again { running },
+```
+
+```powershell
+git apply --whitespace=nowarn "$env:TEMP\p6b-t8-runner-script-rs.patch"
+Remove-Item "$env:TEMP\p6b-t8-runner-script-rs.patch"
+```
+
+File `crates/planrun-exec/src/runner/task.rs` (exact diff; save the block as `$env:TEMP\p6b-t8-runner-task-rs.patch`, outside the repository, then apply it):
+
+```diff
+diff --git a/crates/planrun-exec/src/runner/task.rs b/crates/planrun-exec/src/runner/task.rs
+index eb33bb2..9f84da6 100644
+--- a/crates/planrun-exec/src/runner/task.rs
++++ b/crates/planrun-exec/src/runner/task.rs
+@@ -7,12 +7,13 @@ use super::gate::Gate;
+ use super::resume::Past;
+ use super::{Answer, Flow, Result, RunError, Runner, Typed, describe, is_file_action, task_paths};
+ use crate::finding::{Finding, Severity};
+-use crate::git::StatusEntry;
++use crate::git::{GitError, StatusEntry};
+ use crate::journal::{Outcome, PathBlob, Record};
+ use crate::policy::Decision;
+ use crate::preflight;
+ use crate::transaction::{self, CommitCause};
+ use crate::ui::{Choice, Position, Question, QuestionKind, YES_OR_QUIT};
++use crate::workspace::Workspace;
+ 
+ /// The state of the task being run.
+ pub(crate) struct TaskRun {
+@@ -571,45 +572,14 @@ impl Runner<'_> {
+         Ok(expect)
+     }
+ 
+-    /// Why a commit script did not commit what it should (D79): HEAD did not move, moved by
+-    /// other than one commit on `before`, or its tree does not hold `expect`.
++    /// Why a commit script did not commit what it should (D79); see [`commit_problem`].
+     pub(crate) fn commit_problem(
+         &self,
+         before: Option<&str>,
+         expect: &[PathBlob],
+     ) -> Result<Option<String>> {
+-        let git = self.ws.git();
+-        let head = git.head()?;
+-        let Some(now) = head.commit.as_deref() else {
+-            return Ok(Some("there is no commit at HEAD".to_owned()));
+-        };
+-        if Some(now) == before {
+-            return Ok(Some(
+-                "the commit script ran, but HEAD did not move".to_owned(),
+-            ));
+-        }
+-        if git.parent(now)?.as_deref() != before {
+-            return Ok(Some(
+-                "HEAD moved, but not by one commit on top of the one before".to_owned(),
+-            ));
+-        }
+-        let paths: Vec<&RepoPath> = expect.iter().map(|e| &e.path).collect();
+-        let held = git.tree_blobs(now, &paths)?;
+-        let wrong: Vec<&str> = expect
+-            .iter()
+-            .zip(&held)
+-            .filter(|(e, h)| e.blob != **h)
+-            .map(|(e, _)| e.path.as_str())
+-            .collect();
+-        if wrong.is_empty() {
+-            return Ok(None);
+-        }
+-        Ok(Some(format!(
+-            "the commit does not hold the task's files as they were: {}",
+-            wrong.join(", ")
+-        )))
++        Ok(commit_problem(self.ws, before, expect)?)
+     }
+-
+     /// After a commit: paths it changed outside the task's, reported loudly (D80).
+     pub(crate) fn commit_outside(&mut self, task: &Task, before: Option<&str>) -> Result<()> {
+         let head = self.head()?;
+@@ -656,3 +626,42 @@ fn generated(task: &Task, index: usize) -> Vec<(RepoPath, Position)> {
+ fn first_line(text: &str) -> &str {
+     text.lines().next().unwrap_or("")
+ }
++
++/// Why a commit script did not commit what it should (D79): HEAD did not move, moved by other
++/// than one commit on `before`, or its tree does not hold `expect`. Reads git only.
++pub(crate) fn commit_problem(
++    ws: &Workspace,
++    before: Option<&str>,
++    expect: &[PathBlob],
++) -> std::result::Result<Option<String>, GitError> {
++    let git = ws.git();
++    let head = git.head()?;
++    let Some(now) = head.commit.as_deref() else {
++        return Ok(Some("there is no commit at HEAD".to_owned()));
++    };
++    if Some(now) == before {
++        return Ok(Some(
++            "the commit script ran, but HEAD did not move".to_owned(),
++        ));
++    }
++    if git.parent(now)?.as_deref() != before {
++        return Ok(Some(
++            "HEAD moved, but not by one commit on top of the one before".to_owned(),
++        ));
++    }
++    let paths: Vec<&RepoPath> = expect.iter().map(|e| &e.path).collect();
++    let held = git.tree_blobs(now, &paths)?;
++    let wrong: Vec<&str> = expect
++        .iter()
++        .zip(&held)
++        .filter(|(e, h)| e.blob != **h)
++        .map(|(e, _)| e.path.as_str())
++        .collect();
++    if wrong.is_empty() {
++        return Ok(None);
++    }
++    Ok(Some(format!(
++        "the commit does not hold the task's files as they were: {}",
++        wrong.join(", ")
++    )))
++}
+```
+
+```powershell
+git apply --whitespace=nowarn "$env:TEMP\p6b-t8-runner-task-rs.patch"
+Remove-Item "$env:TEMP\p6b-t8-runner-task-rs.patch"
+```
+
+File `crates/planrun-exec/tests/resume.rs` (exact diff; save the block as `$env:TEMP\p6b-t8-tests-resume-rs.patch`, outside the repository, then apply it):
 
 ```diff
 diff --git a/crates/planrun-exec/tests/resume.rs b/crates/planrun-exec/tests/resume.rs
-index 96c4900..07b16fc 100644
+index 22476fe..ca5f8c4 100644
 --- a/crates/planrun-exec/tests/resume.rs
 +++ b/crates/planrun-exec/tests/resume.rs
-@@ -13,8 +13,11 @@ use std::time::Duration;
+@@ -13,9 +13,13 @@ use std::time::Duration;
  
  use fixture::Fixture;
  use ir::{Ir, PATCH_T1, PATCH_T2};
 +use planrun_exec::DoneState;
 +use planrun_exec::done::Seen;
  use planrun_exec::journal::{self, End, Journal, Observer, Record, Seam};
++use planrun_exec::lock;
  use planrun_exec::policy::{Policy, PolicyClass};
-+use planrun_exec::runner::preview::preview;
- use planrun_exec::runner::resume::analyse;
+-use planrun_exec::runner::resume::analyse;
++use planrun_exec::runner::preview::{Preview, preview};
++use planrun_exec::runner::resume::{HeadVerdict, analyse};
  use planrun_exec::runner::{Finished, RunConfig, Runner};
  use planrun_exec::shell::{OutLine, SessionConfig};
-@@ -284,6 +287,52 @@ fn a_crash_between_two_writes_is_unknown_and_restore_completes_it() {
+ use planrun_exec::ui::{Choice, Position, Question, QuestionKind, Reply, Ui};
+@@ -293,6 +297,136 @@ fn a_crash_between_two_writes_is_unknown_and_restore_completes_it() {
      assert_done(&f);
  }
  
@@ -4018,12 +5117,18 @@ index 96c4900..07b16fc 100644
 +    let path = f.outside().join("journal.jsonl");
 +    let journal_before = std::fs::read(&path).unwrap_or_else(|e| panic!("{e}"));
 +    let tree_before = f.snapshot();
-+    let ws = Workspace::open(f.path(), f.env()).unwrap_or_else(|e| panic!("{e}"));
-+    let lines = journal::read(&path).unwrap_or_else(|e| panic!("{e}"));
-+    let analysis = analyse(&lines).unwrap_or_else(|| panic!("nothing to resume"));
-+    let seen = preview(&ws, &plan, &analysis).unwrap_or_else(|e| panic!("{e}"));
-+    assert!(!seen.plan_changed && !seen.index_lock);
-+    assert_eq!(seen.head, analysis.head);
++    let (seen, analysis) = preview_of(&f, &plan);
++    assert!(!seen.live && !seen.plan_changed && !seen.index_lock);
++    assert_eq!(
++        (&seen.now, &seen.head),
++        (&analysis.head, &HeadVerdict::Unchanged)
++    );
++    assert!(seen.again.is_empty(), "{:?}", seen.again);
++    assert!(
++        seen.resume_dirt.is_empty(),
++        "an Unknown step's paths are never resume-dirt: {:?}",
++        seen.resume_dirt
++    );
 +    let [step] = &seen.steps[..] else {
 +        panic!("{:?}", seen.steps);
 +    };
@@ -4053,19 +5158,97 @@ index 96c4900..07b16fc 100644
 +    );
 +}
 +
++/// The preview of the fixture's journal, with the analysis it was made from.
++fn preview_of(f: &Fixture, plan: &Plan) -> (Preview, planrun_exec::runner::resume::Analysis) {
++    let ws = Workspace::open(f.path(), f.env()).unwrap_or_else(|e| panic!("{e}"));
++    let lines = journal::read(&f.outside().join("journal.jsonl")).unwrap_or_else(|e| panic!("{e}"));
++    let analysis = analyse(&lines).unwrap_or_else(|| panic!("nothing to resume"));
++    let seen = preview(&ws, plan, &analysis).unwrap_or_else(|e| panic!("{e}"));
++    (seen, analysis)
++}
++
++#[test]
++fn the_preview_names_what_resume_will_ask_and_sees_a_live_run() {
++    let f = Fixture::greeter(false);
++    let mut ir = Ir::default();
++    let m = ir.manifest(&[
++        ("src/greet.rs", ChangeKind::Create, W),
++        ("a.txt", ChangeKind::Create, W),
++        ("src/lib.rs", ChangeKind::Modify, W),
++    ]);
++    let steps = vec![
++        vec![ir.write("src/greet.rs", "pub fn greeting() {}\n", WriteMode::Create)],
++        vec![ir.script("Add-Content -Path a.txt -Value line")],
++        vec![ir.manual("look at it by hand")],
++        vec![ir.write("src/lib.rs", "pub mod greet;\n", WriteMode::Overwrite)],
++    ];
++    let task = ir.task("T1", m, steps);
++    let plan = ir.plan(vec![task]);
++    let at_manual = |s: &Seam<'_>| matches!(s, Seam::Appended(Record::ActionStart { kind, .. }) if kind == "manual");
++    let (first, _) = go(&f, &plan, AUTO, vec![], crash_at(at_manual), false);
++    assert!(first.is_none());
++    f.write("src/lib.rs", b"// mine\n");
++    let journal_before =
++        std::fs::read(f.outside().join("journal.jsonl")).unwrap_or_else(|e| panic!("{e}"));
++    let tree_before = f.snapshot();
++    let (seen, _) = preview_of(&f, &plan);
++    assert_eq!(seen.head, HeadVerdict::Unchanged);
++    let again: Vec<(usize, bool)> = seen.again.iter().map(|a| (a.at.step, a.running)).collect();
++    assert_eq!(again, [(1, false)], "the Modify script that ran asks again");
++    let dirt: Vec<&str> = seen.resume_dirt.iter().map(|p| p.as_str()).collect();
++    assert_eq!(
++        dirt,
++        ["src/lib.rs"],
++        "the verified step's path is not asked about"
++    );
++    assert_eq!(
++        f.snapshot(),
++        tree_before,
++        "the preview wrote to the repository"
++    );
++    let journal_after =
++        std::fs::read(f.outside().join("journal.jsonl")).unwrap_or_else(|e| panic!("{e}"));
++    assert_eq!(
++        journal_after, journal_before,
++        "the preview wrote to the journal"
++    );
++
++    f.git(&["commit", "-q", "--allow-empty", "-m", "by hand"]);
++    let (seen, analysis) = preview_of(&f, &plan);
++    let HeadVerdict::MovedByRunning { at, kind, recorded } = &seen.head else {
++        panic!("{:?}", seen.head);
++    };
++    assert_eq!(
++        (at.step, kind.as_str(), recorded),
++        (2, "manual", &analysis.head)
++    );
++    let again: Vec<(usize, bool)> = seen.again.iter().map(|a| (a.at.step, a.running)).collect();
++    assert_eq!(
++        again,
++        [(1, false)],
++        "a moved HEAD leaves the script's question as it was"
++    );
++
++    let git_dir = f.path().join(".git");
++    let run = lock::acquire(&journal::dir(&git_dir)).unwrap_or_else(|e| panic!("{e}"));
++    assert!(preview_of(&f, &plan).0.live);
++    drop(run);
++    assert!(!preview_of(&f, &plan).0.live);
++}
++
  #[test]
  fn a_crash_after_the_commit_s_start_runs_the_commit() {
      let f = Fixture::greeter(false);
 ```
 
 ```powershell
-git apply --whitespace=nowarn "$env:TEMP\p6b-t7-tests-resume-rs.patch"
-Remove-Item "$env:TEMP\p6b-t7-tests-resume-rs.patch"
+git apply --whitespace=nowarn "$env:TEMP\p6b-t8-tests-resume-rs.patch"
+Remove-Item "$env:TEMP\p6b-t8-tests-resume-rs.patch"
 ```
 
 **Step 2 — verify**
 
-Targeted: the preview after a crash between two writes, and the step-state tests:
+Targeted: the two preview tests, and the step-state tests:
 
 ```powershell
 $env:PLANRUN_REQUIRE_SHELLS = '1'; cargo test -p planrun-exec --test resume preview
@@ -4075,8 +5258,8 @@ cargo test -p planrun-exec --lib done::tests
 Expected (exit code 0; summary lines):
 
 ```text
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in …s
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 46 filtered out; finished in …s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in …s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 48 filtered out; finished in …s
 ```
 
 Gate:
@@ -4097,16 +5280,19 @@ Only the task's paths are staged, only when the gate's exit code above was 0, an
 
 ```powershell
 if ($gate -eq 0) {
-  git add -- crates/planrun-exec/src/done.rs crates/planrun-exec/src/done_tests.rs crates/planrun-exec/src/runner/mod.rs crates/planrun-exec/src/runner/preview.rs crates/planrun-exec/tests/resume.rs
+  git add -- crates/planrun-exec/src/done.rs crates/planrun-exec/src/done_tests.rs crates/planrun-exec/src/runner/mod.rs crates/planrun-exec/src/runner/preview.rs crates/planrun-exec/src/runner/resume.rs crates/planrun-exec/src/runner/script.rs crates/planrun-exec/src/runner/task.rs crates/planrun-exec/tests/resume.rs
   $verified = [ordered]@{
       'crates/planrun-exec/src/done.rs' = 'b7b95fed80e9d46b50f893cb0fd7bcfcec58b135'
       'crates/planrun-exec/src/done_tests.rs' = '8ccb4ab41b23d561ff2deb6e8f4b49227174aa91'
-      'crates/planrun-exec/src/runner/mod.rs' = 'c9be293ad41e534703dfa067daf8a158adbd4586'
-      'crates/planrun-exec/src/runner/preview.rs' = 'b2c85c5c183ee31a0f57b396a4e49de87bf37b09'
-      'crates/planrun-exec/tests/resume.rs' = '07b16fc5f73a6bd1b7532ff980927246850ff162'
+      'crates/planrun-exec/src/runner/mod.rs' = '8eaaa7ac717627a689111e26b9923a5d472f36f1'
+      'crates/planrun-exec/src/runner/preview.rs' = '71114de36e92ed55d5ad74a542d39179c63f4b66'
+      'crates/planrun-exec/src/runner/resume.rs' = '393af508f53f00ece38bfc734fea8f9e307cb066'
+      'crates/planrun-exec/src/runner/script.rs' = '690ba509900ed4c3e58a6540b31f386ecf66699d'
+      'crates/planrun-exec/src/runner/task.rs' = '9f84da67e286b6e461df2672ef4a165c1546067e'
+      'crates/planrun-exec/tests/resume.rs' = 'ca5f8c4eb75865c41e6402711b6b081f137cb0f9'
   }
   $differ = @($verified.Keys | Where-Object { (git rev-parse ":$_") -ne $verified[$_] })
-  if ($differ.Count -eq 0) { git commit -m "P6b-T7: the resume preview" }
+  if ($differ.Count -eq 0) { git commit -m "P6b-T8: the resume preview" }
   else { "staged files differ from the verified tree: $($differ -join ', ')" }
 } else { "the gate failed (exit code $gate): fix the task before committing" }
 git status --porcelain
@@ -4114,9 +5300,9 @@ git status --porcelain
 
 Expected: the commit, then no output from `git status --porcelain`. A line naming files instead of the commit means those files differ from the verified tree.
 
-### P6b-T8: architecture, extending and CLAUDE.md for the seams
+### P6b-T9: architecture, extending and CLAUDE.md for the seams
 
-**Goal:** The docs describe the new seams: architecture.md §6.3 (`end_now`), §6.4 (`align`), §6.6 (the preview, the observers) and §7 (the typed dry-run report); extending.md §7 (`QuestionKind`, and a new question is a new variant); CLAUDE.md's layout (`runner/preview`, `docs/tui-design.md`).
+**Goal:** The docs describe the new seams: architecture.md §6.3 (`end_now`), §6.4 (`align`), §6.6 (the liveness lock, the preview, the observers) and §7 (the typed dry-run report); extending.md §7 (`QuestionKind`, the typed words, and a new question is a new variant); CLAUDE.md's layout (`lock.live`, `runner/preview`, `docs/tui-design.md`).
 
 **Files**
 
@@ -4128,11 +5314,11 @@ Over 300 lines, so it comes as an exact diff: `docs/architecture.md`; `CLAUDE.md
 
 **Step 1 — write the files**
 
-File `CLAUDE.md` (exact diff; save the block as `$env:TEMP\p6b-t8-claude-md.patch`, outside the repository, then apply it):
+File `CLAUDE.md` (exact diff; save the block as `$env:TEMP\p6b-t9-claude-md.patch`, outside the repository, then apply it):
 
 ```diff
 diff --git a/CLAUDE.md b/CLAUDE.md
-index f73d216..033a263 100644
+index f73d216..8b85bba 100644
 --- a/CLAUDE.md
 +++ b/CLAUDE.md
 @@ -23,14 +23,15 @@ crates/planrun-parse   Markdown → IR: source, document, format, spec, registry
@@ -4141,7 +5327,7 @@ index f73d216..033a263 100644
                         code), expect, policy/ (classifier, decisions) (P4); journal, lock,
 -                       done, ui, runner/ (tasks, scripts, sessions, gate, resume) (P5)
 +                       done, ui, runner/ (tasks, scripts, sessions, gate, resume) (P5);
-+                       runner/preview (P6b)
++                       lock.live, runner/preview (P6b)
  crates/planrun-cli     the `planrun` binary: check, show (view, render), run (dry_run, run,
                         ui: line prompts), resume, status, update (P6a, D83); the `e2e` test
                         feature (e2e.rs)
@@ -4157,15 +5343,15 @@ index f73d216..033a263 100644
 ```
 
 ```powershell
-git apply --whitespace=nowarn "$env:TEMP\p6b-t8-claude-md.patch"
-Remove-Item "$env:TEMP\p6b-t8-claude-md.patch"
+git apply --whitespace=nowarn "$env:TEMP\p6b-t9-claude-md.patch"
+Remove-Item "$env:TEMP\p6b-t9-claude-md.patch"
 ```
 
-File `docs/architecture.md` (exact diff; save the block as `$env:TEMP\p6b-t8-docs-architecture-md.patch`, outside the repository, then apply it):
+File `docs/architecture.md` (exact diff; save the block as `$env:TEMP\p6b-t9-docs-architecture-md.patch`, outside the repository, then apply it):
 
 ````diff
 diff --git a/docs/architecture.md b/docs/architecture.md
-index b2c61d1..06e4306 100644
+index b2c61d1..3a5433a 100644
 --- a/docs/architecture.md
 +++ b/docs/architecture.md
 @@ -317,8 +317,9 @@ implements `ShellSession`; P5 keeps one per shell.
@@ -4189,21 +5375,33 @@ index b2c61d1..06e4306 100644
  
  ### 6.5 Policy
  
-@@ -403,6 +406,13 @@ recorded HEAD; where resume accepts a moved HEAD it journals the running action'
+@@ -386,7 +389,8 @@ as on disk), `action-end` (outcome, status, the last output lines, HEAD), the us
+ `gate-override`, `task-end`, `run-end`. One write per record; `step-prepared`, `action-start`
+ and `run-end` are synced. A torn last line is dropped, and cut off before the next append; any
+ other bad line is an error. One planrun runs per repository at a time: `<git-dir>/planrun/lock`
+-(D77).
++(D77). A run also holds `lock.live`, with a blocking lock once `lock` is held, so `lock::live`
++sees a run in progress with a try on `lock.live` alone, never on `lock` (D90).
+ 
+ Resume never trusts the journal alone (D14, D77). It reads the last chain (a `run` and the
+ `resume`s after it) and stops when the plan's fingerprint differs, when `.git/index.lock`
+@@ -403,6 +407,15 @@ recorded HEAD; where resume accepts a moved HEAD it journals the running action'
  `head-seen` for a retry) at once, so a stopped or crashed resume leaves the next one the same
  check.
  
-+`runner::preview::preview` reads what resume would find (the fingerprint, `index.lock`, HEAD,
-+and each prepared step on disk with whether it can be restored and its temp files) without the
-+lock and without writing, for the TUI's resume preview (D85); resume checks all of it again
-+when it runs. A journal takes any number of observers (`Journal::observe`), called after each
++`runner::preview::preview` reads what resume would find without the lock and without writing,
++for the TUI's resume preview (D85): whether a run is live, the fingerprint, `index.lock`,
++resume's verdict on HEAD (`resume::head_verdict`, the function resume uses), each prepared step
++on disk with whether it can be restored and its temp files, the scripts that will ask "run
++again or keep" (the rule `replayed` uses), and the `resume-dirt` paths (`preflight_resumed`
++itself). Resume checks all of it again when it runs. A journal takes any number of observers (`Journal::observe`), called after each
 +append and each write of a step's commit in the order they were added: the `e2e` fault seam
 +(D82) and the TUI's live view (D90).
 +
  ## 7. CLI
  
  ```
-@@ -437,7 +447,9 @@ writes nothing: not the working tree, not `.git`. Once a script, commit or Manua
+@@ -437,7 +450,9 @@ writes nothing: not the working tree, not `.git`. Once a script, commit or Manua
  without running, a failing file action is a warning ("depends on a step that did not run") and
  its path is unknown from then on; every ok after that point assumes those steps change no files.
  Each script and commit shows its class and what the default policy would do with it ("would ask
@@ -4217,8 +5415,8 @@ index b2c61d1..06e4306 100644
 ````
 
 ```powershell
-git apply --whitespace=nowarn "$env:TEMP\p6b-t8-docs-architecture-md.patch"
-Remove-Item "$env:TEMP\p6b-t8-docs-architecture-md.patch"
+git apply --whitespace=nowarn "$env:TEMP\p6b-t9-docs-architecture-md.patch"
+Remove-Item "$env:TEMP\p6b-t9-docs-architecture-md.patch"
 ```
 
 File `docs/extending.md` (full contents):
@@ -4451,7 +5649,7 @@ the outline should be new. Every block of every task must fall in exactly one st
 | `ActionHandler` | `HandlerSet` | how an action kind is simulated on the virtual tree (D52, D53); the transaction writes the result, and resume compares the journaled step with the disk (`done`, D77), so a handler has no write and no `DoneState` of its own |
 | `ShellSession` | one per `Shell` | another shell (`cmd`, `zsh`): a new `Shell` variant, a `Dialect` in `shell/` (launch arguments, prologue, block line, sentinel; D60), its discovery and probe (D63), and its splitter in `policy/` |
 | `CommandClassifier` | the runner's | the tests' own classifier; `DefaultClassifier` is the built-in allowlist (D68), extended by adding rows to `policy/heads.rs` and their test rows, never from a format spec |
-| `Ui` | the CLI | `status`, `output`, `ask` (a `Question`: its `QuestionKind` with what the run found (D86), named `Choice`s or a typed line), `view`, `diff`, `shell`; the runner decides what is asked and acts on the answer (D74). planrun-cli's `LineUi` is line prompts on std; the runner tests script their answers; the TUI (docs/tui-design.md, D84–D92) and a non-interactive batch UI later. A new question is a new `QuestionKind` variant, and every UI's exhaustive match shows where it must be shown |
+| `Ui` | the CLI | `status`, `output`, `ask` (a `Question`: its `QuestionKind` with what the run found (D86), named `Choice`s, or the words a typed line may be), `view`, `diff`, `shell`; the runner decides what is asked and acts on the answer (D74). planrun-cli's `LineUi` is line prompts on std; the runner tests script their answers; the TUI (docs/tui-design.md, D84–D92) and a non-interactive batch UI later. A new question is a new `QuestionKind` variant, and every UI's exhaustive match shows where it must be shown |
 ````
 
 **Step 2 — verify**
@@ -4490,12 +5688,12 @@ Only the task's paths are staged, only when the gate's exit code above was 0, an
 if ($gate -eq 0) {
   git add -- CLAUDE.md docs/architecture.md docs/extending.md
   $verified = [ordered]@{
-      'CLAUDE.md' = '033a2633547e27db8dbe1757f019a7d31d358a94'
-      'docs/architecture.md' = '06e430647e16de4c0f12f49bc3a0a7c4e097d9e4'
-      'docs/extending.md' = '9e20ae2fc8211b164a8bc7c0c35e5e290f92e20b'
+      'CLAUDE.md' = '8b85bba17c601d4602e3c1304750ff74f107b3ed'
+      'docs/architecture.md' = '3a5433ac9944d205e9b20c67a8711424c3b4b7d4'
+      'docs/extending.md' = '706633d8d413e78688dcf2c5e2e925b7992e8158'
   }
   $differ = @($verified.Keys | Where-Object { (git rev-parse ":$_") -ne $verified[$_] })
-  if ($differ.Count -eq 0) { git commit -m "P6b-T8: architecture, extending and CLAUDE.md for the seams" }
+  if ($differ.Count -eq 0) { git commit -m "P6b-T9: architecture, extending and CLAUDE.md for the seams" }
   else { "staged files differ from the verified tree: $($differ -join ', ')" }
 } else { "the gate failed (exit code $gate): fix the task before committing" }
 git status --porcelain
@@ -4508,5 +5706,5 @@ Expected: the commit, then no output from `git status --porcelain`. A line namin
 Each step is a manual step for Rens; none is run by planrun.
 
 1. By hand: compare the executed tree with the verified one (`git ls-tree -r HEAD`) if the run was stopped and resumed.
-2. By hand: push `main`; the `ci` job on `ubuntu-latest` runs `end_now`'s Unix path (`kill_registered`) for the first time.
-3. Claude writes the P6b→P6c handover (CLAUDE.md, "When a phase is done"), with stated decision 12 (the lock) as an open item for P6c.
+2. By hand: push `main`; the `ci` job on `ubuntu-latest` runs `end_now`'s Unix path (`kill_registered`) and the flock half of `lock.live` for the first time.
+3. Claude writes the P6b→P6c handover (CLAUDE.md, "When a phase is done"), with two open items: moving expect.rs's tests to `expect_tests.rs` (465 lines, stated decision 10), and the gap of D90 (a probe in the instant between a starting run's two locks sees no live run).
