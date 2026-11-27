@@ -24,6 +24,14 @@ pub fn install_interrupt_handler() {
     kill::install_interrupts();
 }
 
+/// Ends planrun now with exit code `code`, as Ctrl-C would (D73, D91): every session's process
+/// tree is killed, no destructor runs and no `run-end` is written, so `resume` goes on from the
+/// journal. For a UI that reads Ctrl-C as a key (the TUI's raw mode); restore the terminal
+/// first.
+pub fn end_now(code: i32) -> ! {
+    kill::end_now(code)
+}
+
 /// While the guard lives, Ctrl-C does not end planrun: the `[o]` shell runs in the foreground
 /// and gets it instead (D73).
 pub struct InterruptsIgnored(());

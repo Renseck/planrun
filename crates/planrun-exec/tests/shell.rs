@@ -425,6 +425,88 @@ fn a_timeout_kills_the_whole_tree() {
     }
 }
 
+/// Set in the child process of [`end_now_kills_every_session_tree`]: the fixture's root, the
+/// directory for the session's run directory, the file for the grandchild's pid, and the exit
+/// code, separated by `|`.
+const END_NOW_CHILD: &str = "PLANRUN_TEST_END_NOW_CHILD";
+
+/// Runs only as the child of [`end_now_kills_every_session_tree`]: starts a pwsh session whose
+/// block starts a grandchild and sleeps, then calls `end_now` while the block runs. In every
+/// other run it returns at once and counts as one passed test.
+#[test]
+fn end_now_child() {
+    let Some(spec) = std::env::var_os(END_NOW_CHILD) else {
+        return;
+    };
+    let spec = spec.to_string_lossy().into_owned();
+    let [root, temp, pid_file, code] = spec.split('|').collect::<Vec<_>>()[..] else {
+        panic!("{END_NOW_CHILD}: {spec}");
+    };
+    let config = SessionConfig {
+        root: PathBuf::from(root),
+        env: Vec::new(),
+        timeout: None,
+        temp: PathBuf::from(temp),
+    };
+    let mut s = Session::start(Shell::Pwsh, &config).unwrap_or_else(|e| panic!("{e}"));
+    let script = format!(
+        "$p = Start-Process pwsh -ArgumentList '-NoProfile', '-Command', 'Start-Sleep 300' -PassThru\n\
+         Set-Content -LiteralPath '{pid_file}' -Value $p.Id\nStart-Sleep 300\n"
+    );
+    std::thread::spawn(move || {
+        let _ = s.run(&script, &mut |_| {});
+    });
+    let until = Instant::now() + Duration::from_secs(60);
+    while !Path::new(pid_file).exists() && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    planrun_exec::shell::end_now(code.parse().unwrap_or_else(|e| panic!("{e}")));
+}
+
+#[test]
+fn end_now_kills_every_session_tree() {
+    if std::env::var_os(END_NOW_CHILD).is_some() {
+        return;
+    }
+    let f = Fixture::greeter(false);
+    let Some(probe) = session(Shell::Pwsh, &f) else {
+        return;
+    };
+    drop(probe);
+    let pid_file = f.outside().join("end-now-pid");
+    let spec = format!(
+        "{}|{}|{}|7",
+        f.path().display(),
+        f.outside().display(),
+        pid_file.display()
+    );
+    let exe = std::env::current_exe().unwrap_or_else(|e| panic!("{e}"));
+    let out = Command::new(exe)
+        .args([
+            "end_now_child",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(END_NOW_CHILD, &spec)
+        .output()
+        .unwrap_or_else(|e| panic!("{e}"));
+    let report = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(out.status.code(), Some(7), "{report}");
+    let pid = std::fs::read_to_string(&pid_file).unwrap_or_else(|e| panic!("{e}: {report}"));
+    let pid = pid.trim().to_owned();
+    let until = Instant::now() + Duration::from_secs(10);
+    while alive(&pid) && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(!alive(&pid), "the grandchild {pid} survived end_now");
+}
+
 #[cfg(windows)]
 #[test]
 fn a_session_leaves_the_terminal_s_code_page_alone() {

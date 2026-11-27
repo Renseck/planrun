@@ -2,8 +2,8 @@
 //! planrun lives in this module: the job object, the handle wait and the console control
 //! handler on Windows; `setsid`, `prctl`, `getppid`, `waitid`, `kill`, `signal` and `raise` on
 //! Unix, each declared by hand. The rest of the crate sees safe operations: [`Tree::spawn`],
-//! [`Tree::exited`], [`Tree::kill`], [`Tree::wait`], [`install_interrupts`] and
-//! [`ignore_interrupts`].
+//! [`Tree::exited`], [`Tree::kill`], [`Tree::wait`], [`install_interrupts`],
+//! [`ignore_interrupts`] and [`end_now`].
 
 #![allow(unsafe_code)]
 
@@ -167,6 +167,16 @@ pub(crate) fn ignore_interrupts(on: bool) {
     IGNORE_INTERRUPT.store(on, Ordering::SeqCst);
 }
 
+/// Ends planrun with `code` the way an interrupt does (D73, D91): every session's tree is
+/// killed, no destructor runs, nothing more is journaled. Windows: exiting closes every job
+/// handle, and `KILL_ON_JOB_CLOSE` kills the trees. Unix: every registered process group is
+/// killed first, as the signal handler does.
+pub(crate) fn end_now(code: i32) -> ! {
+    #[cfg(unix)]
+    unix::kill_registered();
+    std::process::exit(code)
+}
+
 #[cfg(unix)]
 mod unix {
     use std::io;
@@ -217,12 +227,9 @@ mod unix {
         }
     }
 
-    /// Kills every registered group, then ends planrun the way `signum` would. Only
-    /// async-signal-safe calls: atomics, `kill`, `signal`, `raise`.
-    extern "C" fn on_signal(signum: i32) {
-        if signum == SIGINT && IGNORE_INTERRUPT.load(Ordering::SeqCst) {
-            return;
-        }
+    /// Kills every registered group. Only async-signal-safe calls (atomics and `kill`), so the
+    /// signal handler may call it.
+    pub(super) fn kill_registered() {
         for slot in &GROUPS {
             let pid = slot.load(Ordering::SeqCst);
             if pid > 0 {
@@ -231,6 +238,15 @@ mod unix {
                 unsafe { kill(-pid, SIGKILL) };
             }
         }
+    }
+
+    /// Kills every registered group, then ends planrun the way `signum` would. Only
+    /// async-signal-safe calls: atomics, `kill`, `signal`, `raise`.
+    extern "C" fn on_signal(signum: i32) {
+        if signum == SIGINT && IGNORE_INTERRUPT.load(Ordering::SeqCst) {
+            return;
+        }
+        kill_registered();
         // SAFETY: restoring the default action and raising the signal again ends the process
         // as the signal would have; both calls are async-signal-safe.
         unsafe {
