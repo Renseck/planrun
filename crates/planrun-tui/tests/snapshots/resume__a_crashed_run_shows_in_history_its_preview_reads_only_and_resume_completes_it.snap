@@ -1,0 +1,59 @@
+---
+source: crates/planrun-tui/tests/resume.rs
+expression: text
+---
+ 0  PLANRUN  greeter › history › assay-style.md › resume preview                READ-ONLY   nothing locked, run or written
+   0-0 fg/bg1, 1-7 fg/bg1 b, 8-9 fg/bg1, 10-16 fg2/bg1, 17-19 fg3/bg1, 20-26 fg2/bg1, 27-29 fg3/bg1, 30-43 fg2/bg1, 44-46 fg3/bg1, 47-60 fg/bg1 b, 61-75 fg/bg1, 76-86 meta/bg1 b, 87-118 fg3/bg1, 119-119 fg/bg1
+ 1 
+ 2       RESUME PREVIEW  from the journal (analyse) and a read-only look at the disk, taken 12:34:56 UTC
+   6-19 fg/bg0 b, 22-100 fg3/bg0
+ 3       Resume itself decides again when it runs; questions marked ◆ are asked in the dock when it reaches them.
+   6-109 fg2/bg0
+ 4 
+ 5       JOURNAL AGAINST REPOSITORY ─────────────────────────────────────────────────────── ✓ nothing blocks a resume
+   6-31 fg3/bg0 b, 33-87 rule/bg0, 89-90 ok/bg0, 91-113 fg2/bg0
+ 6       ✓ plan unchanged      fingerprint <plan7> matches the run record
+   6-6 ok/bg0 b, 28-69 fg3/bg0
+ 7       ✓ no index.lock       git is not busy
+   6-6 ok/bg0 b, 28-42 fg3/bg0
+ 8       ✓ no live run         no planrun holds .git/planrun/lock
+   6-6 ok/bg0 b, 28-61 fg3/bg0
+ 9       ✓ HEAD as recorded    <head7>
+   6-6 ok/bg0 b, 28-34 meta/bg0
+10 
+11       WHAT RESUME WILL DO ────────────────────────────────────────────────────────────────────────────────────────
+   6-24 fg3/bg0 b, 26-113 rule/bg0
+12       ◉ P1-T1 runs again from its start, in a new session
+   6-6 act/bg0 b, 8-12 meta/bg0
+13         ✓ step 1  src/greet.rs  src/lib.rs  on disk as planned → done, not written again
+   8-8 ok/bg0 b, 10-17 fg2/bg0, 44-87 fg2/bg0
+14         ◆ $ cargo test greet  was running when interrupted → asked again (run again or keep)
+   8-8 warn/bg0 b, 30-91 fg2/bg0
+15 
+16       YOUR FILES ─────────────────────────────────────────────────────────────────────────────────────────────────
+   6-15 fg3/bg0 b, 17-113 rule/bg0
+17       · src/greet.rs untracked · left alone
+   6-6 fg3/bg0 b, 8-42 fg3/bg0
+18 
+19 
+20 
+21 
+22 
+23 
+24 
+25 
+26 
+27 
+28 
+29       ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   6-113 rule/bg0
+30        enter  start resume: takes the lock and checks everything again; questions come in the dock
+   6-12 fg/bg2 b, 13-97 fg2/bg0
+31 
+32       This preview explains what resume (D14, D77) will find; it holds no answers and decides nothing.
+   6-101 fg3/bg0
+33 
+34   enter  start resume    g  refresh preview    esc  back
+   0-0 fg/bg1, 1-7 fg/bg2 b, 8-20 fg2/bg1, 21-23 fg/bg1, 24-26 fg/bg2 b, 27-42 fg2/bg1, 43-45 fg/bg1, 46-50 fg/bg2 b, 51-55 fg2/bg1, 56-119 fg/bg1
+35   F1 Help   F2 Plans   F3 Plan   F4 History     target C:\src\greeter  ·  plans ./plans                   planrun 0.1.0
+   0-0 fg/bg1, 1-9 fg3/bg1, 10-10 fg/bg1, 11-20 fg3/bg1, 21-21 fg/bg1, 22-30 fg3/bg1, 31-31 fg/bg1, 32-43 act/bg2 b, 44-47 fg/bg1, 48-54 fg3/bg1, 55-68 fg2/bg1, 69-79 fg3/bg1, 80-86 fg2/bg1, 87-105 fg/bg1, 106-118 fg3/bg1, 119-119 fg/bg1

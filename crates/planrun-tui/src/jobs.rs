@@ -205,6 +205,17 @@ pub enum Job {
     },
     /// `git diff HEAD` and the untracked files, for `[d]`.
     WorkTree,
+    /// Every run in the journal directory, for History.
+    Journals,
+    /// What resume would find for the journal's last chain (D85), at the clock's time.
+    Preview {
+        /// The journal.
+        journal: PathBuf,
+        /// The plan's path as recorded.
+        plan: String,
+        /// The time it is read at.
+        now: u64,
+    },
     /// The dry run of a plan (D55), for Inspect.
     DryRun {
         /// The plan file.
@@ -241,6 +252,15 @@ pub enum Done {
     },
     /// The working tree against HEAD, and the untracked files.
     WorkTree(Result<(Vec<crate::diff::FileDiff>, Vec<String>), String>),
+    /// Every run, newest first.
+    Journals(Result<Vec<crate::history::RunEntry>, String>),
+    /// The resume preview of a journal.
+    Preview {
+        /// The journal.
+        journal: PathBuf,
+        /// What it found.
+        result: Result<Box<crate::preview::PreviewData>, String>,
+    },
     /// A plan's dry run.
     DryRun {
         /// The plan file.
@@ -282,6 +302,14 @@ impl Job {
             Job::Live => Box::new(|e| Done::Live(Err(e))),
             Job::Update(_) => Box::new(|_| Done::Update(UpdateState::Failed)),
             Job::WorkTree => Box::new(|e| Done::WorkTree(Err(e))),
+            Job::Journals => Box::new(|e| Done::Journals(Err(e))),
+            Job::Preview { journal, .. } => {
+                let journal = journal.clone();
+                Box::new(move |e| Done::Preview {
+                    journal,
+                    result: Err(e),
+                })
+            }
             Job::Changes { task, .. } => {
                 // CHANGES falls back to the planned diff.
                 let task = *task;
@@ -323,6 +351,11 @@ impl Job {
                     .collect();
                 Done::WorkTree(Ok((changes(ctx, &[".".to_owned()]), untracked)))
             }
+            Job::Journals => Done::Journals(crate::history::scan(&ctx.journal_dir())),
+            Job::Preview { journal, plan, now } => {
+                let result = preview(ctx, &journal, &plan, now).map(Box::new);
+                Done::Preview { journal, result }
+            }
             Job::DryRun { path, parsed } => {
                 let plan = &parsed.plan;
                 let result = Workspace::open(&ctx.root, ctx.env.clone())
@@ -336,6 +369,42 @@ impl Job {
             }
         }
     }
+}
+
+/// Reads what resume would find: the plan parsed now, the journal's last chain, the disk.
+fn preview(
+    ctx: &Context,
+    journal_path: &Path,
+    plan: &str,
+    now: u64,
+) -> Result<crate::preview::PreviewData, String> {
+    let path = if Path::new(plan).is_absolute() {
+        PathBuf::from(plan)
+    } else {
+        ctx.root.join(plan)
+    };
+    let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let registry = Registry::with_builtins().map_err(|e| format!("the built-in formats: {e}"))?;
+    let name = path.display().to_string();
+    let parsed = parse_plan(&registry, &name, &bytes, None)
+        .map_err(|_| format!("{plan} does not parse any more: resume would refuse it"))?;
+    let lines = journal::read(journal_path).map_err(|e| e.to_string())?;
+    let analysis = analyse(&lines).ok_or_else(|| "the journal has no run".to_owned())?;
+    let ws = Workspace::open(&ctx.root, ctx.env.clone()).map_err(|e| e.to_string())?;
+    let preview = planrun_exec::runner::preview::preview(&ws, &parsed.plan, &analysis)
+        .map_err(|e| e.to_string())?;
+    let untracked = git_out(ctx, &["ls-files", "--others", "--exclude-standard"])
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    Ok(crate::preview::PreviewData {
+        taken: now,
+        path,
+        parsed: Arc::new(parsed),
+        analysis,
+        preview,
+        untracked,
+    })
 }
 
 /// The output of `git --no-optional-locks args…`; empty when git fails.

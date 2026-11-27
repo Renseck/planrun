@@ -133,6 +133,21 @@ pub fn screen(core: &mut Core<TestBackend>) -> String {
     grid(core.terminal().backend().buffer())
 }
 
+/// Whether pwsh is there; without it a test is skipped unless shells are required (D63).
+pub fn pwsh() -> bool {
+    use planrun_exec::shell::{ShellError, locate};
+    match locate(planrun_model::Shell::Pwsh) {
+        Ok(_) => true,
+        Err(e @ ShellError::Unavailable { .. })
+            if std::env::var_os("PLANRUN_REQUIRE_SHELLS").is_none() =>
+        {
+            eprintln!("skipped: {e}");
+            false
+        }
+        Err(e) => panic!("{e}"),
+    }
+}
+
 /// The current time, for tests that wait.
 pub fn now() -> SystemTime {
     SystemTime::now()

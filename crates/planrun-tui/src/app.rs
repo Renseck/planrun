@@ -12,10 +12,12 @@ use ratatui::style::Style;
 use crate::chrome::{self, MIN, Nav};
 use crate::draw::fill;
 use crate::glyph::{Glyph, Glyphs};
+use crate::history::{self, History};
 use crate::inspect::{Assumed, Did, Inspect};
 use crate::jobs::{Bg, Context, Done, Job, UpdateCheck, UpdateState};
 use crate::keys::Key;
 use crate::plans::{self, Labels, Plans};
+use crate::preview::ResumeView;
 use crate::run::{Follow, Inspector, Run};
 use crate::theme::{Token, base, on};
 use crate::worker::{ObserverFactory, RunMsg, RunRequest};
@@ -42,6 +44,10 @@ pub enum View {
     Plans,
     /// F3: the plan view, in Run when there is a run, in Inspect otherwise.
     Plan,
+    /// F4.
+    History,
+    /// The resume preview of a run in History.
+    Resume,
 }
 
 /// What the app asks the driver to do.
@@ -75,6 +81,8 @@ pub struct App {
     pub(crate) plans: Plans,
     pub(crate) inspect: Option<Inspect>,
     pub(crate) run: Option<Run>,
+    pub(crate) history: History,
+    pub(crate) resume: Option<ResumeView>,
     pub(crate) observers: Vec<ObserverFactory>,
     pub(crate) update: UpdateState,
     pub(crate) update_check: Option<UpdateCheck>,
@@ -96,6 +104,8 @@ impl App {
             plans: Plans::default(),
             inspect: None,
             run: None,
+            history: History::default(),
+            resume: None,
             observers: Vec::new(),
             update: UpdateState::Unchecked,
             update_check: update,
@@ -129,6 +139,16 @@ impl App {
     /// The plan view in Inspect, when a plan is open.
     pub fn inspect(&self) -> Option<&Inspect> {
         self.inspect.as_ref()
+    }
+
+    /// History's state.
+    pub fn history(&self) -> &History {
+        &self.history
+    }
+
+    /// The resume preview, when it is open.
+    pub fn resume_view(&self) -> Option<&ResumeView> {
+        self.resume.as_ref()
     }
 
     /// The run, when there is one.
@@ -211,6 +231,21 @@ impl App {
                 }
                 Vec::new()
             }
+            Done::Journals(runs) => {
+                let n = runs.as_ref().map_or(0, Vec::len);
+                self.history.runs = Some(runs);
+                self.history.selected = self.history.selected.min(n.saturating_sub(1));
+                Vec::new()
+            }
+            Done::Preview { journal, result } => {
+                if let Some(view) = self.resume.as_mut().filter(|v| v.entry.journal == journal) {
+                    view.data = match result {
+                        Ok(data) => Bg::Current(data),
+                        Err(e) => Bg::Failed(e),
+                    };
+                }
+                Vec::new()
+            }
             Done::WorkTree(result) => {
                 let now = self.now();
                 let Some(run) = self.run.as_mut() else {
@@ -258,7 +293,7 @@ impl App {
             RunMsg::Shell(reply) => return vec![Effect::Shell(reply)],
             RunMsg::Ended(result) => {
                 run.ended(now, result);
-                return vec![Effect::Job(Job::Scan)];
+                return vec![Effect::Job(Job::Scan), Effect::Job(Job::Journals)];
             }
         }
         Vec::new()
@@ -274,6 +309,10 @@ impl App {
             Key::F(3) if self.inspect.is_some() || self.run.is_some() => {
                 self.view = View::Plan;
                 return Vec::new();
+            }
+            Key::F(4) => {
+                self.view = View::History;
+                return vec![Effect::Job(Job::Journals)];
             }
             Key::Ctrl('c') if !self.running() => return vec![Effect::Quit],
             Key::Ctrl('c') => {
@@ -292,7 +331,91 @@ impl App {
             View::Plans => self.plans_key(key),
             View::Plan if self.run.is_some() => self.run_key(key),
             View::Plan => self.plan_key(key),
+            View::History => self.history_key(key),
+            View::Resume => self.resume_key(key),
         }
+    }
+
+    fn history_key(&mut self, key: Key) -> Vec<Effect> {
+        match self.history.key(key) {
+            history::Did::Preview(entry) => {
+                let job = Job::Preview {
+                    journal: entry.journal.clone(),
+                    plan: entry.plan.clone(),
+                    now: self.now(),
+                };
+                self.resume = Some(ResumeView {
+                    entry,
+                    data: Bg::Running,
+                });
+                self.view = View::Resume;
+                vec![Effect::Job(job)]
+            }
+            history::Did::Back => {
+                self.view = View::Plans;
+                Vec::new()
+            }
+            history::Did::None => Vec::new(),
+        }
+    }
+
+    fn resume_key(&mut self, key: Key) -> Vec<Effect> {
+        let Some(view) = self.resume.as_mut() else {
+            self.view = View::History;
+            return Vec::new();
+        };
+        match key {
+            Key::Char('g') => {
+                view.data = std::mem::replace(&mut view.data, Bg::Running).stale();
+                vec![Effect::Job(Job::Preview {
+                    journal: view.entry.journal.clone(),
+                    plan: view.entry.plan.clone(),
+                    now: (self.clock)(),
+                })]
+            }
+            Key::Enter => self.start_resume(),
+            Key::Esc | Key::Char('q') => {
+                self.view = View::History;
+                Vec::new()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Starts `Runner::resume` from the preview: with the journaled policy and range, as
+    /// `planrun resume` without flags (D77); it checks everything again itself.
+    fn start_resume(&mut self) -> Vec<Effect> {
+        if self.running() {
+            return Vec::new();
+        }
+        let Some(data) = self.resume.as_ref().and_then(|v| v.data.value()) else {
+            return Vec::new();
+        };
+        let run = &data.analysis.run;
+        let assumed = assumed_from(&run.auto, run.run_expected_failures);
+        let plan = &data.parsed.plan;
+        let from = run
+            .from
+            .as_deref()
+            .and_then(|id| plan.tasks.iter().position(|t| &*t.id.raw == id));
+        let (path, parsed) = (data.path.clone(), data.parsed.clone());
+        self.run = Some(Run::new(
+            path.clone(),
+            parsed.clone(),
+            assumed.clone(),
+            true,
+            self.now(),
+        ));
+        self.view = View::Plan;
+        vec![Effect::Run(RunRequest {
+            path,
+            parsed,
+            auto: assumed.auto,
+            expected: assumed.expected,
+            from,
+            resume: true,
+            observers: std::mem::take(&mut self.observers),
+        })]
     }
 
     /// Whether the runner is running.
@@ -441,6 +564,24 @@ impl App {
                 crumbs.extend(inspect.crumbs(self.g));
                 (inspect.footer(), inspect.state(self.g))
             }
+            (View::History, _, _) => {
+                crumbs.push("history".to_owned());
+                let dir = self.labels().relative(&self.ctx.journal_dir());
+                (self.history.footer(), self.history.state(&dir))
+            }
+            (View::Resume, _, _) if self.resume.is_some() => {
+                crumbs.push("history".to_owned());
+                if let Some(view) = &self.resume {
+                    crumbs.push(view.entry.name());
+                }
+                crumbs.push("resume preview".to_owned());
+                let keys = self
+                    .resume
+                    .as_ref()
+                    .map(ResumeView::footer)
+                    .unwrap_or_default();
+                (keys, ResumeView::state())
+            }
             _ => {
                 crumbs.push("plans".to_owned());
                 (self.plans.footer(), self.state())
@@ -452,6 +593,12 @@ impl App {
             (View::Plan, None, Some(inspect)) => {
                 let rel = self.labels().relative(&inspect.path);
                 inspect.draw(buf, body, &rel, self.g);
+            }
+            (View::History, _, _) => self.history.draw(buf, body, self.live, self.g),
+            (View::Resume, _, _) if self.resume.is_some() => {
+                if let Some(view) = &self.resume {
+                    view.draw(buf, body, self.g);
+                }
             }
             _ => self.plans.draw(buf, body, &self.labels(), self.g),
         }
@@ -473,6 +620,7 @@ impl App {
         match self.view {
             View::Plans => Nav::Plans,
             View::Plan => Nav::Plan,
+            View::History | View::Resume => Nav::History,
         }
     }
 
