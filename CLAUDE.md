@@ -23,14 +23,15 @@ crates/planrun-parse   Markdown → IR: source, document, format, spec, registry
 crates/planrun-exec    IR → effects: git, workspace, eol, tree, handler, transaction,
                        preflight, finding (P3); shell/ (sessions, kill.rs: the only unsafe
                        code), expect, policy/ (classifier, decisions) (P4); journal, lock,
-                       done, ui, runner/ (tasks, scripts, sessions, gate, resume) (P5)
+                       done, ui, runner/ (tasks, scripts, sessions, gate, resume) (P5);
+                       lock.live, runner/preview (P6b)
 crates/planrun-cli     the `planrun` binary: check, show (view, render), run (dry_run, run,
                        ui: line prompts), resume, status, update (P6a, D83); the `e2e` test
                        feature (e2e.rs)
 formats/*.toml         built-in plan formats (embedded): assay, superpowers, before-after; the
                        file name is the format id
-docs/                  architecture, plan-grammar, extending, decisions, roadmap, plans/,
-                       handovers/ (one per finished phase)
+docs/                  architecture, plan-grammar, extending, decisions, roadmap,
+                       tui-design, plans/, handovers/ (one per finished phase)
 tests/corpus/          synthetic/ (one plan per format), invalid/ (one error each), local/ (private)
 tests/fixtures/greeter the repo the synthetic assay plan applies to
 tests/support          fixture.rs: a temporary git copy of the greeter fixture, included

@@ -317,8 +317,9 @@ implements `ShellSession`; P5 keeps one per shell.
 - **The process tree** (D64, D71, D73): a job object on Windows, `setsid` and `PR_SET_PDEATHSIG`
   on Linux; a timeout (none by default, D65), a drop, or a shell that exited while a descendant
   holds its pipes kills every descendant. On Unix SIGINT, SIGTERM and SIGHUP kill the sessions'
-  groups before planrun ends; while the `[o]` shell runs, Ctrl-C goes to it. `shell/kill.rs`
-  holds planrun's only `unsafe` code.
+  groups before planrun ends; while the `[o]` shell runs, Ctrl-C goes to it. `shell::end_now`
+  ends planrun the same way for a UI that reads Ctrl-C as a key (D91). `shell/kill.rs` holds
+  planrun's only `unsafe` code.
 - **In a run** (D81): one session per shell, started at the first block; a dead one is a
   mismatch whose retry starts a new one, announced by a notice that must be acknowledged (also
   on resume and with `--from`); a working directory outside the repository asks before the
@@ -351,6 +352,8 @@ Windows with PowerShell 7 is the primary platform (D19); Linux with pwsh and bas
   the run; `--run-expected-failures` runs it. Gates, previews and applies always run.
 - A mismatch stops and offers accept (journaled as `accepted`; it closes the commit gate), retry,
   open a shell, abort; a dead session offers only retry, shell and abort (D75).
+- `expect::align` gives each non-blank expected line the output line it matched, or none, as
+  `check` matches them; the `mismatch` question carries it (D86).
 
 ### 6.5 Policy
 
@@ -386,7 +389,8 @@ as on disk), `action-end` (outcome, status, the last output lines, HEAD), the us
 `gate-override`, `task-end`, `run-end`. One write per record; `step-prepared`, `action-start`
 and `run-end` are synced. A torn last line is dropped, and cut off before the next append; any
 other bad line is an error. One planrun runs per repository at a time: `<git-dir>/planrun/lock`
-(D77).
+(D77). A run also holds `lock.live`, with a blocking lock once `lock` is held, so `lock::live`
+sees a run in progress with a try on `lock.live` alone, never on `lock` (D90).
 
 Resume never trusts the journal alone (D14, D77). It reads the last chain (a `run` and the
 `resume`s after it) and stops when the plan's fingerprint differs, when `.git/index.lock`
@@ -402,6 +406,15 @@ user's: it is asked about once (`resume-dirt`). A resume's own `run` record neve
 recorded HEAD; where resume accepts a moved HEAD it journals the running action's end (or
 `head-seen` for a retry) at once, so a stopped or crashed resume leaves the next one the same
 check.
+
+`runner::preview::preview` reads what resume would find without the lock and without writing,
+for the TUI's resume preview (D85): whether a run is live, the fingerprint, `index.lock`,
+resume's verdict on HEAD (`resume::head_verdict`, the function resume uses), each prepared step
+on disk with whether it can be restored and its temp files, the scripts that will ask "run
+again or keep" (the rule `replayed` uses), and the `resume-dirt` paths (`preflight_resumed`
+itself). Resume checks all of it again when it runs. A journal takes any number of observers (`Journal::observe`), called after each
+append and each write of a step's commit in the order they were added: the `e2e` fault seam
+(D82) and the TUI's live view (D90).
 
 ## 7. CLI
 
@@ -437,7 +450,9 @@ writes nothing: not the working tree, not `.git`. Once a script, commit or Manua
 without running, a failing file action is a warning ("depends on a step that did not run") and
 its path is unknown from then on; every ok after that point assumes those steps change no files.
 Each script and commit shows its class and what the default policy would do with it ("would ask
-(Build)", "typed yes (Destructive)", "skipped: expected failure", D69). Exit 0 when nothing fails, 1 when something does, 2 when git or the repository cannot be used.
+(Build)", "typed yes (Destructive)", "skipped: expected failure", D69). The report is typed
+(`preflight::DryRun`): a file action that would run carries its `handler::Effect`, whose text is
+what the report prints (D84). Exit 0 when nothing fails, 1 when something does, 2 when git or the repository cannot be used.
 
 The prompts are lines on stdout, answered by a line on stdin (D15, D74); only a terminal
 answers: a stdin that is not one stops the run at its first question. A sketch of the screen:
