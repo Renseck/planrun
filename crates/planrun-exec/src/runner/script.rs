@@ -9,19 +9,24 @@ use super::resume::Past;
 use super::sessions::{NotRun, name};
 use super::task::TaskRun;
 use super::{Answer, Flow, Result, RunError, Runner, Typed, canonical, describe};
-use crate::expect::{self, Mismatch, Reason, Verdict};
+use crate::expect::{self, Aligned, Confirm, Mismatch, Reason, Verdict};
 use crate::journal::{Outcome, PathBlob, Record};
 use crate::policy::{Decision, PolicyClass, Skip};
 use crate::shell::{RunStatus, ScriptRun};
-use crate::ui::{Choice, Position, Question};
+use crate::ui::{Choice, Position, Question, QuestionKind, RUN_SKIP_OR_QUIT};
 
 /// What the matcher, and for a commit HEAD, concluded.
 enum Judged {
     Pass,
-    Confirm(Vec<String>),
-    /// What does not hold; `dead` when the session ended, timed out or broke.
+    /// Why it asks, and the lines that say so.
+    Confirm(Confirm, Vec<String>),
+    /// What does not hold: the matcher's mismatches, the expected lines against the output,
+    /// and for a commit why it does not count as made; `dead` when the session ended, timed
+    /// out or broke.
     Mismatch {
-        lines: Vec<String>,
+        mismatches: Vec<Mismatch>,
+        aligned: Vec<Aligned>,
+        commit: Option<String>,
         dead: bool,
     },
 }
@@ -149,6 +154,7 @@ impl Runner<'_> {
             ));
             return Ok(Replayed::Done);
         }
+        let running = matches!(past, Past::Running { .. });
         let why = match past {
             Past::Ended(Outcome::Kept) => return Ok(Replayed::Keep),
             Past::Ended(Outcome::SkippedPolicy) => return Ok(Replayed::Again),
@@ -169,7 +175,7 @@ impl Runner<'_> {
             }
         };
         let question = Question {
-            kind: "again",
+            kind: QuestionKind::Again { running },
             at: Some(pos),
             text: vec![
                 format!("L{line} {} {why}", describe(action)),
@@ -184,7 +190,7 @@ impl Runner<'_> {
                 Choice::Shell,
                 Choice::Quit,
             ],
-            typed: false,
+            typed: None,
         };
         Ok(match self.ask(question)? {
             Answer::Choice(Choice::Retry) => Replayed::Again,
@@ -262,13 +268,15 @@ impl Runner<'_> {
                 text.extend(found.reasons.iter().map(|r| format!("  because: {r}")));
                 text.push("type `yes` to run it, `skip` to skip it, `quit` to stop".to_owned());
                 let question = Question {
-                    kind: "typed-yes",
+                    kind: QuestionKind::TypedYes {
+                        reasons: found.reasons,
+                    },
                     at: Some(pos),
                     text,
                     choices: Vec::new(),
-                    typed: true,
+                    typed: Some(RUN_SKIP_OR_QUIT),
                 };
-                Ok(match self.typed_yes(question, true)? {
+                Ok(match self.typed_yes(question)? {
                     Typed::Yes => Permit::Run,
                     Typed::Skip => Permit::Skip,
                     Typed::Quit => Permit::Stop("quit".to_owned()),
@@ -283,7 +291,7 @@ impl Runner<'_> {
                 let mut text = vec![format!("{head} ({class})")];
                 text.extend(body.lines().take(6).map(|l| format!("  | {l}")));
                 let question = Question {
-                    kind: "run",
+                    kind: QuestionKind::Run { decision },
                     at: Some(pos),
                     text,
                     choices: vec![
@@ -294,7 +302,7 @@ impl Runner<'_> {
                         Choice::Shell,
                         Choice::Quit,
                     ],
-                    typed: false,
+                    typed: None,
                 };
                 Ok(match self.ask(question)? {
                     Answer::Choice(Choice::Run) => Permit::Run,
@@ -313,7 +321,7 @@ impl Runner<'_> {
         if let Some(restart) = self.sessions.starts(script.shell) {
             if restart && self.notice.is_none() {
                 let why = format!("the {} session ended", name(script.shell));
-                self.notice = Some(self.notice_text(&why));
+                self.notice = Some(self.notice(&why));
             }
             let reason = if restart { "restarted" } else { "started" };
             if let Flow::Stop(why) = self.acknowledge_notice(Some(pos))? {
@@ -333,7 +341,10 @@ impl Runner<'_> {
             return Ok(Flow::Go);
         }
         let question = Question {
-            kind: "outside",
+            kind: QuestionKind::Outside {
+                shell: script.shell,
+                cwd: cwd.clone(),
+            },
             at: Some(pos),
             text: vec![format!(
                 "the {} session's working directory is {}, outside the repository; the next \
@@ -342,7 +353,7 @@ impl Runner<'_> {
                 cwd.display()
             )],
             choices: vec![Choice::Continue, Choice::View, Choice::Shell, Choice::Quit],
-            typed: false,
+            typed: None,
         };
         Ok(match self.ask(question)? {
             Answer::Choice(Choice::Continue) => Flow::Go,
@@ -388,21 +399,22 @@ impl Runner<'_> {
             ran.status,
             RunStatus::SessionEnded(_) | RunStatus::TimedOut | RunStatus::Broken(_)
         );
-        let verdict = expect::check(script.expect.as_ref(), ran, &self.plan.source);
+        let source = &self.plan.source;
+        let verdict = expect::check(script.expect.as_ref(), ran, source);
         let problem = if commit && !dead {
             self.commit_problem(before, expect)?
         } else {
             None
         };
+        let mismatch = |mismatches, commit| Judged::Mismatch {
+            mismatches,
+            aligned: expect::align(script.expect.as_ref(), ran, source),
+            commit,
+            dead,
+        };
         Ok(match (verdict, problem) {
-            (Verdict::Mismatch(ms), problem) => Judged::Mismatch {
-                lines: ms.iter().map(mismatch_line).chain(problem).collect(),
-                dead,
-            },
-            (_, Some(problem)) => Judged::Mismatch {
-                lines: vec![problem],
-                dead,
-            },
+            (Verdict::Mismatch(ms), problem) => mismatch(ms, problem),
+            (_, Some(problem)) => mismatch(Vec::new(), Some(problem)),
             (Verdict::Pass, None) => Judged::Pass,
             (Verdict::Confirm(c), None) => {
                 let mut lines: Vec<String> = c
@@ -411,7 +423,7 @@ impl Runner<'_> {
                     .map(|r| self.reason_line(script, *r))
                     .collect();
                 lines.push(format!("errored: {}", c.errored));
-                Judged::Confirm(lines)
+                Judged::Confirm(c, lines)
             }
         })
     }
@@ -452,10 +464,13 @@ impl Runner<'_> {
                 self.ui.status("    passed");
                 Ok(Resolved::Outcome(Outcome::Passed))
             }
-            Judged::Confirm(mut text) => {
+            Judged::Confirm(confirm, mut text) => {
                 text.insert(0, "confirm the result:".to_owned());
                 let question = Question {
-                    kind: "confirm",
+                    kind: QuestionKind::Confirm {
+                        reasons: confirm.reasons,
+                        errored: confirm.errored,
+                    },
                     at: Some(pos),
                     text,
                     choices: vec![
@@ -466,7 +481,7 @@ impl Runner<'_> {
                         Choice::Shell,
                         Choice::Quit,
                     ],
-                    typed: false,
+                    typed: None,
                 };
                 Ok(match self.ask(question)? {
                     Answer::Choice(Choice::Yes) => Resolved::Outcome(Outcome::Confirmed),
@@ -475,9 +490,15 @@ impl Runner<'_> {
                     _ => Resolved::Stop("quit".to_owned()),
                 })
             }
-            Judged::Mismatch { lines, dead } => {
+            Judged::Mismatch {
+                mismatches,
+                aligned,
+                commit,
+                dead,
+            } => {
                 let mut text = vec![format!("MISMATCH ({:?}):", ran.status)];
-                text.extend(lines.into_iter().map(|l| format!("  {l}")));
+                let lines = mismatches.iter().map(mismatch_line).chain(commit.clone());
+                text.extend(lines.map(|l| format!("  {l}")));
                 let mut choices = if dead {
                     text.push(format!(
                         "the {} session is gone; retry starts a new one",
@@ -489,11 +510,18 @@ impl Runner<'_> {
                 };
                 choices.extend([Choice::View, Choice::Diff, Choice::Shell, Choice::Quit]);
                 let question = Question {
-                    kind: "mismatch",
+                    kind: QuestionKind::Mismatch {
+                        status: ran.status.clone(),
+                        mismatches,
+                        output: ran.lines.clone(),
+                        aligned,
+                        commit,
+                        dead,
+                    },
                     at: Some(pos),
                     text,
                     choices,
-                    typed: false,
+                    typed: None,
                 };
                 match self.ask(question)? {
                     Answer::Choice(Choice::Accept) => Ok(Resolved::Outcome(Outcome::Accepted)),

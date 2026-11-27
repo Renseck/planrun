@@ -187,7 +187,8 @@ pub fn preflight_resumed(
         } else if remaining.contains(path) {
             f.code = "resume-dirt";
             f.message = format!(
-                "{} (not a verified write of the interrupted run; a remaining file action                  writes it)",
+                "{} (not a verified write of the interrupted run; a remaining file action \
+                 writes it)",
                 f.message
             );
         } else {

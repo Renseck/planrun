@@ -80,7 +80,7 @@ impl Ui for LineUi<'_> {
         if !io::stdin().is_terminal() && !piped_answers_allowed() {
             return Reply::Stop(format!(
                 "planrun needs an answer (`{}`), and stdin is not a terminal",
-                question.kind
+                question.kind.name()
             ));
         }
         self.print("");
@@ -88,14 +88,14 @@ impl Ui for LineUi<'_> {
             self.print(line);
         }
         loop {
-            if !question.typed {
+            if question.typed.is_none() {
                 self.print(&prompt(&question.choices));
             }
             let _ = io::stdout().flush();
             let Some(line) = self.read_line() else {
                 return Reply::Stop("stdin closed before an answer".to_owned());
             };
-            if question.typed {
+            if question.typed.is_some() {
                 return Reply::Typed(line);
             }
             let found = question.choices.iter().find(|c| c.key() == line.trim());

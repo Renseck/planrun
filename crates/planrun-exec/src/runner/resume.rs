@@ -23,7 +23,7 @@ use crate::git::Head;
 use crate::journal::{At, End, Line, Outcome, PathBlob, Record};
 use crate::preflight::Resumed;
 use crate::transaction::StepRecord;
-use crate::ui::{Choice, Question};
+use crate::ui::{Choice, Question, QuestionKind, YES_OR_QUIT};
 
 /// What the run record of the chain says.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -315,7 +315,7 @@ impl Runner<'_> {
             .iter()
             .map(|t| t.id.raw.to_string())
             .collect();
-        self.notice = Some(self.notice_text("planrun resumes an interrupted run"));
+        self.notice = Some(self.notice("planrun resumes an interrupted run"));
         if analysis.interrupted.is_some() {
             self.replay = Some(replay);
         }
@@ -367,7 +367,11 @@ impl Runner<'_> {
             return Ok(Flow::Go);
         }
         let question = Question {
-            kind: "head-moved",
+            kind: QuestionKind::HeadMoved {
+                action: at.clone(),
+                recorded: head.clone(),
+                now: now.clone(),
+            },
             at: None,
             text: vec![
                 format!(
@@ -381,7 +385,7 @@ impl Runner<'_> {
             ],
             // No `[o]`: it journals HEAD as seen (D80), which would pass this check unanswered.
             choices: vec![Choice::Keep, Choice::Retry, Choice::Diff, Choice::Quit],
-            typed: false,
+            typed: None,
         };
         Ok(match self.ask(question)? {
             Answer::Choice(Choice::Keep) => {
@@ -499,11 +503,15 @@ impl Runner<'_> {
         }
         choices.extend([Choice::Accept, Choice::Diff, Choice::Shell, Choice::Quit]);
         let question = Question {
-            kind: "unknown",
+            kind: QuestionKind::Unknown {
+                step: at.clone(),
+                paths: paths.to_vec(),
+                restorable: can_restore,
+            },
             at: None,
             text,
             choices,
-            typed: false,
+            typed: None,
         };
         match self.ask(question)? {
             Answer::Choice(Choice::Restore) => {
@@ -519,16 +527,16 @@ impl Runner<'_> {
             }
             Answer::Choice(Choice::Accept) => {
                 let question = Question {
-                    kind: "accept-done",
+                    kind: QuestionKind::AcceptDone { step: at.clone() },
                     at: None,
                     text: vec![
                         "accepting the step as done overrides the disk check".to_owned(),
                         "type `yes` to accept it, or `quit`".to_owned(),
                     ],
                     choices: Vec::new(),
-                    typed: true,
+                    typed: Some(YES_OR_QUIT),
                 };
-                match self.typed_yes(question, false)? {
+                match self.typed_yes(question)? {
                     Typed::Yes => {
                         self.append(Record::StepAccepted { at: at.clone() })?;
                         Ok(Ok(true))

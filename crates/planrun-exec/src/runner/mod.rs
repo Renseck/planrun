@@ -23,7 +23,7 @@ use crate::handler::{HandlerSet, file_path};
 use crate::journal::{At, End, Journal, Record};
 use crate::policy::{DefaultClassifier, Policy, PolicyClass};
 use crate::shell::{SessionConfig, ShellError};
-use crate::ui::{Choice, Position, Question, Reply, Ui};
+use crate::ui::{Choice, Position, Question, QuestionKind, Reply, Ui};
 use crate::workspace::{Workspace, WorkspaceError};
 
 use sessions::Sessions;
@@ -89,7 +89,7 @@ pub struct Runner<'r> {
     handlers: HandlerSet,
     sessions: Sessions,
     /// A notice to acknowledge before the next block: the session is new (D81).
-    notice: Option<Vec<String>>,
+    notice: Option<Notice>,
     /// Tasks whose scripts ran before, for the notice.
     earlier: Vec<String>,
     /// What resume replays of the interrupted task (D77).
@@ -147,7 +147,7 @@ impl<'r> Runner<'r> {
                 .iter()
                 .map(|t| t.id.raw.to_string())
                 .collect();
-            self.notice = Some(self.notice_text("the run starts at a later task (--from)"));
+            self.notice = Some(self.notice("the run starts at a later task (--from)"));
         }
         self.tasks_from(from)
     }
@@ -213,21 +213,12 @@ impl<'r> Runner<'r> {
         self.plan.source.line_col(action.span.start).line
     }
 
-    /// The notice that a session is new (D81): what is lost, and which tasks' scripts ran
-    /// before.
-    fn notice_text(&self, why: &str) -> Vec<String> {
-        let mut text = vec![
-            format!("This is a new shell session: {why}."),
-            "Variables, functions and the working directory set by earlier blocks are gone."
-                .to_owned(),
-        ];
-        if !self.earlier.is_empty() {
-            text.push(format!(
-                "Scripts of these earlier tasks ran in another session: {}.",
-                self.earlier.join(", ")
-            ));
+    /// The notice that a session is new (D81), with the tasks whose scripts ran before.
+    fn notice(&self, why: &str) -> Notice {
+        Notice {
+            why: why.to_owned(),
+            earlier: self.earlier.clone(),
         }
-        text
     }
 
     /// Asks `question` until it gets a choice or a typed line: `[v]`, `[d]` and `[o]` are
@@ -265,14 +256,15 @@ impl<'r> Runner<'r> {
         let at = question.at.map(|p| self.at(p));
         self.append(Record::Answer {
             at,
-            question: question.kind.to_owned(),
+            question: question.kind.name().to_owned(),
             answer: answer.to_owned(),
         })
     }
 
-    /// Asks for a typed `yes` (D74): exactly `yes` agrees, `quit` stops, `skip` skips when
-    /// `skippable`; anything else does not run and asks again.
-    fn typed_yes(&mut self, question: Question, skippable: bool) -> Result<Typed> {
+    /// Asks for a typed `yes` (D74): exactly `yes` agrees, `quit` stops, `skip` skips when the
+    /// question's words offer it; anything else does not run and asks again.
+    fn typed_yes(&mut self, question: Question) -> Result<Typed> {
+        let skippable = question.typed.is_some_and(|words| words.contains(&"skip"));
         loop {
             match self.ask(question.clone())? {
                 Answer::Typed(line) if line == "yes" => return Ok(Typed::Yes),
@@ -290,21 +282,49 @@ impl<'r> Runner<'r> {
 
     /// Asks the pending session notice, if any; it is acknowledged even with `--auto` (D81).
     fn acknowledge_notice(&mut self, at: Option<Position>) -> Result<Flow> {
-        let Some(text) = self.notice.take() else {
+        let Some(notice) = self.notice.take() else {
             return Ok(Flow::Go);
         };
         let question = Question {
-            kind: "session",
+            text: notice.text(),
+            kind: QuestionKind::Session {
+                why: notice.why,
+                earlier: notice.earlier,
+            },
             at,
-            text,
             choices: vec![Choice::Continue, Choice::Shell, Choice::Quit],
-            typed: false,
+            typed: None,
         };
         Ok(match self.ask(question)? {
             Answer::Choice(Choice::Continue) => Flow::Go,
             Answer::Stop(why) => Flow::Stop(why),
             _ => Flow::Stop("stopped at the session notice".to_owned()),
         })
+    }
+}
+
+/// A pending session notice (D81): why the session is new, and the tasks whose scripts ran
+/// before.
+pub(crate) struct Notice {
+    why: String,
+    earlier: Vec<String>,
+}
+
+impl Notice {
+    /// What is lost, and which tasks' scripts ran before.
+    fn text(&self) -> Vec<String> {
+        let mut text = vec![
+            format!("This is a new shell session: {}.", self.why),
+            "Variables, functions and the working directory set by earlier blocks are gone."
+                .to_owned(),
+        ];
+        if !self.earlier.is_empty() {
+            text.push(format!(
+                "Scripts of these earlier tasks ran in another session: {}.",
+                self.earlier.join(", ")
+            ));
+        }
+        text
     }
 }
 

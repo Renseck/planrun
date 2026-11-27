@@ -7,11 +7,12 @@ use super::gate::Gate;
 use super::resume::Past;
 use super::{Answer, Flow, Result, RunError, Runner, Typed, describe, is_file_action, task_paths};
 use crate::finding::{Finding, Severity};
+use crate::git::StatusEntry;
 use crate::journal::{Outcome, PathBlob, Record};
 use crate::policy::Decision;
 use crate::preflight;
 use crate::transaction::{self, CommitCause};
-use crate::ui::{Choice, Position, Question};
+use crate::ui::{Choice, Position, Question, QuestionKind, YES_OR_QUIT};
 
 /// The state of the task being run.
 pub(crate) struct TaskRun {
@@ -110,27 +111,27 @@ impl Runner<'_> {
     /// made and that a remaining file action writes over. They may be the user's, so they are
     /// asked about once, whatever `--auto` says.
     fn resume_dirt(&mut self, found: &[Finding]) -> Result<Flow> {
-        let paths: Vec<String> = found
+        let paths: Vec<RepoPath> = found
             .iter()
             .filter(|f| f.code == "resume-dirt")
-            .filter_map(|f| f.path.as_ref())
-            .map(|p| format!("  {p}"))
+            .filter_map(|f| f.path.clone())
             .collect();
         if paths.is_empty() {
             return Ok(Flow::Go);
         }
         let mut text = vec![format!(
-            "{} path(s) of the task have changes that the interrupted run did not verify as its              own, and a remaining file action writes over them:",
+            "{} path(s) of the task have changes that the interrupted run did not verify as its \
+             own, and a remaining file action writes over them:",
             paths.len()
         )];
-        text.extend(paths);
+        text.extend(paths.iter().map(|p| format!("  {p}")));
         text.push("continue writes over them; quit leaves them as they are".to_owned());
         let question = Question {
-            kind: "resume-dirt",
+            kind: QuestionKind::ResumeDirt { paths },
             at: None,
             text,
             choices: vec![Choice::Continue, Choice::Diff, Choice::Shell, Choice::Quit],
-            typed: false,
+            typed: None,
         };
         Ok(match self.ask(question)? {
             Answer::Choice(Choice::Continue) => Flow::Go,
@@ -196,7 +197,7 @@ impl Runner<'_> {
                 continue;
             }
             let question = Question {
-                kind: "unscoped",
+                kind: QuestionKind::Unscoped,
                 at: Some(here),
                 text: vec![format!(
                     "L{} {} ({:?}): not in the task's files (D50)",
@@ -212,7 +213,7 @@ impl Runner<'_> {
                     Choice::Shell,
                     Choice::Quit,
                 ],
-                typed: false,
+                typed: None,
             };
             match self.ask(question)? {
                 Answer::Choice(Choice::Run) => chosen.push(action),
@@ -265,7 +266,9 @@ impl Runner<'_> {
                 CommitCause::Changed(paths) => {
                     let names: Vec<&str> = paths.iter().map(RepoPath::as_str).collect();
                     let question = Question {
-                        kind: "changed",
+                        kind: QuestionKind::Changed {
+                            paths: paths.clone(),
+                        },
                         at: Some(pos),
                         text: vec![
                             format!("changed since the step was prepared: {}", names.join(", ")),
@@ -277,7 +280,7 @@ impl Runner<'_> {
                             Choice::Shell,
                             Choice::Quit,
                         ],
-                        typed: false,
+                        typed: None,
                     };
                     match self.ask(question)? {
                         Answer::Choice(Choice::PrepareAgain) => continue,
@@ -331,7 +334,7 @@ impl Runner<'_> {
         )];
         lines.extend(self.plan.text(text).lines().map(|l| format!("  {l}")));
         let question = Question {
-            kind: "manual",
+            kind: QuestionKind::Manual,
             at: Some(pos),
             text: lines,
             choices: vec![
@@ -341,7 +344,7 @@ impl Runner<'_> {
                 Choice::Shell,
                 Choice::Quit,
             ],
-            typed: false,
+            typed: None,
         };
         match self.ask(question)? {
             Answer::Choice(Choice::Continue) => {}
@@ -445,13 +448,15 @@ impl Runner<'_> {
         text.extend(reasons.iter().map(|r| format!("  {r}")));
         text.push("type `yes` to commit anyway, or `quit`".to_owned());
         let question = Question {
-            kind: "gate",
+            kind: QuestionKind::Gate {
+                reasons: reasons.clone(),
+            },
             at: Some(pos),
             text,
             choices: Vec::new(),
-            typed: true,
+            typed: Some(YES_OR_QUIT),
         };
-        match self.typed_yes(question, false)? {
+        match self.typed_yes(question)? {
             Typed::Yes => {
                 self.append(Record::GateOverride {
                     task: task.id.raw.to_string(),
@@ -491,13 +496,12 @@ impl Runner<'_> {
     /// Dirt outside the task's paths before a commit (D80): listed and asked about.
     fn outside_dirt(&mut self, pos: Position) -> Result<Flow> {
         let task = &self.plan.tasks[pos.task];
-        let outside: Vec<String> = self
+        let outside: Vec<StatusEntry> = self
             .ws
             .git()
             .status(None)?
             .into_iter()
             .filter(|e| !self.in_task(task, &e.path))
-            .map(|e| format!("  {} {}", e.code, e.path))
             .collect();
         if outside.is_empty() {
             return Ok(Flow::Go);
@@ -507,13 +511,13 @@ impl Runner<'_> {
              would take them:",
             outside.len()
         )];
-        text.extend(outside);
+        text.extend(outside.iter().map(|e| format!("  {} {}", e.code, e.path)));
         let question = Question {
-            kind: "dirt",
+            kind: QuestionKind::Dirt { paths: outside },
             at: Some(pos),
             text,
             choices: vec![Choice::Continue, Choice::Diff, Choice::Shell, Choice::Quit],
-            typed: false,
+            typed: None,
         };
         Ok(match self.ask(question)? {
             Answer::Choice(Choice::Continue) => Flow::Go,

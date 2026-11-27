@@ -15,8 +15,10 @@ use ir::{Ir, PATCH_T1, PATCH_T2};
 use planrun_exec::journal::{self, End, Journal, Outcome, Record};
 use planrun_exec::policy::{Policy, PolicyClass};
 use planrun_exec::runner::{Finished, RunConfig, Runner};
-use planrun_exec::shell::{OutLine, SessionConfig};
-use planrun_exec::ui::{Choice, Position, Question, Reply, Ui};
+use planrun_exec::shell::{OutLine, RunStatus, SessionConfig};
+use planrun_exec::ui::{
+    Choice, Position, Question, QuestionKind, RUN_SKIP_OR_QUIT, Reply, Ui, YES_OR_QUIT,
+};
 use planrun_exec::workspace::Workspace;
 use planrun_model::{
     Action, ActionKind, ChangeKind, ExitExpect, Expectation, PathOrigin, Plan, ScriptIntent, Shell,
@@ -28,6 +30,8 @@ use planrun_model::{
 struct Scripted {
     answers: VecDeque<Reply>,
     asked: Vec<String>,
+    kinds: Vec<QuestionKind>,
+    words: Vec<Option<&'static [&'static str]>>,
     shown: Vec<String>,
 }
 
@@ -48,11 +52,13 @@ impl Ui for Scripted {
         self.shown.push(format!("| {}", line.text));
     }
     fn ask(&mut self, question: &Question) -> Reply {
-        self.asked.push(question.kind.to_owned());
+        self.asked.push(question.kind.name().to_owned());
+        self.kinds.push(question.kind.clone());
+        self.words.push(question.typed);
         self.shown.extend(question.text.iter().cloned());
         self.answers
             .pop_front()
-            .unwrap_or_else(|| Reply::Stop(format!("no answer for `{}`", question.kind)))
+            .unwrap_or_else(|| Reply::Stop(format!("no answer for `{}`", question.kind.name())))
     }
     fn view(&mut self, _at: Position) {}
     fn diff(&mut self) {}
@@ -358,6 +364,118 @@ fn a_commit_that_does_not_move_head_is_a_mismatch() {
         ui.shown.iter().any(|l| l.contains("HEAD did not move")),
         "{:?}",
         ui.shown
+    );
+}
+
+#[test]
+fn questions_carry_what_the_run_found() {
+    let f = Fixture::greeter(false);
+    let mut ir = Ir::default();
+    let lines = planrun_model::TextRef::Span(ir.text("ok: …\nmissing\n"));
+    let mut check = ir.script("'ok: 3'; 'done'");
+    if let ActionKind::RunScript(s) = &mut check.kind {
+        s.expect = Some(Expectation {
+            exit: ExitExpect::Success,
+            lines: Some(lines),
+            prose: None,
+            comments: None,
+        });
+    }
+    let plan = one(
+        &mut ir,
+        planrun_model::Manifest::default(),
+        vec![vec![check]],
+    );
+    let (_, ui, _) = run(&f, &plan, AUTO, vec![choice(Choice::Quit)]);
+    let [
+        QuestionKind::Mismatch {
+            status,
+            mismatches,
+            output,
+            aligned,
+            commit,
+            dead,
+        },
+    ] = &ui.kinds[..]
+    else {
+        panic!("{:?}", ui.kinds);
+    };
+    assert_eq!(*status, RunStatus::Exited(0));
+    assert_eq!(mismatches.len(), 1, "{mismatches:?}");
+    let shown: Vec<(usize, Option<&str>)> = aligned
+        .iter()
+        .map(|a| {
+            (
+                a.number,
+                a.output.map(|i| output[i].text.trim_end_matches('\r')),
+            )
+        })
+        .collect();
+    assert_eq!(shown, [(1, Some("ok: 3")), (2, None)]);
+    assert_eq!((commit, *dead), (&None, false));
+
+    let f = Fixture::greeter(false);
+    f.write("notes.txt", b"mine\n");
+    let mut ir = Ir::default();
+    let steps = vec![vec![ir.commit("'nothing committed'")]];
+    let plan = one(&mut ir, planrun_model::Manifest::default(), steps);
+    let answers = vec![choice(Choice::Continue), choice(Choice::Quit)];
+    let (_, ui, _) = run(&f, &plan, AUTO, answers);
+    let [
+        QuestionKind::Dirt { paths },
+        QuestionKind::Mismatch { commit, .. },
+    ] = &ui.kinds[..]
+    else {
+        panic!("{:?}", ui.kinds);
+    };
+    let dirty: Vec<(&str, &str)> = paths
+        .iter()
+        .map(|e| (e.code.as_str(), e.path.as_str()))
+        .collect();
+    assert_eq!(dirty, [("??", "notes.txt")]);
+    assert!(
+        commit
+            .as_deref()
+            .is_some_and(|c| c.contains("HEAD did not move")),
+        "{commit:?}"
+    );
+}
+
+#[test]
+fn a_typed_question_lists_the_words_it_accepts() {
+    let f = Fixture::greeter(false);
+    let mut ir = Ir::default();
+    let failing = ir.script("git rev-parse -q --verify refs/heads/none");
+    let failing = expecting(
+        failing,
+        ExitExpect::Success,
+        ScriptIntent::Gate,
+        false,
+        &mut ir,
+    );
+    let steps = vec![
+        vec![ir.script("git push --dry-run")],
+        vec![failing],
+        vec![ir.commit("git commit -q --allow-empty -m 'T1'")],
+    ];
+    let plan = one(&mut ir, planrun_model::Manifest::default(), steps);
+    let answers = vec![
+        typed("skip"),
+        choice(Choice::Accept),
+        typed("skip"),
+        typed("quit"),
+    ];
+    let (finished, ui, _) = run(&f, &plan, AUTO, answers);
+    assert_eq!(finished.end, End::Stopped, "{:?}", ui.shown);
+    assert_eq!(ui.asked, ["typed-yes", "mismatch", "gate", "gate"]);
+    assert_eq!(
+        ui.words,
+        [
+            Some(RUN_SKIP_OR_QUIT),
+            None,
+            Some(YES_OR_QUIT),
+            Some(YES_OR_QUIT)
+        ]
     );
 }
 

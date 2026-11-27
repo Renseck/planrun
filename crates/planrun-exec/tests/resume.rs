@@ -18,7 +18,7 @@ use planrun_exec::policy::{Policy, PolicyClass};
 use planrun_exec::runner::resume::analyse;
 use planrun_exec::runner::{Finished, RunConfig, Runner};
 use planrun_exec::shell::{OutLine, SessionConfig};
-use planrun_exec::ui::{Choice, Position, Question, Reply, Ui};
+use planrun_exec::ui::{Choice, Position, Question, QuestionKind, Reply, Ui};
 use planrun_exec::workspace::Workspace;
 use planrun_model::{
     Action, ActionKind, ChangeKind, ExitExpect, Expectation, PathOrigin, Plan, ScriptIntent,
@@ -29,6 +29,7 @@ use planrun_model::{
 struct Scripted {
     answers: VecDeque<Reply>,
     asked: Vec<String>,
+    kinds: Vec<QuestionKind>,
     shown: Vec<String>,
 }
 
@@ -40,11 +41,12 @@ impl Ui for Scripted {
         self.shown.push(format!("| {}", line.text));
     }
     fn ask(&mut self, question: &Question) -> Reply {
-        self.asked.push(question.kind.to_owned());
+        self.asked.push(question.kind.name().to_owned());
+        self.kinds.push(question.kind.clone());
         self.shown.extend(question.text.iter().cloned());
         self.answers
             .pop_front()
-            .unwrap_or_else(|| Reply::Stop(format!("no answer for `{}`", question.kind)))
+            .unwrap_or_else(|| Reply::Stop(format!("no answer for `{}`", question.kind.name())))
     }
     fn view(&mut self, _at: Position) {}
     fn diff(&mut self) {}
@@ -279,6 +281,13 @@ fn a_crash_between_two_writes_is_unknown_and_restore_completes_it() {
         ui.shown
     );
     assert_eq!(ui.asked, ["unknown", "session"]);
+    let QuestionKind::Unknown { step, .. } = &ui.kinds[0] else {
+        panic!("{:?}", ui.kinds);
+    };
+    assert_eq!(
+        (step.task.as_str(), step.step, step.action),
+        ("P1-T1", 0, 0)
+    );
     let all = records(&f);
     assert_eq!(count(&all, "step-restored"), 1);
     assert_done(&f);
