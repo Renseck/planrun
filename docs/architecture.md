@@ -27,8 +27,8 @@ In this order, and they decide every trade-off (D25):
 
 ```
                        ┌───────────────────────────────────────────────┐
-                       │ planrun-cli   check · show · run · resume     │
-                       │               Ui (prompts), policy approval   │
+                       │ planrun-cli   check · show · run · resume ·   │
+                       │               tui · Ui (prompts)  planrun-tui │
                        └───────────────┬───────────────────┬───────────┘
                                        │                   │
               ┌────────────────────────▼──────┐   ┌────────▼──────────────────────────────┐
@@ -46,13 +46,15 @@ In this order, and they decide every trade-off (D25):
                                └───────────────────────────────────┘
 ```
 
-Four crates. The dependency arrows are the architecture (D2):
+Four crates, and the TUI's. The dependency arrows are the architecture (D2):
 
 - `planrun-model` depends on nothing of ours. It is the contract.
 - `planrun-parse` depends on the model only. It cannot execute: it has no process, git or write
   code, and the compiler enforces that.
 - `planrun-exec` depends on the model only. It cannot be tempted to re-parse Markdown.
 - `planrun-cli` composes them.
+- `planrun-tui` (D84, D92) is a second front end over the same three, composed by planrun-cli as
+  `planrun tui`; ratatui, crossterm and unicode-width are its dependencies only.
 
 Rust has no inheritance. "Inheritance and composition" here means: **traits** define each
 extension point (with default methods where a shared behaviour exists), **composition** builds
@@ -470,6 +472,36 @@ Step 2 — verify
 
 [enter] run   [s] skip   [v] view action   [d] diff so far   [o] open shell   [q] quit
 ```
+
+### 7.1 The TUI
+
+`planrun tui [<plans-dir>]` (docs/tui-design.md, D84–D94) runs from the repository of the current
+directory and needs a terminal on stdin and stdout (exit 2 otherwise). Its parts:
+
+- **`app::App`** holds all of its state and never blocks: a key or a message changes it and
+  returns `Effect`s (a background job, the runner's start, the `[o]` shell, `end_now`, quit);
+  drawing reads it and changes nothing.
+- **`driver::Core`** is the loop over any ratatui backend: keys, ticks, the channel's messages,
+  the effects. `terminal::run` gives it crossterm and the real shell; the tests a `TestBackend`
+  and scripted keys (D93). One loop polls keys and drains the channel; there is no input thread,
+  which would read the `[o]` shell's keys (D94). `terminal::run` installs the interrupt handling
+  once, before the terminal is set up, and replaces ratatui's panic hook: only a panic on the
+  render thread restores the terminal; another thread's is caught by that thread and comes back
+  as its work's failure (D94).
+- **Background jobs** (`jobs::Job`, one thread each): the plans directory's scan and each plan's
+  check with its journal's state, `lock.live`, `update --check` (planrun-cli hands it in), the
+  dry run, the diffs for CHANGES and `[d]`, the journal scan for History, and the resume
+  preview. Each result carries its input's fingerprint and is one of five states (`jobs::Bg`).
+- **The runner** runs on its worker thread (`worker`, D90): its `Ui` sends `status` and `output`
+  and makes `ask`, `view`, `diff` and `shell` blocking round trips to the render thread; a
+  journal observer built on that thread forwards every record. The plan view's Run mode
+  (`run::Run`) is filled from those records alone, the console from `output` and `status`.
+- **Views:** Plans (`plans`), the plan view in Inspect (`inspect`, from the dry run and the
+  assumed policy) and in Run (`run`), the dock (`dock`, one layout per `QuestionKind`), History
+  (`history`), the resume preview (`preview`), the palette (`palette`) and help (`help`). The
+  shared pieces: `theme` (the colour tokens), `glyph` (the glyphs and their ASCII fallbacks),
+  `draw` (the pen, chips, bands), `chrome` (header, footer, the size gate), `tree` (the
+  navigator), `diff` (unified diffs as rows) and `grid` (the cell grid as text, for snapshots).
 
 ## 8. Error reporting
 

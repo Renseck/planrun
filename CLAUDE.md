@@ -26,8 +26,12 @@ crates/planrun-exec    IR → effects: git, workspace, eol, tree, handler, trans
                        done, ui, runner/ (tasks, scripts, sessions, gate, resume) (P5);
                        lock.live, runner/preview (P6b)
 crates/planrun-cli     the `planrun` binary: check, show (view, render), run (dry_run, run,
-                       ui: line prompts), resume, status, update (P6a, D83); the `e2e` test
-                       feature (e2e.rs)
+                       ui: line prompts), resume, status, update (P6a, D83), tui; the `e2e`
+                       test feature (e2e.rs)
+crates/planrun-tui     the TUI (P6c, docs/tui-design.md): app, driver, terminal, jobs,
+                       worker (the runner's thread and its Ui); views plans, inspect, run,
+                       dock, history, preview, palette, help; theme, glyph, draw, chrome,
+                       tree, diff, grid (snapshots); README.md: the manual check list
 formats/*.toml         built-in plan formats (embedded): assay, superpowers, before-after; the
                        file name is the format id
 docs/                  architecture, plan-grammar, extending, decisions, roadmap,

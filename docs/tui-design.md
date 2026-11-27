@@ -1,9 +1,9 @@
 # planrun TUI — Design
 
-Status: adopted (r4). Its decisions are D84–D94 in docs/decisions.md; the changes outside
-planrun-tui (§9) are P6b, the TUI itself P6c (docs/roadmap.md). Mockups: the "Planrun TUI —
-Design" canvas (https://claude.ai/artifact/2nYJNnJv2YeMu6VpVxmbij). Every artboard is a real cell
-grid (120 × 36, or 80 × 24).
+Status: adopted (r4), built in P6c. Its decisions are D84–D94 in docs/decisions.md; the changes
+outside planrun-tui (§9) are P6b, the TUI itself P6c (docs/roadmap.md). Mockups: the "Planrun
+TUI — Design" canvas (https://claude.ai/artifact/2nYJNnJv2YeMu6VpVxmbij). Every artboard is a
+real cell grid (120 × 36, or 80 × 24).
 
 The TUI is a front end over the existing crates. It shows the domain model and adds no model of
 its own. Resume, policy and preflight stay authoritative: the TUI explains and asks; it never
