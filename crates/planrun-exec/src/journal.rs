@@ -324,7 +324,7 @@ pub fn read(path: &Path) -> Result<Vec<Line>, JournalError> {
 
 /// What a journal observer sees: a record that is now with the OS (and synced, when durable),
 /// or the number of paths a step's commit has written so far.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Seam<'a> {
     /// A record was appended.
     Appended(&'a Record),
@@ -332,14 +332,15 @@ pub enum Seam<'a> {
     Wrote(usize),
 }
 
-/// A callback that sees every [`Seam`]: planrun-cli's fault seam for its e2e tests (D82).
+/// A callback that sees every [`Seam`]: planrun-cli's fault seam for its e2e tests (D82), and
+/// the TUI's view of a live run (D90).
 pub type Observer = Box<dyn FnMut(Seam<'_>)>;
 
 /// The appending writer.
 pub struct Journal {
     file: File,
     path: PathBuf,
-    observer: Option<Observer>,
+    observers: Vec<Observer>,
 }
 
 impl Journal {
@@ -366,17 +367,18 @@ impl Journal {
         Ok(Journal {
             file,
             path: path.to_path_buf(),
-            observer: None,
+            observers: Vec::new(),
         })
     }
 
-    /// Calls `observer` after every append and every write of a step's commit.
+    /// Adds `observer`: it is called after every append and every write of a step's commit,
+    /// after the observers added before it.
     pub fn observe(&mut self, observer: Observer) {
-        self.observer = Some(observer);
+        self.observers.push(observer);
     }
 
     fn seam(&mut self, seam: Seam<'_>) {
-        if let Some(observer) = self.observer.as_mut() {
+        for observer in &mut self.observers {
             observer(seam);
         }
     }

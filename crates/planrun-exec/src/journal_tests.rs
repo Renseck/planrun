@@ -158,3 +158,38 @@ fn the_observer_sees_appends_and_writes() {
     assert_eq!(*seen.borrow(), ["TaskStart", "wrote 2"]);
     let _ = fs::remove_dir_all(dir);
 }
+
+#[test]
+fn every_observer_sees_every_seam_in_the_order_they_were_added() {
+    let dir = temp_dir("observers");
+    let mut j = Journal::open(&path_for(&dir, "plan")).unwrap_or_else(|e| panic!("{e}"));
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    for name in ["first", "second"] {
+        let log = seen.clone();
+        j.observe(Box::new(move |seam| {
+            let what = match seam {
+                Seam::Appended(_) => "appended".to_owned(),
+                Seam::Wrote(n) => format!("wrote {n}"),
+            };
+            log.borrow_mut().push(format!("{name}: {what}"));
+        }));
+    }
+    j.append(task_start("P1-T1"))
+        .unwrap_or_else(|e| panic!("{e}"));
+    let at = At {
+        task: "P1-T1".to_owned(),
+        step: 0,
+        action: 0,
+    };
+    j.ahead(&at).after_write(1);
+    assert_eq!(
+        *seen.borrow(),
+        [
+            "first: appended",
+            "second: appended",
+            "first: wrote 1",
+            "second: wrote 1"
+        ]
+    );
+    let _ = fs::remove_dir_all(dir);
+}
