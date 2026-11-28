@@ -1,0 +1,9 @@
+---
+source: crates/planrun-cli/tests/cli.rs
+expression: out
+---
+docs/plans/2026-01-01-p1-greet.md               assay, 2 tasks  not run
+docs/plans/2026-01-02-p2-broken.md              1 error (planrun check docs/plans/2026-01-02-p2-broken.md)
+docs/plans/README.md                            not a plan
+tools/superpowers/plans/2026-01-03-p3-tools.md  assay, 2 tasks  not run
+planrun: 3 plans and 1 other file from the default globs

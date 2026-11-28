@@ -5,6 +5,7 @@
 mod dry_run;
 #[cfg(feature = "e2e")]
 mod e2e;
+mod list;
 mod render;
 mod run;
 mod ui;
@@ -104,6 +105,9 @@ enum Command {
         #[arg(long)]
         format: Option<String>,
     },
+    /// The plan files of the current directory's repository, with their formats and journals
+    /// (D96, D97). Changes nothing.
+    List,
     /// The TUI over the repository of the current directory (docs/tui-design.md, D84–D94).
     Tui {
         /// The directory of plan files; `docs/plans` under the repository's root when not
@@ -185,6 +189,10 @@ fn main() -> ExitCode {
                 run::status(file, p, out)
             })
         }
+        Command::List => match setup(&mut out) {
+            Ok(setup) => list::list(&setup, &mut out),
+            Err(code) => code,
+        },
         Command::Update { check } => update::run(*check, &mut out),
         Command::Tui { plans_dir } => tui(plans_dir.clone(), &mut out),
     };
@@ -241,14 +249,16 @@ enum Loaded {
 }
 
 /// What discovery found from the current directory (D96), and the registry built from it.
-struct Setup {
-    discovery: Discovery,
-    registry: Registry,
+pub(crate) struct Setup {
+    /// What discovery found.
+    pub(crate) discovery: Discovery,
+    /// The built-in formats with the discovered ones on top (D95).
+    pub(crate) registry: Registry,
 }
 
 /// Discovers from the current directory and layers the formats found over the built-ins; a
 /// problem is a usage problem (exit code 2).
-fn setup(out: &mut String) -> Result<Setup, u8> {
+pub(crate) fn setup(out: &mut String) -> Result<Setup, u8> {
     let here = match std::env::current_dir() {
         Ok(dir) => dir,
         Err(e) => {

@@ -163,3 +163,21 @@ fn a_plan_is_found_by_a_part_of_its_name() {
     assert_eq!(code, 2, "{out}");
     assert!(out.contains("error[plan-not-found]"), "{out}");
 }
+
+#[test]
+fn list_shows_each_discovered_file_with_its_format_and_journal() {
+    let f = Fixture::greeter(false);
+    let plan = std::fs::read(root().join(SYNTHETIC)).unwrap_or_else(|e| panic!("{e}"));
+    let broken = std::fs::read(root().join("tests/corpus/invalid/task-order.md"))
+        .unwrap_or_else(|e| panic!("{e}"));
+    f.write("docs/plans/2026-01-01-p1-greet.md", &plan);
+    f.write("docs/plans/2026-01-02-p2-broken.md", &broken);
+    f.write("docs/plans/README.md", b"# Plans\n");
+    f.write("tools/superpowers/plans/2026-01-03-p3-tools.md", &plan);
+    let (code, out) = planrun_in(f.path(), &["list"]);
+    assert_eq!(code, 1, "{out}");
+    insta::assert_snapshot!("list_fixture", out);
+    let (code, out) = planrun_in(&f.outside(), &["list"]);
+    assert_eq!(code, 2, "{out}");
+    assert!(out.contains("error[not-a-repository]"), "{out}");
+}
