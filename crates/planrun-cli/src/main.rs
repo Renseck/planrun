@@ -34,7 +34,7 @@ struct Cli {
 enum Command {
     /// Parse and check a plan; print diagnostics and the coverage report. Writes nothing.
     Check {
-        /// The plan file.
+        /// The plan file, or a name the discovered plans' file names contain (D97).
         plan: PathBuf,
         /// Force a format id instead of detecting one.
         #[arg(long)]
@@ -42,7 +42,7 @@ enum Command {
     },
     /// Print the typed plan, or one task (`P1-T2`) or step (`P1-T2/1`, `P1-T2/intro`).
     Show {
-        /// The plan file.
+        /// The plan file, or a name the discovered plans' file names contain (D97).
         plan: PathBuf,
         /// A task or task/step.
         target: Option<String>,
@@ -52,7 +52,7 @@ enum Command {
     },
     /// Execute a plan in the git repository of the current directory, task by task.
     Run {
-        /// The plan file.
+        /// The plan file, or a name the discovered plans' file names contain (D97).
         plan: PathBuf,
         /// Parse, check and validate against a virtual tree; change nothing, run nothing.
         #[arg(long)]
@@ -78,7 +78,7 @@ enum Command {
     },
     /// Go on with the plan's interrupted or stopped run (D14).
     Resume {
-        /// The plan file.
+        /// The plan file, or a name the discovered plans' file names contain (D97).
         plan: PathBuf,
         /// Force a format id.
         #[arg(long)]
@@ -98,7 +98,7 @@ enum Command {
     },
     /// What the plan's journal says: the tasks done, the one interrupted. Changes nothing.
     Status {
-        /// The plan file.
+        /// The plan file, or a name the discovered plans' file names contain (D97).
         plan: PathBuf,
         /// Force a format id.
         #[arg(long)]
@@ -157,8 +157,8 @@ fn main() -> ExitCode {
                 to: to.clone(),
                 restart: *restart,
             };
-            with_plan(plan, format.as_deref(), &mut out, |p, out| {
-                run::run(plan, p, &opts, out)
+            with_plan(plan, format.as_deref(), &mut out, |file, p, out| {
+                run::run(file, p, &opts, out)
             })
         }
         Command::Resume {
@@ -176,13 +176,13 @@ fn main() -> ExitCode {
                 to: to.clone(),
                 restart: false,
             };
-            with_plan(plan, format.as_deref(), &mut out, |p, out| {
-                run::resume(plan, p, &opts, out)
+            with_plan(plan, format.as_deref(), &mut out, |file, p, out| {
+                run::resume(file, p, &opts, out)
             })
         }
         Command::Status { plan, format } => {
-            with_plan(plan, format.as_deref(), &mut out, |p, out| {
-                run::status(plan, p, out)
+            with_plan(plan, format.as_deref(), &mut out, |file, p, out| {
+                run::status(file, p, out)
             })
         }
         Command::Update { check } => update::run(*check, &mut out),
@@ -225,18 +225,18 @@ fn with_plan(
     path: &Path,
     format: Option<&str>,
     out: &mut String,
-    f: impl FnOnce(&planrun_model::Plan, &mut String) -> u8,
+    f: impl FnOnce(&Path, &planrun_model::Plan, &mut String) -> u8,
 ) -> u8 {
     match load(path, format, out) {
-        Loaded::Parsed(parsed, _) => f(&parsed.plan, out),
+        Loaded::Parsed(parsed, _, file) => f(&file, &parsed.plan, out),
         Loaded::Failed(code) => code,
     }
 }
 
-/// A plan read and parsed with its format's description (D95), or the exit code when it was
-/// not.
+/// A plan read and parsed, with its format's description (D95) and the file it was read from
+/// (D97), or the exit code when it was not.
 enum Loaded {
-    Parsed(Box<Parsed>, String),
+    Parsed(Box<Parsed>, String, PathBuf),
     Failed(u8),
 }
 
@@ -284,8 +284,18 @@ fn load(path: &Path, format: Option<&str>, out: &mut String) -> Loaded {
         Ok(setup) => setup,
         Err(code) => return Loaded::Failed(code),
     };
-    let name = path.display().to_string();
-    let bytes = match std::fs::read(path) {
+    let resolved = match setup.discovery.resolve(path, &[]) {
+        Ok(resolved) => resolved,
+        Err(e) => {
+            out.push_str(&format!("planrun: error[{}]: {e}\n", e.code()));
+            return Loaded::Failed(USAGE);
+        }
+    };
+    if resolved.by_name {
+        eprintln!("planrun: `{}` is {}", path.display(), resolved.shown);
+    }
+    let name = resolved.shown.clone();
+    let bytes = match std::fs::read(&resolved.path) {
         Ok(bytes) => bytes,
         Err(e) => {
             out.push_str(&format!("planrun: {name}: {e}\n"));
@@ -299,7 +309,7 @@ fn load(path: &Path, format: Option<&str>, out: &mut String) -> Loaded {
                 .registry
                 .origin(&id)
                 .map_or_else(|| id.clone(), |o| o.describe(&id, setup.discovery.root()));
-            Loaded::Parsed(Box::new(parsed), label)
+            Loaded::Parsed(Box::new(parsed), label, resolved.path)
         }
         Err(diagnostics) => {
             failed(&name, &bytes, &diagnostics, out);
@@ -321,7 +331,7 @@ fn failed(name: &str, bytes: &[u8], diagnostics: &Diagnostics, out: &mut String)
 
 fn check(path: &Path, format: Option<&str>, out: &mut String) -> u8 {
     let (parsed, label) = match load(path, format, out) {
-        Loaded::Parsed(parsed, label) => (parsed, label),
+        Loaded::Parsed(parsed, label, _) => (parsed, label),
         Loaded::Failed(code) => return code,
     };
     let plan = &parsed.plan;
@@ -337,7 +347,7 @@ fn check(path: &Path, format: Option<&str>, out: &mut String) -> u8 {
 
 fn show(path: &Path, target: Option<&str>, format: Option<&str>, out: &mut String) -> u8 {
     let (parsed, label) = match load(path, format, out) {
-        Loaded::Parsed(parsed, label) => (parsed, label),
+        Loaded::Parsed(parsed, label, _) => (parsed, label),
         Loaded::Failed(code) => return code,
     };
     let viewer = Viewer::new(&parsed.plan);
@@ -376,7 +386,7 @@ fn show(path: &Path, target: Option<&str>, format: Option<&str>, out: &mut Strin
 /// repository cannot be used.
 fn run_dry(path: &Path, format: Option<&str>, out: &mut String) -> u8 {
     let parsed = match load(path, format, out) {
-        Loaded::Parsed(parsed, _) => parsed,
+        Loaded::Parsed(parsed, ..) => parsed,
         Loaded::Failed(code) => return code,
     };
     let plan = &parsed.plan;

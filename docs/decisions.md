@@ -1483,3 +1483,17 @@ Amends D41 and D9. Decided in the P7 brainstorm (docs/superpowers/specs/2026-11-
   segments (`PathPattern::discovery_glob`). `**` inside a segment is refused. Manifest globs keep
   refusing `**`, so no plan changes meaning.
 - **`toml` in planrun-exec**, for the config file: a crate the workspace has already (D9).
+
+## D97 Plans by name
+
+Amends D94. Decided in the P7 brainstorm (docs/superpowers/specs/2026-11-28-discovery-design.md).
+
+- **`check`, `show`, `run`, `resume` and `status` take a path or a name.** An argument with a
+  directory part, one that ends in `.md`, or one that names an existing file is a path, used as
+  given; a missing file is the usual I/O error, never a name lookup.
+- **Otherwise it is a name:** the discovered plans (D96) whose file stem contains it, compared
+  without case. One is the plan, and planrun says which on stderr (`` planrun: `p6a` is
+  docs/plans/…md ``) before anything else; none is `plan-not-found`, several are
+  `plan-ambiguous`, which lists them. Both exit with code 2. A file no format detects counts as
+  a candidate too: it can make a name ambiguous, never make it find the wrong plan.
+- **Messages name the plan** by its repository-relative path when a name found it.

@@ -1,13 +1,17 @@
 //! Discovery (D96): what the repository of the current directory and the user's config directory
 //! hold for planrun. Format specs (`.planrun/formats/*.toml`, `<user>/formats/*.toml`) and the
-//! repository's `.planrun/config.toml` are read when a [`Discovery`] opens; nothing here writes,
-//! and nothing here parses a plan (D2): the spec texts go to planrun-parse's registry.
+//! repository's `.planrun/config.toml` are read when a [`Discovery`] opens; the plan files the
+//! globs match are listed on request with one `git ls-files` ([`Discovery::plans`]), and a plan
+//! named on the command line is found among them ([`Discovery::resolve`], D97). Nothing here
+//! writes, and nothing here parses a plan (D2): the spec texts go to planrun-parse's registry.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use planrun_model::{FormatSource, PathPattern, PatternError};
+use planrun_model::{FormatSource, PathPattern, PatternError, RepoPath};
 use serde::Deserialize;
+
+use crate::git::{Git, GitError};
 
 /// The plan globs when `.planrun/config.toml` names none (D96).
 pub const DEFAULT_GLOBS: [&str; 3] = [
@@ -45,6 +49,7 @@ pub struct Config {
 /// What the repository and the user's config directory hold for planrun.
 #[derive(Debug, Clone)]
 pub struct Discovery {
+    cwd: PathBuf,
     root: Option<PathBuf>,
     config: Config,
     formats: Vec<FoundSpec>,
@@ -95,6 +100,33 @@ pub enum DiscoveryError {
     /// `plans.globs` is empty.
     #[error("{0}: plans.globs is empty; leave it out for the defaults")]
     ConfigGlobsEmpty(PathBuf),
+    /// `git ls-files` failed.
+    #[error("listing the plan files: {0}")]
+    Git(GitError),
+    /// No discovered plan has the name in its file stem.
+    #[error("no plan file the globs find has `{0}` in its name; give its path instead")]
+    PlanNotFound(String),
+    /// Several do.
+    #[error("`{name}` names {} plan files: {}; give more of the name, or the path",
+        .candidates.len(), .candidates.join(", "))]
+    PlanAmbiguous {
+        /// The name as given.
+        name: String,
+        /// The plans it names, repository-relative.
+        candidates: Vec<String>,
+    },
+}
+
+/// A plan argument, resolved (D97).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resolved {
+    /// The file to read.
+    pub path: PathBuf,
+    /// How to name it in messages: the argument as given, or the repository-relative path of
+    /// the plan a name found.
+    pub shown: String,
+    /// Whether the argument was a name.
+    pub by_name: bool,
 }
 
 impl DiscoveryError {
@@ -108,6 +140,9 @@ impl DiscoveryError {
             DiscoveryError::ConfigParse { .. } => "config-parse",
             DiscoveryError::ConfigGlob { .. } => "config-glob",
             DiscoveryError::ConfigGlobsEmpty(_) => "config-globs-empty",
+            DiscoveryError::Git(_) => "git-ls-files",
+            DiscoveryError::PlanNotFound(_) => "plan-not-found",
+            DiscoveryError::PlanAmbiguous { .. } => "plan-ambiguous",
         }
     }
 }
@@ -129,6 +164,7 @@ impl Default for Discovery {
     /// No repository, no user directory: the default globs and no formats.
     fn default() -> Self {
         Self {
+            cwd: PathBuf::new(),
             root: None,
             config: default_config(),
             formats: Vec::new(),
@@ -157,6 +193,7 @@ impl Discovery {
             None => default_config(),
         };
         Ok(Self {
+            cwd: cwd.to_path_buf(),
             root,
             config,
             formats,
@@ -178,6 +215,87 @@ impl Discovery {
     pub fn formats(&self) -> &[FoundSpec] {
         &self.formats
     }
+
+    /// The plan files: the repository's tracked and untracked files that are not ignored
+    /// (`git ls-files -z --cached --others --exclude-standard`, git with `env` added), those a
+    /// glob matches, without a file that is missing (deleted but still in the index) or a
+    /// symbolic link. Sorted by path, each once. No format detection: that is the caller's.
+    pub fn plans(&self, env: &[(OsString, OsString)]) -> Result<Vec<RepoPath>, DiscoveryError> {
+        let root = self.repository()?;
+        let git = Git::new(root, env.to_vec());
+        let args = [
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ];
+        let out = git.run(&args, None, &[]).map_err(DiscoveryError::Git)?;
+        let listed = String::from_utf8_lossy(&out);
+        let mut plans: Vec<RepoPath> = listed
+            .split('\0')
+            .filter(|f| !f.is_empty())
+            .filter_map(|f| RepoPath::new(f).ok())
+            .filter(|p| self.config.globs.iter().any(|g| g.matches(p)))
+            .filter(|p| std::fs::symlink_metadata(root.join(p.as_str())).is_ok_and(|m| m.is_file()))
+            .collect();
+        plans.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        plans.dedup();
+        Ok(plans)
+    }
+
+    /// A plan argument (D97): a path when it has a directory part, ends in `.md` or names a
+    /// file that exists; otherwise a name, matched case-insensitively against the file stems of
+    /// [`Discovery::plans`]. One match is the plan; none is `plan-not-found`, several are
+    /// `plan-ambiguous`.
+    pub fn resolve(
+        &self,
+        arg: &Path,
+        env: &[(OsString, OsString)],
+    ) -> Result<Resolved, DiscoveryError> {
+        let is_path = arg.components().count() != 1
+            || arg.extension().is_some_and(|x| x == "md")
+            || arg.exists();
+        if is_path {
+            return Ok(Resolved {
+                path: arg.to_path_buf(),
+                shown: arg.display().to_string(),
+                by_name: false,
+            });
+        }
+        let name = arg.to_string_lossy().into_owned();
+        let needle = name.to_lowercase();
+        let found: Vec<RepoPath> = self
+            .plans(env)?
+            .into_iter()
+            .filter(|p| stem(p).to_lowercase().contains(&needle))
+            .collect();
+        match found.as_slice() {
+            [] => Err(DiscoveryError::PlanNotFound(name)),
+            [one] => Ok(Resolved {
+                path: self.repository()?.join(one.as_str()),
+                shown: one.as_str().to_owned(),
+                by_name: true,
+            }),
+            many => Err(DiscoveryError::PlanAmbiguous {
+                name,
+                candidates: many.iter().map(|p| p.as_str().to_owned()).collect(),
+            }),
+        }
+    }
+
+    /// The root, or `not-a-repository`.
+    fn repository(&self) -> Result<&Path, DiscoveryError> {
+        self.root
+            .as_deref()
+            .ok_or_else(|| DiscoveryError::NotARepository(self.cwd.clone()))
+    }
+}
+
+/// A plan file's stem: its file name without `.md`.
+fn stem(path: &RepoPath) -> &str {
+    let name = path.file_name();
+    name.strip_suffix(".md").unwrap_or(name)
 }
 
 /// The user's config directory (D96): `PLANRUN_CONFIG_DIR` when set; else `%APPDATA%\planrun` on

@@ -136,3 +136,30 @@ fn a_spec_or_config_that_cannot_be_used_stops_with_2() {
     assert_eq!(code, 2, "{out}");
     assert!(out.contains("error[config-globs-empty]"), "{out}");
 }
+
+#[test]
+fn a_plan_is_found_by_a_part_of_its_name() {
+    let f = Fixture::greeter(false);
+    let plan = std::fs::read(root().join(SYNTHETIC)).unwrap_or_else(|e| panic!("{e}"));
+    f.write("docs/plans/2026-01-01-p1-greet.md", &plan);
+    f.write("docs/plans/2026-01-02-p1-other.md", b"# Not a plan\n");
+    let (code, out) = planrun_in(f.path(), &["check", "GREET"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("planrun: `GREET` is docs/plans/2026-01-01-p1-greet.md\n"),
+        "{out}"
+    );
+    assert!(
+        out.contains("planrun: docs/plans/2026-01-01-p1-greet.md: ok (assay, 2 tasks)\n"),
+        "{out}"
+    );
+    let (code, out) = planrun_in(f.path(), &["status", "p1"]);
+    assert_eq!(code, 2, "{out}");
+    assert!(
+        out.contains("error[plan-ambiguous]: `p1` names 2 plan files"),
+        "{out}"
+    );
+    let (code, out) = planrun_in(f.path(), &["show", "farewell"]);
+    assert_eq!(code, 2, "{out}");
+    assert!(out.contains("error[plan-not-found]"), "{out}");
+}

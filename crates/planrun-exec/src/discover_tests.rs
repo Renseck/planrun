@@ -155,3 +155,109 @@ fn the_user_directory_comes_from_the_environment() {
         assert_eq!(user_dir_from(var, windows), expected.map(PathBuf::from), "{vars:?}");
     }
 }
+
+/// The greeter fixture with plan files tracked, untracked, ignored, deleted and elsewhere.
+fn with_plans() -> Fixture {
+    let f = Fixture::greeter(false);
+    f.write(".gitignore", b"local/\n");
+    f.write("docs/plans/2026-01-01-p1-greet.md", b"# P1\n");
+    f.write("docs/plans/gone.md", b"# gone\n");
+    f.git(&["add", "-A"]);
+    f.git(&["commit", "-q", "-m", "plans"]);
+    std::fs::remove_file(f.path().join("docs/plans/gone.md")).unwrap_or_else(|e| panic!("{e}"));
+    f.write("docs/plans/2026-01-02-p2-farewell.md", b"# P2\n");
+    f.write("docs/plans/README.md", b"# Plans\n");
+    f.write("docs/plans/old/2025-p0.md", b"# P0\n");
+    f.write("tools/superpowers/x/plans/2026-01-03-p1-tools.md", b"# T\n");
+    f.write("local/plans/2026-01-04-private.md", b"# private\n");
+    f.write("src/notes.md", b"# notes\n");
+    f
+}
+
+#[test]
+fn plans_are_the_listed_files_a_glob_matches() {
+    let f = with_plans();
+    let found = open(f.path(), None);
+    let plans = found.plans(&f.env()).unwrap_or_else(|e| panic!("{e}"));
+    let paths: Vec<&str> = plans.iter().map(RepoPath::as_str).collect();
+    assert_eq!(
+        paths,
+        [
+            "docs/plans/2026-01-01-p1-greet.md",
+            "docs/plans/2026-01-02-p2-farewell.md",
+            "docs/plans/README.md",
+            "tools/superpowers/x/plans/2026-01-03-p1-tools.md",
+        ]
+    );
+    f.write(CONFIG_FILE, b"[plans]\nglobs = [\"docs/plans/**/*.md\"]\n");
+    let narrowed = open(f.path(), None)
+        .plans(&f.env())
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(narrowed.len(), 4);
+    assert!(
+        narrowed
+            .iter()
+            .any(|p| p.as_str() == "docs/plans/old/2025-p0.md")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symbolic_link_is_no_plan() {
+    let f = with_plans();
+    std::os::unix::fs::symlink(
+        f.path().join("docs/plans/2026-01-01-p1-greet.md"),
+        f.path().join("docs/plans/link.md"),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    let plans = open(f.path(), None)
+        .plans(&f.env())
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert!(plans.iter().all(|p| p.as_str() != "docs/plans/link.md"));
+}
+
+#[test]
+fn a_name_finds_one_plan_by_its_stem() {
+    let f = with_plans();
+    let found = open(f.path(), None);
+    let resolve = |arg: &str| found.resolve(Path::new(arg), &f.env());
+    let one = resolve("FAREWELL").unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(one.shown, "docs/plans/2026-01-02-p2-farewell.md");
+    assert!(one.by_name);
+    assert_eq!(
+        canonical(&one.path),
+        canonical(&f.path().join("docs/plans/2026-01-02-p2-farewell.md"))
+    );
+    let code = |arg: &str| resolve(arg).err().map(|e| e.code());
+    assert_eq!(code("p1"), Some("plan-ambiguous"));
+    assert_eq!(code("private"), Some("plan-not-found"));
+    assert_eq!(code("gone"), Some("plan-not-found"));
+    let message = resolve("p1").err().map(|e| e.to_string());
+    assert_eq!(
+        message.as_deref(),
+        Some(
+            "`p1` names 2 plan files: docs/plans/2026-01-01-p1-greet.md, \
+             tools/superpowers/x/plans/2026-01-03-p1-tools.md; give more of the name, or the path"
+        )
+    );
+}
+
+#[test]
+fn a_path_is_used_as_given() {
+    let f = with_plans();
+    let found = open(f.path(), None);
+    for arg in ["p1.md", "docs/p1", "../elsewhere/plan.txt"] {
+        let resolved = found
+            .resolve(Path::new(arg), &f.env())
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(resolved.path, PathBuf::from(arg));
+        assert!(!resolved.by_name);
+    }
+}
+
+#[test]
+fn a_name_outside_a_repository_is_refused() {
+    let found = Discovery::default();
+    let refused = found.resolve(Path::new("p1"), &[]).err().map(|e| e.code());
+    assert_eq!(refused, Some("not-a-repository"));
+}
