@@ -1,6 +1,7 @@
 //! Identifiers: tasks, formats, recognizers, git blobs.
 
 use std::fmt;
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +24,18 @@ impl fmt::Display for TaskId {
 /// The id of a plan format (`assay`, `superpowers`, …): the `id` of its spec.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FormatId(pub Box<str>);
+
+/// Where a format's spec came from (D95): built into planrun, the user's config directory, or
+/// the repository's `.planrun/formats/`; the two files are paths as discovery found them.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum FormatSource {
+    /// `formats/*.toml`, embedded.
+    BuiltIn,
+    /// `<user config directory>/formats/<id>.toml`.
+    User(PathBuf),
+    /// `<repo>/.planrun/formats/<id>.toml`.
+    Repository(PathBuf),
+}
 
 /// The id of the recognizer instance that produced an action (`file-block#full-contents`), for
 /// `planrun show` and the coverage report.

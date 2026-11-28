@@ -27,7 +27,10 @@
 //! - [`runner`]: the state machine Task → Step → Action over the journal and the sessions,
 //!   talking to a [`Ui`] (D73–D81).
 //! - [`ui`]: the [`Ui`] trait and its questions (D15, D74).
+//! - [`discover`]: what the repository and the user's config directory hold for planrun: format
+//!   specs, the plan globs (P7, D96).
 
+pub mod discover;
 pub mod done;
 pub mod eol;
 pub mod expect;

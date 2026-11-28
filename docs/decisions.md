@@ -59,7 +59,7 @@ Each dependency is justified here; add none without a line.
 |---|---|
 | `pulldown-cmark` | CommonMark with byte offsets; correct nested-fence handling |
 | `regex` | spec patterns; linear time, no backtracking blow-ups |
-| `serde`, `toml` | format specs |
+| `serde`, `toml` | format specs; `.planrun/config.toml` (planrun-exec, D96) |
 | `serde_json` | the journal (JSONL); the release description `planrun update` reads (D83) |
 | `thiserror` | error types |
 | `sha1_smol` | git blob ids in-process: the `blob-chain` check from a created file's contents (planrun-parse only; planrun-exec asks `git hash-object`, D56) |
@@ -80,7 +80,7 @@ Rejected: `rusqlite` (D18), `tracing` for now (the journal is the record),
 
 Amended by D56 (no `sha1_smol` in planrun-exec), D64 (the hand-declared process-tree calls), D73
 (`ctrlc` rejected), D74 (`dialoguer` dropped), D83 (`serde_json` in planrun-cli; the update
-crates rejected) and D92 (the TUI's crates, in planrun-tui only).
+crates rejected), D92 (the TUI's crates, in planrun-tui only) and D96 (`toml` in planrun-exec).
 
 ## D10 Line endings of written files
 
@@ -350,6 +350,8 @@ entry whose target is a `PathPattern`, not a `RepoPath`: `ManifestEntry.path` is
 
 Handover P2a→P2b open item 1 proposed a `PathOrigin` for patterns; a target type of its own
 was chosen instead, so "no write targets a wildcard" is a property of the types.
+
+Amended by D96 (discovery globs, which allow `**`; manifest globs still refuse it).
 
 ## D42 RepoPath refuses wildcards
 
@@ -1437,3 +1439,29 @@ Amends D89.
   other thread (the runner's, a background job's) it leaves the terminal alone and prints
   nothing: the thread catches it, and its message comes back to the app as that work's failure
   (a run that ended with an error, a job in its failed state).
+
+## D96 Discovery: format specs and plan files
+
+Amends D41 and D9. Decided in the P7 brainstorm (docs/superpowers/specs/2026-11-28-discovery-design.md).
+
+- **One `Discovery` value in planrun-exec** (`discover`): it reads the user's and the
+  repository's format specs and the repository's `.planrun/config.toml` when it opens, starts no
+  process, and returns spec texts, never a `Format` (D2). Callers hand the texts to the registry.
+- **The root** is the nearest directory upwards from the current directory with a `.git` (a
+  directory, or a file for a worktree or submodule), as for `run` and the TUI (D88, D94).
+  Outside a repository there is no repository layer and no config file; that is not an error.
+- **Format directories:** `<root>/.planrun/formats/` and `<user>/formats/`, where `<user>` is
+  `PLANRUN_CONFIG_DIR` when set, else `%APPDATA%\planrun` on Windows and
+  `$XDG_CONFIG_HOME/planrun` or `$HOME/.config/planrun` elsewhere; no `dirs` crate. A missing
+  directory is empty. Only `*.toml` files are read, sorted by name; a stem that is not letters,
+  digits, `-` and `_` is `format-file-name`, a file that is not UTF-8 is `format-io`. A spec that
+  cannot be used stops the command (exit code 2) and names its file: never skipped, also not a
+  user-level one that every repository sees (D3).
+- **`.planrun/config.toml`** v1 has one key, `[plans] globs`, which replaces the default globs
+  `docs/plans/*.md`, `**/superpowers/**/plans/*.md` and `**/plans/*.md`. Unknown keys are
+  `config-parse`, a refused glob `config-glob`, `globs = []` `config-globs-empty`. A default
+  format for `--format` was left out: detection picks it, and `--format` covers the rest.
+- **Discovery globs** are D41 globs plus `**`, a whole path segment that matches zero or more
+  segments (`PathPattern::discovery_glob`). `**` inside a segment is refused. Manifest globs keep
+  refusing `**`, so no plan changes meaning.
+- **`toml` in planrun-exec**, for the config file: a crate the workspace has already (D9).

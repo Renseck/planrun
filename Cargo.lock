@@ -703,6 +703,7 @@ dependencies = [
  "serde_json",
  "similar 3.2.1",
  "thiserror",
+ "toml",
 ]
 
 [[package]]
