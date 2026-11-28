@@ -1,6 +1,7 @@
 //! Manifest patterns (decision D41): a glob or a range a plan writes in a Files list instead of
 //! one file. A pattern is never a write target: actions carry a [`RepoPath`], which refuses
 //! wildcards (D42), and a manifest entry is either a file or a pattern ([`ManifestPath`]).
+//! Discovery (D96) uses the same globs with `**` as well ([`PathPattern::discovery_glob`]).
 
 use std::fmt;
 
@@ -38,6 +39,9 @@ pub enum PatternError {
     /// `**`, which would cross directories.
     #[error("`{0}` uses `**`; a pattern matches within one directory level")]
     DoubleStar(String),
+    /// A discovery glob with `**` inside a segment (`a**`, `**b`).
+    #[error("`{0}` uses `**` inside a path segment; `**` must be a whole segment")]
+    DoubleStarSegment(String),
     /// `{` inside `{…}`, or an unbalanced brace.
     #[error("`{0}` has nested or unbalanced braces")]
     Braces(String),
@@ -58,6 +62,19 @@ impl PathPattern {
         if text.contains("**") {
             return Err(PatternError::DoubleStar(text.to_owned()));
         }
+        Self::compile(text)
+    }
+
+    /// A glob for discovering files (D96): [`PathPattern::glob`] plus `**`, a whole path
+    /// segment that matches zero or more segments (`a/**/b` matches `a/b` and `a/x/y/b`).
+    pub fn discovery_glob(text: &str) -> Result<Self, PatternError> {
+        if text.split('/').any(|s| s.contains("**") && s != "**") {
+            return Err(PatternError::DoubleStarSegment(text.to_owned()));
+        }
+        Self::compile(text)
+    }
+
+    fn compile(text: &str) -> Result<Self, PatternError> {
         let alternatives = expand_braces(text)?;
         for alternative in &alternatives {
             check_spelling(alternative)?;
@@ -197,13 +214,17 @@ fn expand_braces(text: &str) -> Result<Vec<String>, PatternError> {
         .collect())
 }
 
-/// `*` and `?` never match `/`.
+/// `*` and `?` never match `/`; `**` (a whole segment, only in discovery globs) matches zero or
+/// more segments.
 fn glob_match(pattern: &str, text: &str) -> bool {
     let (p, t): (Vec<char>, Vec<char>) = (pattern.chars().collect(), text.chars().collect());
     glob_chars(&p, &t)
 }
 
 fn glob_chars(p: &[char], t: &[char]) -> bool {
+    if let ['*', '*', rest @ ..] = p {
+        return double_star(rest, t);
+    }
     let Some((&first, rest)) = p.split_first() else {
         return t.is_empty();
     };
@@ -214,6 +235,18 @@ fn glob_chars(p: &[char], t: &[char]) -> bool {
         '?' => t.first().is_some_and(|&c| c != '/') && glob_chars(rest, &t[1..]),
         c => t.first() == Some(&c) && glob_chars(rest, &t[1..]),
     }
+}
+
+/// `**` at the end matches the rest; `**/` then `rest` matches `rest` at the start of `t` or
+/// after any `/` in it.
+fn double_star(rest: &[char], t: &[char]) -> bool {
+    let Some(after) = rest.strip_prefix(&['/']) else {
+        return rest.is_empty();
+    };
+    glob_chars(after, t)
+        || t.iter()
+            .enumerate()
+            .any(|(i, &c)| c == '/' && glob_chars(after, &t[i + 1..]))
 }
 
 fn in_range(start: &str, end: &str, name: &str) -> bool {
@@ -279,6 +312,48 @@ mod tests {
             Err(PatternError::Braces(_))
         ));
         assert!(PathPattern::glob("../*.rs").is_err());
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn discovery_globs_cross_directories_with_double_stars() {
+        let rows: &[(&str, &str, bool)] = &[
+            ("docs/plans/*.md",              "docs/plans/a.md",                      true),
+            ("docs/plans/*.md",              "docs/plans/old/a.md",                  false),
+            ("**/plans/*.md",                "plans/a.md",                           true),
+            ("**/plans/*.md",                "docs/plans/a.md",                      true),
+            ("**/plans/*.md",                "a/b/c/plans/a.md",                     true),
+            ("**/plans/*.md",                "docs/plans/old/a.md",                  false),
+            ("**/plans/*.md",                "docs/myplans/a.md",                    false),
+            ("**/superpowers/**/plans/*.md", "docs/superpowers/plans/a.md",          true),
+            ("**/superpowers/**/plans/*.md", "x/superpowers/y/z/plans/a.md",         true),
+            ("**/superpowers/**/plans/*.md", "superpowers/plans/a.md",               true),
+            ("**/superpowers/**/plans/*.md", "docs/plans/a.md",                      false),
+            ("work/**",                      "work/a/b.md",                          true),
+            ("work/**",                      "other/a.md",                           false),
+            ("{docs,work}/**/*.md",          "work/x/a.md",                          true),
+        ];
+        for &(pattern, file, expected) in rows {
+            let g = PathPattern::discovery_glob(pattern).unwrap_or_else(|e| panic!("{e}"));
+            assert_eq!(g.matches(&path(file)), expected, "{pattern} on {file}");
+        }
+    }
+
+    #[test]
+    fn a_double_star_is_a_whole_segment_and_only_for_discovery() {
+        assert!(matches!(
+            PathPattern::discovery_glob("a/b**/c.md"),
+            Err(PatternError::DoubleStarSegment(_))
+        ));
+        assert!(matches!(
+            PathPattern::discovery_glob("a/**c.md"),
+            Err(PatternError::DoubleStarSegment(_))
+        ));
+        assert!(PathPattern::discovery_glob("../**/*.md").is_err());
+        assert!(matches!(
+            PathPattern::glob("a/**/b.rs"),
+            Err(PatternError::DoubleStar(_))
+        ));
     }
 
     #[test]
