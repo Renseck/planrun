@@ -2,6 +2,7 @@
 
 use std::sync::mpsc::channel;
 
+use planrun_exec::discover::Discovery;
 use planrun_exec::ui::{Choice, Question, QuestionKind};
 use planrun_parse::{Registry, parse_plan};
 
@@ -20,6 +21,7 @@ fn app() -> App {
         plans_label: "plans".to_owned(),
         version: "0.1.0".to_owned(),
         env: Vec::new(),
+        discovery: Discovery::default(),
     };
     App::new(ctx, Glyphs::unicode(), Arc::new(|| 0), None)
 }

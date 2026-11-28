@@ -92,3 +92,79 @@ fn a_spec_is_validated_when_it_loads() {
         Some(RegistryError::DuplicateFormat("x".to_owned()))
     );
 }
+
+#[test]
+fn a_later_layer_replaces_a_format_whole_and_says_what_it_replaced() {
+    let user = FormatSource::User(PathBuf::from("/u/formats/assay.toml"));
+    let repo = FormatSource::Repository(PathBuf::from("/r/.planrun/formats/assay.toml"));
+    let extra = FormatSource::Repository(PathBuf::from("/r/.planrun/formats/mine.toml"));
+    let (by_user, by_repo, mine) = (
+        spec("assay", "^User$"),
+        spec("assay", "^Repo$"),
+        spec("mine", "^Mine$"),
+    );
+    let r = Registry::with_layers([
+        ("assay", by_user.as_str(), &user),
+        ("assay", by_repo.as_str(), &repo),
+        ("mine", mine.as_str(), &extra),
+    ])
+    .unwrap_or_else(|e| panic!("{e}"));
+    let builtins = Registry::with_builtins().unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(r.formats().len(), builtins.formats().len() + 1);
+    assert_eq!(selected(&r, "Repo\n", None), Ok("assay".to_owned()));
+    assert_eq!(selected(&r, "User\n", None), Err("no-format"));
+    assert_eq!(selected(&r, "### P1-T1: x\n", None), Err("no-format"));
+    assert_eq!(
+        r.origin("assay"),
+        Some(&Origin {
+            source: repo.clone(),
+            overrides: Some(user.clone()),
+        })
+    );
+    assert_eq!(r.origin("mine").map(|o| &o.overrides), Some(&None));
+    assert_eq!(
+        r.origin("superpowers").map(|o| &o.source),
+        Some(&FormatSource::BuiltIn)
+    );
+}
+
+#[test]
+fn an_origin_describes_its_file_and_what_it_overrides() {
+    let root = Path::new("/r");
+    let repo = FormatSource::Repository(PathBuf::from("/r/.planrun/formats/assay.toml"));
+    let user = FormatSource::User(PathBuf::from("/u/formats/assay.toml"));
+    let origin = |source: &FormatSource, overrides: Option<&FormatSource>| Origin {
+        source: source.clone(),
+        overrides: overrides.cloned(),
+    };
+    let builtin = FormatSource::BuiltIn;
+    assert_eq!(
+        origin(&builtin, None).describe("assay", Some(root)),
+        "assay"
+    );
+    assert_eq!(
+        origin(&repo, Some(&builtin)).describe("assay", Some(root)),
+        "assay (.planrun/formats/assay.toml, overrides built-in)"
+    );
+    assert_eq!(
+        origin(&repo, Some(&user)).describe("assay", Some(root)),
+        "assay (.planrun/formats/assay.toml, overrides /u/formats/assay.toml)"
+    );
+    assert_eq!(
+        origin(&user, None).describe("mine", None),
+        "mine (/u/formats/assay.toml)"
+    );
+}
+
+#[test]
+fn a_refused_layer_names_its_file() {
+    let source = FormatSource::Repository(PathBuf::from("/r/.planrun/formats/x.toml"));
+    let text = spec("y", "a");
+    let message = Registry::with_layers([("x", text.as_str(), &source)])
+        .err()
+        .map(|e| e.to_string());
+    assert_eq!(
+        message.as_deref(),
+        Some("/r/.planrun/formats/x.toml: format `x`: the id `y` is not the file name `x`")
+    );
+}

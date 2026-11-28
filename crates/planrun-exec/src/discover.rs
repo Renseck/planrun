@@ -125,6 +125,17 @@ struct PlansSection {
     globs: Vec<String>,
 }
 
+impl Default for Discovery {
+    /// No repository, no user directory: the default globs and no formats.
+    fn default() -> Self {
+        Self {
+            root: None,
+            config: default_config(),
+            formats: Vec::new(),
+        }
+    }
+}
+
 impl Discovery {
     /// Discovers from `cwd`: the repository root is the nearest directory upwards with a `.git`
     /// (a directory, or a file for a worktree or submodule). `user` is the user's config

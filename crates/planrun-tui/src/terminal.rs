@@ -14,6 +14,7 @@ use ratatui::crossterm::event::{self, Event};
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::{self, EnterAlternateScreen};
 
+use planrun_exec::discover::Discovery;
 use planrun_exec::shell::{InterruptsIgnored, install_interrupt_handler};
 use planrun_exec::workspace::Workspace;
 
@@ -43,13 +44,17 @@ pub struct Host {
 pub const DEFAULT_PLANS: &str = "docs/plans";
 
 /// Builds the context for the repository of `dir`.
+/// Discovery runs from `dir` with `user` as the user's config directory (D96); a spec that cannot
+/// be used stops the TUI before it starts.
 pub fn context(
     dir: &Path,
     plans: Option<&Path>,
+    user: Option<&Path>,
     version: &str,
     env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
 ) -> Result<Context, String> {
     let ws = Workspace::open(dir, env.clone()).map_err(|e| e.to_string())?;
+    let discovery = Discovery::open(dir, user).map_err(|e| format!("error[{}]: {e}", e.code()))?;
     let git_dir = ws.git().git_dir().map_err(|e| e.to_string())?;
     let root = ws.root().to_path_buf();
     let plans_dir = match plans {
@@ -76,7 +81,9 @@ pub fn context(
         plans_label,
         version: version.to_owned(),
         env,
+        discovery,
     })
+    .and_then(|ctx| ctx.registry().map(|_| ctx))
 }
 
 /// Runs the TUI until it quits. `Err` is the message for a usage problem: not a terminal, not a
@@ -88,7 +95,14 @@ pub fn run(host: Host) -> Result<(), String> {
                 .to_owned(),
         );
     }
-    let ctx = context(&host.dir, host.plans.as_deref(), &host.version, Vec::new())?;
+    let user = planrun_exec::discover::user_dir();
+    let ctx = context(
+        &host.dir,
+        host.plans.as_deref(),
+        user.as_deref(),
+        &host.version,
+        Vec::new(),
+    )?;
     let app = App::new(ctx, Glyphs::from_env(), system_clock(), host.update);
     install_interrupt_handler();
     let report = std::panic::take_hook();

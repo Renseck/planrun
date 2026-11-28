@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use planrun_exec::discover::{self, Discovery};
 use planrun_exec::preflight;
 use planrun_exec::workspace::Workspace;
 use planrun_parse::{Diagnostics, Parsed, Registry, parse_plan, source};
@@ -227,18 +228,62 @@ fn with_plan(
     f: impl FnOnce(&planrun_model::Plan, &mut String) -> u8,
 ) -> u8 {
     match load(path, format, out) {
-        Loaded::Parsed(parsed) => f(&parsed.plan, out),
+        Loaded::Parsed(parsed, _) => f(&parsed.plan, out),
         Loaded::Failed(code) => code,
     }
 }
 
-/// A plan read and parsed, or the exit code when it was not.
+/// A plan read and parsed with its format's description (D95), or the exit code when it was
+/// not.
 enum Loaded {
-    Parsed(Box<Parsed>),
+    Parsed(Box<Parsed>, String),
     Failed(u8),
 }
 
+/// What discovery found from the current directory (D96), and the registry built from it.
+struct Setup {
+    discovery: Discovery,
+    registry: Registry,
+}
+
+/// Discovers from the current directory and layers the formats found over the built-ins; a
+/// problem is a usage problem (exit code 2).
+fn setup(out: &mut String) -> Result<Setup, u8> {
+    let here = match std::env::current_dir() {
+        Ok(dir) => dir,
+        Err(e) => {
+            out.push_str(&format!("planrun: the current directory: {e}\n"));
+            return Err(USAGE);
+        }
+    };
+    let discovery = match Discovery::open(&here, discover::user_dir().as_deref()) {
+        Ok(discovery) => discovery,
+        Err(e) => {
+            out.push_str(&format!("planrun: error[{}]: {e}\n", e.code()));
+            return Err(USAGE);
+        }
+    };
+    let layers = discovery
+        .formats()
+        .iter()
+        .map(|s| (s.id.as_str(), s.text.as_str(), &s.source));
+    match Registry::with_layers(layers) {
+        Ok(registry) => Ok(Setup {
+            discovery,
+            registry,
+        }),
+        Err(e) => {
+            out.push_str(&format!("planrun: the formats: {e}\n"));
+            Err(USAGE)
+        }
+    }
+}
+
 fn load(path: &Path, format: Option<&str>, out: &mut String) -> Loaded {
+    let setup = match setup(out) {
+        Ok(setup) => setup,
+        Err(code) => return Loaded::Failed(code),
+    };
     let name = path.display().to_string();
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
@@ -247,15 +292,15 @@ fn load(path: &Path, format: Option<&str>, out: &mut String) -> Loaded {
             return Loaded::Failed(USAGE);
         }
     };
-    let registry = match Registry::with_builtins() {
-        Ok(registry) => registry,
-        Err(e) => {
-            out.push_str(&format!("planrun: the built-in formats: {e}\n"));
-            return Loaded::Failed(USAGE);
+    match parse_plan(&setup.registry, &name, &bytes, format) {
+        Ok(parsed) => {
+            let id = parsed.plan.format.0.to_string();
+            let label = setup
+                .registry
+                .origin(&id)
+                .map_or_else(|| id.clone(), |o| o.describe(&id, setup.discovery.root()));
+            Loaded::Parsed(Box::new(parsed), label)
         }
-    };
-    match parse_plan(&registry, &name, &bytes, format) {
-        Ok(parsed) => Loaded::Parsed(Box::new(parsed)),
         Err(diagnostics) => {
             failed(&name, &bytes, &diagnostics, out);
             Loaded::Failed(PLAN_ERRORS)
@@ -275,8 +320,8 @@ fn failed(name: &str, bytes: &[u8], diagnostics: &Diagnostics, out: &mut String)
 }
 
 fn check(path: &Path, format: Option<&str>, out: &mut String) -> u8 {
-    let parsed = match load(path, format, out) {
-        Loaded::Parsed(parsed) => parsed,
+    let (parsed, label) = match load(path, format, out) {
+        Loaded::Parsed(parsed, label) => (parsed, label),
         Loaded::Failed(code) => return code,
     };
     let plan = &parsed.plan;
@@ -284,21 +329,22 @@ fn check(path: &Path, format: Option<&str>, out: &mut String) -> u8 {
     render::diagnostics(&name, plan.source.text(), &parsed.diagnostics.0, out);
     render::coverage(plan, &parsed.coverage, out);
     out.push_str(&format!(
-        "planrun: {name}: ok ({}, {} tasks)\n",
-        plan.format.0,
+        "planrun: {name}: ok ({label}, {} tasks)\n",
         plan.tasks.len()
     ));
     OK
 }
 
 fn show(path: &Path, target: Option<&str>, format: Option<&str>, out: &mut String) -> u8 {
-    let parsed = match load(path, format, out) {
-        Loaded::Parsed(parsed) => parsed,
+    let (parsed, label) = match load(path, format, out) {
+        Loaded::Parsed(parsed, label) => (parsed, label),
         Loaded::Failed(code) => return code,
     };
     let viewer = Viewer::new(&parsed.plan);
     let Some(target) = target else {
-        view::plan_text(&viewer.plan(), out);
+        let mut whole = viewer.plan();
+        whole.format = label;
+        view::plan_text(&whole, out);
         return OK;
     };
     let (task_id, step) = match target.split_once('/') {
@@ -330,7 +376,7 @@ fn show(path: &Path, target: Option<&str>, format: Option<&str>, out: &mut Strin
 /// repository cannot be used.
 fn run_dry(path: &Path, format: Option<&str>, out: &mut String) -> u8 {
     let parsed = match load(path, format, out) {
-        Loaded::Parsed(parsed) => parsed,
+        Loaded::Parsed(parsed, _) => parsed,
         Loaded::Failed(code) => return code,
     };
     let plan = &parsed.plan;

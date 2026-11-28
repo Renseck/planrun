@@ -31,7 +31,7 @@ pub mod spec;
 
 pub use diagnostic::{Diagnostic, Diagnostics, Severity};
 pub use recognize::TaskCoverage;
-pub use registry::Registry;
+pub use registry::{Origin, Registry};
 
 use planrun_model::Plan;
 

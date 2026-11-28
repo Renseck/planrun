@@ -1440,6 +1440,24 @@ Amends D89.
   nothing: the thread catches it, and its message comes back to the app as that work's failure
   (a run that ended with an error, a job in its failed state).
 
+## D95 Format layers
+
+Supersedes "a duplicate id is an error" for discovered formats (architecture.md §5, extending.md
+§2). Decided in the P7 brainstorm (docs/superpowers/specs/2026-11-28-discovery-design.md).
+
+- **Three layers:** the built-in formats, then the user's (`<user>/formats/`), then the
+  repository's (`.planrun/formats/`), as D96 finds them. A spec whose id a lower layer has
+  already replaces that format whole: its detection, outline and recognizers; nothing is merged.
+  In one layer two specs cannot share an id, since the file name is the id.
+- **The source is shown.** `check` ends with `ok (<id> (<file>, overrides <what>), <n> tasks)`
+  and `show` prints the same after `format`, the file relative to the repository root when it is
+  under it; a built-in format that replaces nothing is its id alone, so their output does not
+  change for it.
+- **A hand-written `Format`** (`Registry::add_format`) is built in, and a second one with an id
+  stays `DuplicateFormat`.
+- `FormatSource` (built in, user file, repository file) is in planrun-model, which both
+  planrun-parse (the registry's `Origin`) and planrun-exec (discovery) use (D2).
+
 ## D96 Discovery: format specs and plan files
 
 Amends D41 and D9. Decided in the P7 brainstorm (docs/superpowers/specs/2026-11-28-discovery-design.md).

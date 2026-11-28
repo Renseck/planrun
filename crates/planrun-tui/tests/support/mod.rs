@@ -97,6 +97,7 @@ impl Setup {
         let mut ctx = context(
             self.fixture.path(),
             Some(&self.plans),
+            None,
             "0.1.0",
             self.fixture.env(),
         )

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
+use planrun_exec::discover::Discovery;
 use planrun_exec::journal::{self, End, Line, Record};
 use planrun_exec::lock;
 use planrun_exec::preflight::{self, DryRun};
@@ -34,12 +35,24 @@ pub struct Context {
     pub version: String,
     /// Added to every git call and every session (the tests keep the user's configuration out).
     pub env: Vec<(OsString, OsString)>,
+    /// What discovery found (D96): the format specs every check layers over the built-ins.
+    pub discovery: Discovery,
 }
 
 impl Context {
     /// The journal directory, `<git-dir>/planrun`.
     pub fn journal_dir(&self) -> PathBuf {
         journal::dir(&self.git_dir)
+    }
+
+    /// The built-in formats with the discovered ones layered on top (D95).
+    pub fn registry(&self) -> Result<Registry, String> {
+        let layers = self
+            .discovery
+            .formats()
+            .iter()
+            .map(|s| (s.id.as_str(), s.text.as_str(), &s.source));
+        Registry::with_layers(layers).map_err(|e| format!("the formats: {e}"))
     }
 
     /// The plan's path as a journal records it: repository-relative with forward slashes, or
@@ -384,7 +397,7 @@ fn preview(
         ctx.root.join(plan)
     };
     let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let registry = Registry::with_builtins().map_err(|e| format!("the built-in formats: {e}"))?;
+    let registry = ctx.registry()?;
     let name = path.display().to_string();
     let parsed = parse_plan(&registry, &name, &bytes, None)
         .map_err(|_| format!("{plan} does not parse any more: resume would refuse it"))?;
@@ -454,7 +467,7 @@ fn scan(dir: &Path) -> Result<Vec<(PathBuf, Stamp)>, String> {
 
 fn check(ctx: &Context, path: &Path) -> Result<PlanFile, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let registry = Registry::with_builtins().map_err(|e| format!("the built-in formats: {e}"))?;
+    let registry = ctx.registry()?;
     let name = path.file_name().map_or_else(
         || path.display().to_string(),
         |n| n.to_string_lossy().into_owned(),
