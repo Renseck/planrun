@@ -1,0 +1,76 @@
+---
+source: crates/planrun-tui/tests/plans.rs
+expression: screen(&mut core)
+---
+ 0  PLANRUN  greeter › plans                                                                                        ○ idle
+   0-0 fg/bg1, 1-7 fg/bg1 b, 8-9 fg/bg1, 10-16 fg2/bg1, 17-19 fg3/bg1, 20-24 fg/bg1 b, 25-112 fg/bg1, 113-114 fg3/bg1, 115-118 fg2/bg1, 119-119 fg/bg1
+ 1 ▎ PLANS  3 files in default globs                              / filter │  PLAN  2026-01-01-p1-greet.md
+   0-0 act/bg1, 1-1 fg/bg1, 2-6 act/bg1 b, 7-8 fg/bg1, 9-32 fg3/bg1, 33-62 fg/bg1, 63-70 fg3/bg1, 71-71 fg/bg1, 72-72 rule/bg0, 73-74 fg/bg1, 75-78 fg2/bg1 b, 79-80 fg/bg1, 81-102 fg3/bg1, 103-119 fg/bg1
+ 2                                                                         │
+   72-72 rule/bg0
+ 3   PLAN                     FORMAT       TASKS CHECK       RUN           │ Greeter Plan — Part 1: the greet module
+   2-5 fg3/bg0 b, 27-32 fg3/bg0 b, 40-44 fg3/bg0 b, 46-50 fg3/bg0 b, 58-60 fg3/bg0 b, 72-72 rule/bg0, 74-112 fg/bg0 b
+ 4 ▌ 2026-01-01-p1-greet.md   assay           2  ✓ valid     ○ not run     │ assay · 2 tasks · 8 steps · 12 actions
+   0-0 act/bg2, 1-1 fg/bg2, 2-23 fg/bg2 b, 24-26 fg/bg2, 27-31 fg2/bg2, 32-39 fg/bg2, 40-43 fg2/bg2, 44-45 fg/bg2, 46-46 ok/bg2, 47-47 fg/bg2, 48-52 fg2/bg2, 53-57 fg/bg2, 58-58 fg3/bg2, 59-59 fg/bg2, 60-66 fg3/bg2, 67-71 fg/bg2, 72-72 rule/bg0, 74-111 fg2/bg0
+ 5   README.md                ─               ─  not a plan  ─             │ docs/plans/2026-01-01-p1-greet.md · 214 line…
+   27-27 fg2/bg0, 40-43 fg2/bg0, 46-55 fg2/bg0, 58-58 fg3/bg0, 72-72 rule/bg0, 74-118 fg3/bg0
+ 6   2026-01-02-tools.md      superpowers     2  ✓ valid     ○ not run     │
+   27-37 fg2/bg0, 40-43 fg2/bg0, 46-46 ok/bg0, 48-52 fg2/bg0, 58-58 fg3/bg0, 60-66 fg3/bg0, 72-72 rule/bg0
+ 7                                                                         │ OUTLINE ──────────────────────────── coverage
+   72-72 rule/bg0, 74-80 fg3/bg0 b, 82-109 rule/bg0, 111-118 fg3/bg0
+ 8                                                                         │ P1-T1  the greet module      ██████████▪▒▒░░░
+   72-72 rule/bg0, 74-78 meta/bg0, 103-112 fg2/bg0, 113-113 meta/bg0, 114-118 fg3/bg0
+ 9                                                                         │ P1-T2  re-export greeting, … █████████▪▒▒▒░░░
+   72-72 rule/bg0, 74-78 meta/bg0, 103-111 fg2/bg0, 112-112 meta/bg0, 113-118 fg3/bg0
+10                                                                         │ █ action ▪ absorbed ▒ manifest ░ note █ manual
+   72-72 rule/bg0, 74-74 fg2/bg0, 75-82 fg3/bg0, 83-83 meta/bg0, 84-111 fg3/bg0, 112-112 warn/bg0, 113-119 fg3/bg0
+11                                                                         │
+   72-72 rule/bg0
+12                                                                         │ CHECK ─────────────────────── ✓ valid · 12:34
+   72-72 rule/bg0, 74-78 fg3/bg0 b, 80-102 rule/bg0, 104-105 ok/bg0, 106-110 fg2/bg0, 111-118 fg3/bg0
+13                                                                         │
+   72-72 rule/bg0
+14                                                                         │ STATUS ──────────────────────────── ○ not run
+   72-72 rule/bg0, 74-79 fg3/bg0 b, 81-108 rule/bg0, 110-111 fg3/bg0, 112-118 fg2/bg0
+15                                                                         │ no journal in .git/planrun for this plan
+   72-72 rule/bg0, 74-113 fg2/bg0
+16                                                                         │
+   72-72 rule/bg0
+17                                                                         │ PREFLIGHT ───────────────────────────────────
+   72-72 rule/bg0, 74-82 fg3/bg0 b, 84-118 rule/bg0
+18                                                                         │ never a background check: it runs right
+   72-72 rule/bg0, 74-112 fg2/bg0
+19                                                                         │ before each task, and in every dry run
+   72-72 rule/bg0, 74-111 fg2/bg0
+20                                                                         │
+   72-72 rule/bg0
+21                                                                         │  enter  inspect with a dry run
+   72-72 rule/bg0, 74-80 fg/bg2 b, 81-103 fg2/bg0
+22                                                                         │
+   72-72 rule/bg0
+23                                                                         │
+   72-72 rule/bg0
+24                                                                         │
+   72-72 rule/bg0
+25                                                                         │
+   72-72 rule/bg0
+26                                                                         │
+   72-72 rule/bg0
+27                                                                         │
+   72-72 rule/bg0
+28                                                                         │
+   72-72 rule/bg0
+29                                                                         │
+   72-72 rule/bg0
+30  ────────────────────────────────────────────────────────────────────── │
+   1-70 rule/bg0, 72-72 rule/bg0
+31   check ✓ valid  ! warnings  ✕ errors  ◌ checking  grey ✓ stale         │
+   2-7 fg3/bg0, 8-8 ok/bg0, 9-16 fg3/bg0, 17-17 warn/bg0, 18-28 fg3/bg0, 29-29 err/bg0, 30-38 fg3/bg0, 39-39 fg2/bg0, 40-62 fg3/bg0, 72-72 rule/bg0
+32   background checks on start and on file change · c re-checks           │
+   2-49 fg3/bg0, 50-50 fg2/bg0 b, 51-60 fg3/bg0, 72-72 rule/bg0
+33                                                                         │
+   72-72 rule/bg0
+34   enter  inspect    R  run…    c  re-check    /  filter    ctrl+k  commands    ?  help
+   0-0 fg/bg1, 1-7 fg/bg2 b, 8-15 fg2/bg1, 16-18 fg/bg1, 19-21 fg/bg2 b, 22-26 fg2/bg1, 27-29 fg/bg1, 30-32 fg/bg2 b, 33-41 fg2/bg1, 42-44 fg/bg1, 45-47 fg/bg2 b, 48-54 fg2/bg1, 55-57 fg/bg1, 58-65 fg/bg2 b, 66-74 fg2/bg1, 75-77 fg/bg1, 78-80 fg/bg2 b, 81-85 fg2/bg1, 86-119 fg/bg1
+35   F1 Help   F2 Plans   F3 Plan   F4 History     target C:\src\greeter  ·  plans default globs             planrun 0.1.0
+   0-0 fg/bg1, 1-9 fg3/bg1, 10-10 fg/bg1, 11-20 act/bg2 b, 21-21 fg/bg1, 22-30 fg3/bg1, 31-31 fg/bg1, 32-43 fg3/bg1, 44-47 fg/bg1, 48-54 fg3/bg1, 55-68 fg2/bg1, 69-79 fg3/bg1, 80-92 fg2/bg1, 93-105 fg/bg1, 106-118 fg3/bg1, 119-119 fg/bg1

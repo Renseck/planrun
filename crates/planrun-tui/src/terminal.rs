@@ -1,6 +1,6 @@
 //! `planrun tui` on a real terminal (decision D94): stdin and stdout must be terminals; the
-//! repository is the one of the current directory (D88); the plans directory defaults to
-//! `docs/plans` under its root. One loop polls crossterm's events and drains the app's channel
+//! repository is the one of the current directory (D88); without a plans directory the Plans
+//! view lists the discovered plans (D97). One loop polls crossterm's events and drains the app's channel
 //! between polls; there is no input thread, which would read the keys meant for the `[o]` shell.
 //! Interrupts are installed once, before the terminal is set up; a panic restores the terminal
 //! only when it is the render thread's.
@@ -21,7 +21,7 @@ use planrun_exec::workspace::Workspace;
 use crate::app::{App, system_clock};
 use crate::driver::{Core, Hooks};
 use crate::glyph::Glyphs;
-use crate::jobs::{Context, UpdateCheck};
+use crate::jobs::{Context, Listing, UpdateCheck};
 use crate::keys;
 
 /// How long one poll for a key waits before the app's channel is drained again.
@@ -31,17 +31,14 @@ const POLL: Duration = Duration::from_millis(50);
 pub struct Host {
     /// The current directory: its repository is the target.
     pub dir: PathBuf,
-    /// The plans directory as given (relative to `dir`), or `None` for `docs/plans` under the
-    /// repository's root.
+    /// The plans directory as given (relative to `dir`), or `None` for the discovered plans
+    /// (D97).
     pub plans: Option<PathBuf>,
     /// planrun's version.
     pub version: String,
     /// The update check.
     pub update: Option<UpdateCheck>,
 }
-
-/// The default plans directory, under the repository's root (D94).
-pub const DEFAULT_PLANS: &str = "docs/plans";
 
 /// Builds the context for the repository of `dir`.
 /// Discovery runs from `dir` with `user` as the user's config directory (D96); a spec that cannot
@@ -57,16 +54,23 @@ pub fn context(
     let discovery = Discovery::open(dir, user).map_err(|e| format!("error[{}]: {e}", e.code()))?;
     let git_dir = ws.git().git_dir().map_err(|e| e.to_string())?;
     let root = ws.root().to_path_buf();
-    let plans_dir = match plans {
-        Some(p) if p.is_absolute() => p.to_path_buf(),
-        Some(p) => dir.join(p),
-        None => root.join(DEFAULT_PLANS),
-    };
-    let canonical = std::fs::canonicalize(&plans_dir).unwrap_or_else(|_| plans_dir.clone());
-    let plans_label = match canonical.strip_prefix(&root) {
-        Ok(rel) if rel.as_os_str().is_empty() => ".".to_owned(),
-        Ok(rel) => rel.to_string_lossy().replace('\\', "/"),
-        Err(_) => plans_dir.display().to_string(),
+    let (listing, plans_label) = match plans {
+        Some(p) => {
+            let dir = if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                dir.join(p)
+            };
+            let label = dir_label(&root, &dir);
+            (Listing::Dir(dir), label)
+        }
+        None => {
+            let label = match discovery.config().file {
+                Some(_) => planrun_exec::discover::CONFIG_FILE.to_owned(),
+                None => "default globs".to_owned(),
+            };
+            (Listing::Discovered, label)
+        }
     };
     let repo = root.file_name().map_or_else(
         || root.display().to_string(),
@@ -77,13 +81,23 @@ pub fn context(
         repo,
         root,
         git_dir,
-        plans_dir,
+        listing,
         plans_label,
         version: version.to_owned(),
         env,
         discovery,
     })
     .and_then(|ctx| ctx.registry().map(|_| ctx))
+}
+
+/// The plans directory as the footer shows it: relative to the root when it is under it.
+fn dir_label(root: &Path, dir: &Path) -> String {
+    let canonical = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    match canonical.strip_prefix(root) {
+        Ok(rel) if rel.as_os_str().is_empty() => ".".to_owned(),
+        Ok(rel) => rel.to_string_lossy().replace('\\', "/"),
+        Err(_) => dir.display().to_string(),
+    }
 }
 
 /// Runs the TUI until it quits. `Err` is the message for a usage problem: not a terminal, not a

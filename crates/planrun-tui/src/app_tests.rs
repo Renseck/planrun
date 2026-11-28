@@ -8,6 +8,7 @@ use planrun_parse::{Registry, parse_plan};
 
 use super::*;
 use crate::grid::grid;
+use crate::jobs::Listing;
 
 const PLAN: &str = include_str!("../../../tests/corpus/synthetic/assay-style.md");
 
@@ -17,7 +18,7 @@ fn app() -> App {
         git_dir: PathBuf::from(".git"),
         repo: "greeter".to_owned(),
         target: "greeter".to_owned(),
-        plans_dir: PathBuf::from("plans"),
+        listing: Listing::Dir(PathBuf::from("plans")),
         plans_label: "plans".to_owned(),
         version: "0.1.0".to_owned(),
         env: Vec::new(),

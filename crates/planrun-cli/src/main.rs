@@ -110,8 +110,8 @@ enum Command {
     List,
     /// The TUI over the repository of the current directory (docs/tui-design.md, D84–D94).
     Tui {
-        /// The directory of plan files; `docs/plans` under the repository's root when not
-        /// given.
+        /// A directory of plan files (its `*.md` files, D94); the discovered plans when not
+        /// given (D97).
         plans_dir: Option<PathBuf>,
     },
     /// Install the latest GitHub release over this executable when it is newer (D83).

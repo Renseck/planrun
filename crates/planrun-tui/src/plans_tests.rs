@@ -45,3 +45,14 @@ fn dates_and_times_are_utc() {
     assert_eq!(date_utc(ms), "27 Nov");
     assert_eq!(clock_utc(ms), "12:34");
 }
+
+#[test]
+fn journalled_plans_are_the_recorded_files_that_exist() {
+    let dir = std::env::temp_dir().join(format!("planrun-journalled-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("notes")).unwrap_or_else(|e| panic!("{e}"));
+    std::fs::write(dir.join("notes/p1.md"), "# P1\n").unwrap_or_else(|e| panic!("{e}"));
+    let absolute = dir.join("notes/p1.md").display().to_string();
+    let found = journalled(&dir, ["notes/p1.md", "notes/gone.md", absolute.as_str()]);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(found, [dir.join("notes/p1.md")]);
+}

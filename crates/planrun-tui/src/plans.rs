@@ -3,7 +3,7 @@
 //! coverage strip per task, the check's diagnostics, the journal's status, and a word on
 //! preflight, which is never a background check.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ratatui::buffer::Buffer;
@@ -36,6 +36,8 @@ pub struct Entry {
     pub check: Bg<PlanFile>,
     /// The stamp of the check in `check`.
     pub checked: Option<Stamp>,
+    /// Listed because a journal names it, not because a glob matches it (D97).
+    pub outside: bool,
 }
 
 /// What the Plans view holds.
@@ -51,6 +53,9 @@ pub struct Plans {
     pub editing: bool,
     /// Why the directory could not be listed.
     pub error: Option<String>,
+    /// The plans the journals name that exist ([`journalled`]); listed after the scanned files
+    /// when no scan lists them.
+    pub journalled: Vec<PathBuf>,
 }
 
 /// What a key did in the Plans view.
@@ -95,17 +100,31 @@ impl Plans {
             }
         };
         self.error = None;
+        let mut files = files;
+        let mut outside = Vec::new();
+        for path in &self.journalled {
+            if files.iter().any(|(p, _)| p == path) {
+                continue;
+            }
+            if let Some(stamp) = Stamp::of(path) {
+                files.push((path.clone(), stamp));
+                outside.push(path.clone());
+            }
+        }
         let mut jobs = Vec::new();
         let mut entries = Vec::new();
         for (path, stamp) in files {
+            let is_outside = outside.contains(&path);
             let old = self.entries.iter().find(|e| e.path == path).cloned();
             let entry = match old {
                 Some(mut e) if e.checked == Some(stamp) || e.stamp == stamp => {
                     e.stamp = stamp;
+                    e.outside = is_outside;
                     e
                 }
                 Some(mut e) => {
                     e.stamp = stamp;
+                    e.outside = is_outside;
                     e.check = e.check.stale();
                     jobs.push(Job::Check {
                         path: path.clone(),
@@ -126,6 +145,7 @@ impl Plans {
                         stamp,
                         check: Bg::Running,
                         checked: None,
+                        outside: is_outside,
                     }
                 }
             };
@@ -429,6 +449,11 @@ impl Plans {
             );
             Pen::new(buf, area.x, y, right, g).text(&line, fg(Token::Fg3));
         }
+        if entry.outside {
+            y += 1;
+            Pen::new(buf, area.x, y, right, g)
+                .text("no glob matches it; its journal names it", fg(Token::Fg3));
+        }
         y += 2;
         if let Some(p) = parsed {
             y = draw_outline(buf, area, y, p, g);
@@ -511,6 +536,25 @@ impl Plans {
         }
         y + 1
     }
+}
+
+/// The plans that journals name (`plan` as recorded: repository-relative, or absolute when the
+/// plan is outside the repository, D76) and that are files now, each once.
+pub fn journalled<'a>(root: &Path, recorded: impl IntoIterator<Item = &'a str>) -> Vec<PathBuf> {
+    let mut plans: Vec<PathBuf> = recorded
+        .into_iter()
+        .map(|p| {
+            if Path::new(p).is_absolute() {
+                PathBuf::from(p)
+            } else {
+                root.join(p)
+            }
+        })
+        .filter(|p| p.is_file())
+        .collect();
+    plans.sort();
+    plans.dedup();
+    plans
 }
 
 /// The labels the views show for paths.

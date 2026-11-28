@@ -1497,3 +1497,9 @@ Amends D94. Decided in the P7 brainstorm (docs/superpowers/specs/2026-11-28-disc
   `plan-ambiguous`, which lists them. Both exit with code 2. A file no format detects counts as
   a candidate too: it can make a name ambiguous, never make it find the wrong plan.
 - **Messages name the plan** by its repository-relative path when a name found it.
+- **`planrun tui` without a directory lists the discovered plans** (`planrun tui <dir>` keeps
+  D94's listing): the footer says `default globs` or `.planrun/config.toml`. A plan that a
+  journal in `<git-dir>/planrun/` names and that still exists is listed too when no glob matches
+  it, and its detail says so. The list is made again at every two-second check with one
+  `git ls-files`, so a new untracked plan appears without `c`: a process every two seconds is
+  cheap next to a missed plan, and simpler than watching directories (D1).

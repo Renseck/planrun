@@ -27,9 +27,9 @@ pub struct Context {
     pub repo: String,
     /// The target as the footer shows it.
     pub target: String,
-    /// The plans directory (absolute).
-    pub plans_dir: PathBuf,
-    /// The plans directory as the footer shows it.
+    /// Where the Plans view's files come from.
+    pub listing: Listing,
+    /// Where they come from, as the footer shows it.
     pub plans_label: String,
     /// planrun's version.
     pub version: String,
@@ -64,6 +64,15 @@ impl Context {
             Err(_) => canonical.display().to_string(),
         }
     }
+}
+
+/// Where the Plans view's files come from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Listing {
+    /// `planrun tui <dir>`: the directory's `*.md` files, not recursive (D94); absolute.
+    Dir(PathBuf),
+    /// `planrun tui`: the plans discovery finds (D96, D97), listed again at every scan.
+    Discovered,
 }
 
 /// A file's fingerprint for change detection: its length and modification time.
@@ -196,7 +205,7 @@ impl PlanFile {
 
 /// One piece of background work.
 pub enum Job {
-    /// Lists the plans directory's `*.md` files.
+    /// Lists the plan files: a directory's `*.md` files, or the discovered plans.
     Scan,
     /// Parses and checks a plan, and reads its journal.
     Check {
@@ -241,7 +250,7 @@ pub enum Job {
 /// What a job found.
 #[derive(Debug, Clone)]
 pub enum Done {
-    /// The plans directory's files with their stamps, sorted by name.
+    /// The plan files with their stamps, sorted by path.
     Scanned(Result<Vec<(PathBuf, Stamp)>, String>),
     /// A plan's check.
     Checked {
@@ -346,7 +355,7 @@ impl Job {
     /// Does the work.
     pub fn run(self, ctx: &Context) -> Done {
         match self {
-            Job::Scan => Done::Scanned(scan(&ctx.plans_dir)),
+            Job::Scan => Done::Scanned(scan(ctx)),
             Job::Check { path, stamp } => {
                 let file = check(ctx, &path);
                 Done::Checked { path, stamp, file }
@@ -453,12 +462,26 @@ fn changes(ctx: &Context, paths: &[String]) -> Vec<crate::diff::FileDiff> {
     }
 }
 
-fn scan(dir: &Path) -> Result<Vec<(PathBuf, Stamp)>, String> {
-    let entries = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let mut files: Vec<(PathBuf, Stamp)> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_file() && p.extension().is_some_and(|x| x == "md"))
+/// The plan files with their stamps: one `git ls-files` for the discovered plans (D97), or one
+/// directory listing.
+fn scan(ctx: &Context) -> Result<Vec<(PathBuf, Stamp)>, String> {
+    let paths: Vec<PathBuf> = match &ctx.listing {
+        Listing::Dir(dir) => std::fs::read_dir(dir)
+            .map_err(|e| format!("{}: {e}", dir.display()))?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_file() && p.extension().is_some_and(|x| x == "md"))
+            .collect(),
+        Listing::Discovered => ctx
+            .discovery
+            .plans(&ctx.env)
+            .map_err(|e| format!("error[{}]: {e}", e.code()))?
+            .iter()
+            .map(|p| ctx.root.join(p.as_str()))
+            .collect(),
+    };
+    let mut files: Vec<(PathBuf, Stamp)> = paths
+        .into_iter()
         .filter_map(|p| Stamp::of(&p).map(|s| (p, s)))
         .collect();
     files.sort_by(|a, b| a.0.cmp(&b.0));

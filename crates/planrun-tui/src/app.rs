@@ -14,7 +14,7 @@ use crate::draw::fill;
 use crate::glyph::{Glyph, Glyphs};
 use crate::history::{self, History};
 use crate::inspect::{Assumed, Did, Inspect};
-use crate::jobs::{Bg, Context, Done, Job, UpdateCheck, UpdateState};
+use crate::jobs::{Bg, Context, Done, Job, Listing, UpdateCheck, UpdateState};
 use crate::keys::Key;
 use crate::palette::{Cmd, Command, Palette, Pick};
 use crate::plans::{self, Labels, Plans};
@@ -188,6 +188,10 @@ impl App {
     pub fn start(&mut self) -> Vec<Effect> {
         self.next_poll = self.now() + POLL_MS;
         let mut effects = vec![Effect::Job(Job::Scan), Effect::Job(Job::Live)];
+        if self.ctx.listing == Listing::Discovered {
+            // The plans only a journal knows join the list (D97).
+            effects.push(Effect::Job(Job::Journals));
+        }
         if let Some(check) = self.update_check.take() {
             effects.push(Effect::Job(Job::Update(check)));
         }
@@ -254,6 +258,10 @@ impl App {
                 Vec::new()
             }
             Done::Journals(runs) => {
+                if let (Listing::Discovered, Ok(runs)) = (&self.ctx.listing, &runs) {
+                    let recorded = runs.iter().map(|r| r.plan.as_str());
+                    self.plans.journalled = plans::journalled(&self.ctx.root, recorded);
+                }
                 let n = runs.as_ref().map_or(0, Vec::len);
                 self.history.runs = Some(runs);
                 self.history.selected = self.history.selected.min(n.saturating_sub(1));
