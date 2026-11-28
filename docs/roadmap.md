@@ -129,8 +129,8 @@ and the greeter ignores `Cargo.lock`.
 ## P6 — Dogfood and polish
 
 planrun runs its own later phase plans. Candidates, each its own decision: a ratatui UI, a
-sidecar IR from planbuild.py, `.planrun/formats/` discovery polish, a non-interactive batch mode
-for CI.
+sidecar IR from planbuild.py, a non-interactive batch mode for CI. `.planrun/formats/` discovery
+became P7.
 
 - **P6a — release and update (done).** The CI gate on Windows and Linux, the release workflow on
   a `v*.*.*` tag, `scripts/install.ps1` and `install.sh` (a release, or `--from-source`), and
@@ -146,3 +146,13 @@ for CI.
   observer), the dock with every `QuestionKind`, History, the resume preview and the command
   palette (`docs/tui-design.md` §11). Its acceptance drives the TUI against the greeter fixture
   in-process, with the real runner (D93). Plan: `docs/plans/2026-11-27-p6c-tui.md`.
+
+## P7 — Discovery
+
+One `Discovery` in planrun-exec (D96) finds what the repository and the user's config directory
+hold: format specs in `<user>/formats/` and `.planrun/formats/`, layered over the built-ins with
+the source shown (D95); the plan globs of `.planrun/config.toml` or the defaults; and the plan
+files they match, with one `git ls-files`. Plans can be named on the command line (D97),
+`planrun list` lists them, and `planrun tui` without a directory shows them. Design:
+`docs/superpowers/specs/2026-11-28-discovery-design.md`; plan:
+`docs/plans/2026-11-28-p7-discovery.md`.

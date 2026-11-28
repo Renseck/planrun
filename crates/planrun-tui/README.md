@@ -19,7 +19,7 @@ $env:PLANRUN_REQUIRE_SHELLS = '1'; cargo test -p planrun-tui
 ## Manual check list
 
 What only a real terminal shows. Run it in Windows Terminal with Cascadia Mono, from a copy of
-the greeter fixture or any repository with plans in `docs/plans` (or pass the directory), after
+the greeter fixture or any repository with plans the default globs find (or pass a directory), after
 `cargo build -p planrun-cli`. Each item is a manual step, checked by hand.
 
 1. **Start and quit.** `planrun tui` shows Plans; `q` quits and the terminal is as it was

@@ -24,10 +24,11 @@ crates/planrun-exec    IR → effects: git, workspace, eol, tree, handler, trans
                        preflight, finding (P3); shell/ (sessions, kill.rs: the only unsafe
                        code), expect, policy/ (classifier, decisions) (P4); journal, lock,
                        done, ui, runner/ (tasks, scripts, sessions, gate, resume) (P5);
-                       lock.live, runner/preview (P6b)
+                       lock.live, runner/preview (P6b); discover (P7: format specs, plan
+                       globs, plan names)
 crates/planrun-cli     the `planrun` binary: check, show (view, render), run (dry_run, run,
-                       ui: line prompts), resume, status, update (P6a, D83), tui; the `e2e`
-                       test feature (e2e.rs)
+                       ui: line prompts), resume, status, update (P6a, D83), tui, list (P7);
+                       the `e2e` test feature (e2e.rs)
 crates/planrun-tui     the TUI (P6c, docs/tui-design.md): app, driver, terminal, jobs,
                        worker (the runner's thread and its Ui); views plans, inspect, run,
                        dock, history, preview, palette, help; theme, glyph, draw, chrome,

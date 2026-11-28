@@ -52,8 +52,9 @@ docs/decisions.md holds them as D84–D92, with what P6b settled.
   gives it crossterm, the tests a `TestBackend`, scripted keys and the real runner on a
   fixture copy. Snapshots are cell grids with style runs by token name.
 - **D94 — How `planrun tui` starts.** A terminal on stdin and stdout, or exit 2; the plans
-  directory defaults to `docs/plans` under the repository's root; only key presses count, and
-  one loop polls keys and drains the app's channel; times are UTC.
+  directory defaults to `docs/plans` under the repository's root (D97: without a directory, the
+  discovered plans); only key presses count, and one loop polls keys and drains the app's
+  channel; times are UTC.
 
 Not in v1: **pause**. Asking under `--auto` turns Auto into Ask, a decision change the UI may not
 make. If wanted, it is its own decision with runner support: a flag read before each action,

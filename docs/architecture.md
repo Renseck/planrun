@@ -213,9 +213,11 @@ Three levels, cheapest first. A new plan style should use the lowest level that 
 | 3. Format | a `Format` implementation in Rust | yes | a plan whose tasks are a table, or JSON |
 
 Built-in formats are **level-1 specs** too (`formats/*.toml`, embedded with `include_str!`): the
-path a user format takes is the path every built-in format takes (D8). User formats load from
-`.planrun/formats/*.toml` in the target repository, then the user config directory; a duplicate id
-is an error.
+path a user format takes is the path every built-in format takes (D8). Discovery (`discover` in
+planrun-exec, D96) finds the user's formats (`formats/*.toml` in the user config directory) and
+the repository's (`.planrun/formats/*.toml`); the registry layers them over the built-ins in that
+order, and a spec replaces the format with its id whole (D95). `check` and `show` name the file a
+format came from and what it replaced.
 
 On the execution side, the extension points are traits with registries too: `ActionHandler` per
 action kind (`HandlerSet`), `ShellSession` per shell, `CommandClassifier` for policy, `Ui` for the
@@ -423,12 +425,22 @@ append and each write of a step's commit in the order they were added: the `e2e`
 ```
 planrun check  <plan> [--format <id>]          parse + checks + coverage; writes nothing
 planrun show   <plan> [P1-T2[/1]]              the IR, a task, or a step
+planrun list                                   the discovered plans, their formats and journals
 planrun run    <plan> [--from P1-T2] [--to P1-T3] [--auto read,build] [--dry-run]
                [--run-expected-failures] [--restart]
 planrun resume <plan> [--auto …] [--from …] [--to …] [--run-expected-failures]
 planrun status <plan>                          what the journal says; changes nothing
 planrun update [--check]                       install the latest release over this executable
 ```
+
+`<plan>` is a path, or a name (D97): an argument without a directory part or `.md` that names
+no existing file is matched, without case, against the file stems of the plans discovery finds
+(the repository's tracked and untracked files a glob of `.planrun/config.toml` matches, or the
+default globs `docs/plans/*.md`, `**/superpowers/**/plans/*.md` and `**/plans/*.md`; D96). One
+match is the plan, and planrun names it on stderr; none or several stop with exit code 2.
+`list` prints each discovered file with its format and its journal's state, or "not a plan";
+exit 1 when a file a format detects has errors. A spec or config file that cannot be used stops
+every command with exit code 2.
 
 `update` (D83) is the one command that is not about a plan: it compares the latest GitHub release
 with the build's version, and when it is newer downloads the build's target's archive with curl,
@@ -476,7 +488,9 @@ Step 2 — verify
 ### 7.1 The TUI
 
 `planrun tui [<plans-dir>]` (docs/tui-design.md, D84–D94) runs from the repository of the current
-directory and needs a terminal on stdin and stdout (exit 2 otherwise). Its parts:
+directory and needs a terminal on stdin and stdout (exit 2 otherwise). Without a directory its
+Plans view lists the discovered plans, and the plans a journal names that no glob matches (D97).
+Its parts:
 
 - **`app::App`** holds all of its state and never blocks: a key or a message changes it and
   returns `Effect`s (a background job, the runner's start, the `[o]` shell, `end_now`, quit);

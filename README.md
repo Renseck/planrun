@@ -6,6 +6,7 @@ commands, check their expected output, commit when the gate passes. Anything it 
 mechanically it shows and waits for. It is not an agent.
 
 ```
+planrun list                   the plans of this repository, their formats and journals
 planrun check  plan.md         parse, check, coverage report; changes nothing
 planrun show   plan.md P1-T2   the typed form of a task
 planrun run    plan.md         execute interactively (--dry-run: change nothing)
@@ -13,6 +14,11 @@ planrun resume plan.md         continue after an interruption, re-checking the d
 planrun status plan.md         what the plan's journal says
 planrun update                 install the latest release (--check: only report)
 ```
+
+A plan can be named instead of given by path: `planrun run p7` runs the one plan whose file name
+contains `p7`. Plans are found with the globs of `.planrun/config.toml`, or in `docs/plans/`,
+`**/superpowers/**/plans/` and `**/plans/` by default; formats of your own go in
+`.planrun/formats/` ([docs/extending.md](docs/extending.md) §2).
 
 Status: P0–P5 are done; P6 is planrun running its own plans. See
 [docs/roadmap.md](docs/roadmap.md).

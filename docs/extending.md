@@ -16,8 +16,27 @@ New plan styles will keep appearing. They are added without touching execution, 
 
 ## 2. Format specs (TOML)
 
-Location: built-ins in `formats/<id>.toml` (embedded); per repository in
-`<repo>/.planrun/formats/<id>.toml`; per user in the config directory. The file name is the id.
+Location: built-ins in `formats/<id>.toml` (embedded); per user in `<user>/formats/<id>.toml`;
+per repository in `<repo>/.planrun/formats/<id>.toml`. The file name is the id: letters, digits,
+`-` and `_`. `<user>` is `PLANRUN_CONFIG_DIR` when it is set, else `%APPDATA%\planrun` on
+Windows and `$XDG_CONFIG_HOME/planrun` or `$HOME/.config/planrun` elsewhere (D96).
+
+The layers stack in that order (D95): a user spec with a built-in format's id replaces that
+format, and a repository spec replaces either, whole (no merging). `planrun check` then says
+`ok (assay (.planrun/formats/assay.toml, overrides built-in), 2 tasks)`. To change a built-in
+format for one repository, copy `formats/<id>.toml` to `.planrun/formats/` and edit the copy. A
+spec that does not load stops every command with exit code 2 and names its file.
+
+Where plan files are found is the repository's `.planrun/config.toml` (D96), optional:
+
+```toml
+[plans]
+globs = ["docs/plans/*.md", "work/**/plans/*.md"]   # replaces the defaults
+```
+
+Without it the globs are `docs/plans/*.md`, `**/superpowers/**/plans/*.md` and `**/plans/*.md`.
+A glob is a manifest glob (D41) plus `**`, a whole segment that matches any number of
+directories. `planrun list`, `planrun tui` and plan names (`planrun run p7`, D97) use them.
 
 ```toml
 id = "assay"                      # unique; the file name
